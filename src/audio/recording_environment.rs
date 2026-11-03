@@ -306,7 +306,7 @@ pub fn intentional_recording_active() -> bool {
 static CAPTURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Marks a dictation capture from its press until its clip is submitted, so
-/// background work such as host-audio transcription stops starting new jobs
+/// background work such as History's Transcribe again stops starting new jobs
 /// before the capture can need the model.
 pub struct CaptureMarker(());
 

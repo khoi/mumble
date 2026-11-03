@@ -1,8 +1,8 @@
 //! Running-app dictation (`/dictations`): a host starts, finishes, cancels
 //! and observes a dictation the app records. The macOS recognition loop and
-//! the Linux listener drive it; without a capture loop (Windows, `hex
-//! service`) the routes answer `service-capture-unavailable` and
-//! `/capabilities` reports `serviceCapture: false`.
+//! the Linux listener drive it; without a capture loop (Windows) the routes
+//! answer `service-capture-unavailable` and `/capabilities` reports
+//! `serviceCapture: false`.
 
 use std::collections::HashMap;
 use std::io::Write;

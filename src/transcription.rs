@@ -25,9 +25,7 @@ pub(crate) mod models;
 pub(crate) mod pause_segmenter;
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 pub(crate) mod preparation;
-pub(crate) mod service;
 pub(crate) mod speech_detector;
-pub(crate) mod stream;
 pub(crate) mod subtitle_credits;
 #[cfg(target_os = "macos")]
 pub(crate) mod transcript;
@@ -84,15 +82,6 @@ impl Transcriber {
         match self {
             Self::Gguf(model) => model.matches_selection(selection),
             Self::AppleSpeech(model) => model.matches_selection(selection),
-        }
-    }
-
-    /// Brings an idle GGUF model's weights back before audio arrives (see
-    /// [`Parakeet::prewarm`]). Apple Speech has no weights of Hex's to warm.
-    pub fn prewarm(&mut self) -> Result<()> {
-        match self {
-            Self::Gguf(model) => model.prewarm(),
-            Self::AppleSpeech(_) => Ok(()),
         }
     }
 

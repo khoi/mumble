@@ -9,23 +9,38 @@
 //! cap, past which the oldest entries keep their text but lose their audio.
 
 use std::fs;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{self, BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
-use hound::{SampleFormat, WavSpec, WavWriter};
+use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 
+use crate::transcription::engine::{TranscriptionEngine, dictation_busy, held, transcribe_clip};
 use crate::transcription::models::TranscriptionSelection;
-use crate::transcription::service::{
-    AudioClip, AudioError, TranscriptionService, TranscriptionServiceError,
-};
 
 /// Every recording together stays under this; about 4.5 hours of audio.
 pub const MAX_RECORDING_BYTES: u64 = 512 * 1024 * 1024;
 const SAMPLE_RATE: u32 = 16_000;
+const SPEC: WavSpec = WavSpec {
+    channels: 1,
+    sample_rate: SAMPLE_RATE,
+    bits_per_sample: 16,
+    sample_format: SampleFormat::Int,
+};
 const DIRECTORY: &str = "history-audio";
-/// How long one Transcribe again may run, model load included.
-const RETRANSCRIBE_DEADLINE: Duration = Duration::from_secs(10 * 60);
+/// The longest recording Transcribe again reads: 64 MiB of samples, about
+/// 17 minutes.
+const MAX_SAMPLES: usize = 64 * 1024 * 1024 / size_of::<f32>();
+/// Recordings up to this long run on the dictation engine's model; a longer
+/// one would hold a dictation released during it behind it.
+const SHARED_MAX_SAMPLES: usize = 30 * SAMPLE_RATE as usize;
+/// How long Transcribe again waits out a dictation, such as a locked one,
+/// before loading its own copy of the model.
+const SHARED_WAIT: Duration = Duration::from_secs(20);
+/// Pause before asking again while dictation holds the engine.
+const SHARED_RETRY: Duration = Duration::from_millis(50);
 
 /// One dictation's 16 kHz mono audio, kept for History.
 #[derive(Clone, Debug)]
@@ -62,13 +77,7 @@ pub(super) fn write(directory: &Path, id: u64, recording: &Recording) -> io::Res
     let written = (|| {
         let file = fs::File::create(&temporary)?;
         super::restrict_to_owner(&file)?;
-        let spec = WavSpec {
-            channels: 1,
-            sample_rate: SAMPLE_RATE,
-            bits_per_sample: 16,
-            sample_format: SampleFormat::Int,
-        };
-        let mut writer = WavWriter::new(BufWriter::new(&file), spec).map_err(io::Error::other)?;
+        let mut writer = WavWriter::new(BufWriter::new(&file), SPEC).map_err(io::Error::other)?;
         for sample in &recording.0 {
             let sample = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
             writer.write_sample(sample).map_err(io::Error::other)?;
@@ -110,45 +119,95 @@ pub(super) fn sweep(directory: &Path, below: u64, keep: impl Fn(u64) -> bool) {
     }
 }
 
-/// Transcribes the recording at `path` again with `selection`, on a
-/// transcription service of its own: it runs on the dictation engine's model
-/// when that is the one asked for, yielding to dictation, or loads its own
-/// copy for this run. Blocks; call it off the UI thread.
-pub fn retranscribe(path: &Path, selection: TranscriptionSelection) -> Result<String, String> {
-    let file = fs::File::open(path).map_err(|_| "The recording is gone.".to_string())?;
-    let clip = AudioClip::decode_wav(BufReader::new(file)).map_err(|error| match error {
-        AudioError::Invalid | AudioError::Unsupported => "The recording could not be read.",
-        AudioError::ResourceExhausted => "The recording is too long.",
-    })?;
-    let (mut service, handle) =
-        TranscriptionService::start().map_err(|error| format!("{error:#}"))?;
-    let admission = handle
-        .admit_audio()
-        .ok_or_else(|| "Another transcription is running.".to_string())?;
-    let result = handle
-        .transcribe(selection, clip, admission)
-        .map_err(describe)
-        .and_then(|job| match job.wait_timeout(RETRANSCRIBE_DEADLINE) {
-            Ok(Some(result)) => result.map_err(describe),
-            Ok(None) => Err("Transcribing took too long.".into()),
-            Err(error) => Err(describe(error)),
-        });
-    // The worker runs until every sender is gone; the handle holds one, so
-    // keeping it would make the shutdown wait forever after the result.
-    drop(handle);
-    service.shutdown();
-    result.map(|text| text.trim().to_string())
+/// Reads a recording [`write`] made.
+pub(super) fn read(reader: impl Read) -> Result<Vec<f32>, String> {
+    let unreadable = || "The recording could not be read.".to_string();
+    let reader = WavReader::new(reader).map_err(|_| unreadable())?;
+    if reader.spec() != SPEC || reader.duration() == 0 {
+        return Err(unreadable());
+    }
+    if reader.duration() as usize > MAX_SAMPLES {
+        return Err("The recording is too long.".into());
+    }
+    reader
+        .into_samples::<i16>()
+        .map(|sample| sample.map(|sample| f32::from(sample) / 32_768.0))
+        .collect::<Result<_, _>>()
+        .map_err(|_| unreadable())
 }
 
-fn describe(error: TranscriptionServiceError) -> String {
-    match error {
-        TranscriptionServiceError::QueueFull => "Another transcription is running.".into(),
-        TranscriptionServiceError::Unavailable => "Transcription stopped.".into(),
-        TranscriptionServiceError::Cancelled => "Transcription was cancelled.".into(),
-        TranscriptionServiceError::Model(error) | TranscriptionServiceError::Inference(error) => {
-            error
+/// Transcribes the recording at `path` again with `selection`: on the
+/// dictation engine's model when that is the one asked for, yielding to
+/// dictation, or on a copy loaded for this run. Blocks; call it off the UI
+/// thread.
+pub fn retranscribe(path: &Path, selection: TranscriptionSelection) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|_| "The recording is gone.".to_string())?;
+    let samples = read(BufReader::new(file))?;
+    let samples = if samples.len() <= SHARED_MAX_SAMPLES {
+        let samples = Arc::new(samples);
+        if let Some(text) = on_engine(&selection, &samples) {
+            return trimmed(text);
         }
+        Arc::unwrap_or_clone(samples)
+    } else {
+        samples
+    };
+    #[cfg(target_os = "macos")]
+    let loaded = {
+        crate::parakeet::prioritize_inference_thread();
+        crate::transcription::Transcriber::load_selection(&selection)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let loaded = crate::transcription::local_transcriber::LocalTranscriber::load(&selection);
+    let mut model = loaded.map_err(|error| error.to_string())?;
+    trimmed(transcribe_clip(&mut model, samples))
+}
+
+/// Runs on the dictation engine's model when it is the GGUF model
+/// `selection` asks for, so History never loads a second copy of it. It
+/// starts only while no dictation captures or transcribes. `None` when there
+/// is no engine, it holds another model, or dictation stays busy for
+/// [`SHARED_WAIT`].
+fn on_engine(
+    selection: &TranscriptionSelection,
+    audio: &Arc<Vec<f32>>,
+) -> Option<color_eyre::Result<String>> {
+    enum Shared {
+        Busy,
+        Other,
+        Ran(color_eyre::Result<String>),
     }
+    let engine = TranscriptionEngine::shared()?;
+    let started = Instant::now();
+    loop {
+        if !dictation_busy() {
+            let selection = selection.clone();
+            let audio = audio.clone();
+            let ran = engine.background(move |model| {
+                if dictation_busy() {
+                    return Shared::Busy;
+                }
+                match held(model, &selection) {
+                    Some(model) => Shared::Ran(transcribe_clip(model, audio.to_vec())),
+                    None => Shared::Other,
+                }
+            });
+            match ran {
+                Ok(Some(Shared::Ran(text))) => return Some(text),
+                Ok(Some(Shared::Other)) | Err(_) => return None,
+                Ok(None | Some(Shared::Busy)) => {}
+            }
+        }
+        if started.elapsed() >= SHARED_WAIT {
+            return None;
+        }
+        thread::sleep(SHARED_RETRY);
+    }
+}
+
+fn trimmed(text: color_eyre::Result<String>) -> Result<String, String> {
+    text.map(|text| text.trim().to_string())
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(unix)]

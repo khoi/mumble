@@ -134,8 +134,8 @@ pub(crate) fn focus(context: &ContextSnapshot) {
 }
 
 /// Runs `work` as a dictation's transcription on this thread: its runs hear
-/// with the focused mode's terms too. Captures and other hosts' audio hear
-/// with the shared list alone.
+/// with the focused mode's terms too. Other runs, such as Transcribe again,
+/// hear with the shared list alone.
 pub(crate) fn for_dictation<R>(work: impl FnOnce() -> R) -> R {
     struct Restore(bool);
     impl Drop for Restore {

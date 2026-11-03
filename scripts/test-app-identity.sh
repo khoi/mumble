@@ -42,7 +42,7 @@ printf '#!/bin/sh\n' >"$bundle/Contents/MacOS/hex"
 chmod +x "$bundle/Contents/MacOS/hex"
 expect_rejection 'packaged executable is not arm64-only'
 
-for script in build-app.sh build-service-app.sh release-app.sh; do
+for script in build-app.sh release-app.sh; do
   if output=$(env -u HEX_TEAM_ID sh "$root/scripts/$script" 2>&1); then
     echo "Unexpectedly allowed $script without an explicit signing team." >&2
     exit 1
@@ -50,20 +50,12 @@ for script in build-app.sh build-service-app.sh release-app.sh; do
   printf '%s\n' "$output" | grep -Fq 'Set HEX_TEAM_ID to the Apple Developer signing team'
 done
 
-for script in build-app.sh build-service-app.sh; do
-  for identity in 'Developer ID Application: Fixture (WRONGTEAM0)' 'Apple Development: Fixture (TESTTEAM00)'; do
-    if output=$(HEX_CODESIGN_IDENTITY="$identity" sh "$root/scripts/$script" 2>&1); then
-      echo "Unexpectedly allowed an incompatible signing identity in $script." >&2
-      exit 1
-    fi
-    printf '%s\n' "$output" | grep -Fq 'Signing identity is not a Developer ID Application identity for team TESTTEAM00'
-  done
+for identity in 'Developer ID Application: Fixture (WRONGTEAM0)' 'Apple Development: Fixture (TESTTEAM00)'; do
+  if output=$(HEX_CODESIGN_IDENTITY="$identity" sh "$root/scripts/build-app.sh" 2>&1); then
+    echo "Unexpectedly allowed an incompatible signing identity in build-app.sh." >&2
+    exit 1
+  fi
+  printf '%s\n' "$output" | grep -Fq 'Signing identity is not a Developer ID Application identity for team TESTTEAM00'
 done
-
-if output=$(env -u HEX_NOTARY_PROFILE sh "$root/scripts/prepare-service-app.sh" 2>&1); then
-  echo "Unexpectedly allowed helper notarization without an explicit profile." >&2
-  exit 1
-fi
-printf '%s\n' "$output" | grep -Fq 'Set HEX_NOTARY_PROFILE to the matching notarization profile'
 
 echo "Rust app identity guards passed."

@@ -113,13 +113,6 @@ enum Command {
         #[arg(long)]
         device: Option<String>,
     },
-    /// Run the headless local API service.
-    #[command(hide = true)]
-    Service {
-        /// Run as a direct child whose stdin is owned by the host application.
-        #[arg(long)]
-        embedded: bool,
-    },
     /// Inspect and control the running desktop app or offline audio tools.
     Dev {
         #[command(subcommand)]
@@ -261,15 +254,12 @@ fn main() -> Result<()> {
     let log_dir = app_paths::init_process_logging(&SHUTDOWN)?;
 
     let event_path = log_dir.join("live.ndjson");
-    let bundled_service = executable_name.as_deref() == Some(std::ffi::OsStr::new("hex-service"));
     let command = cli.command.unwrap_or({
         if bundled_watcher {
             Command::App {
                 device: None,
                 rune_args: Vec::new(),
             }
-        } else if bundled_service {
-            Command::Service { embedded: false }
         } else {
             Command::Listen { device: None }
         }
@@ -290,12 +280,6 @@ fn main() -> Result<()> {
                 }
             };
             recognition::listen(events, device.as_deref(), &SHUTDOWN, None, history, None)
-        }
-        Command::Service { embedded } => {
-            if !embedded {
-                app_settings::AppSettings::load()?;
-            }
-            local_api::run_service(&log_dir, event_path, embedded, &SHUTDOWN)
         }
         Command::Control(_) => unreachable!("handled before startup"),
         Command::Dev { command } => {
@@ -519,7 +503,7 @@ mod tests {
     #[test]
     fn the_packaged_executable_launches_the_app() {
         assert!(is_bundled_app_executable(Some("hex".as_ref())));
-        assert!(!is_bundled_app_executable(Some("hex-service".as_ref())));
+        assert!(!is_bundled_app_executable(Some("hex-watch".as_ref())));
     }
 
     #[test]
@@ -533,7 +517,7 @@ mod tests {
         assert!(opens(&["hex", "app"]));
         assert!(opens(&["hex", "app", "--device", "MacBook Pro Microphone"]));
         assert!(!opens(&["hex", "app", "--", "--snap", "/tmp/a.png"]));
-        assert!(!opens(&["hex-service"]));
+        assert!(!opens(&["hex-watch"]));
         for command in [
             &["status"][..],
             &["quit"],

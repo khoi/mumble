@@ -137,6 +137,7 @@ impl ModelPreparationStage {
         stage.store(self as u8, Ordering::Release);
     }
 
+    #[cfg(target_os = "linux")]
     pub fn load(stage: &AtomicU8) -> Self {
         match stage.load(Ordering::Acquire) {
             value if value == Self::Downloading as u8 => Self::Downloading,
@@ -305,14 +306,6 @@ impl ModelDefinition {
         } else {
             self.default_language()
         }
-    }
-
-    pub fn presentation_languages(&self) -> Vec<&'static str> {
-        self.languages
-            .iter()
-            .copied()
-            .chain(self.supports_language_detection.then_some(AUTO_LANGUAGE))
-            .collect()
     }
 
     pub fn size_label(&self) -> String {
@@ -817,6 +810,7 @@ pub fn is_installed(model: &ModelDefinition, language: &str) -> bool {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn is_verified(model: &ModelDefinition) -> bool {
     if let TranscriptionModelId::Custom(id) = model.id {
         return super::custom_models::status(id) == super::custom_models::Status::Ready;

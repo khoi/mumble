@@ -1066,11 +1066,8 @@ impl Parakeet {
     /// Runs a short silent inference. ggml keeps the Metal weights resident
     /// for only three minutes after a run; then macOS may compress or swap
     /// them out, and the next run pays to bring them back. A prewarm pays that
-    /// before the audio arrives, and is skipped right after another run.
+    /// before the audio arrives.
     pub(crate) fn prewarm(&mut self) -> Result<()> {
-        if self.session.ran_recently() {
-            return Ok(());
-        }
         let started = Instant::now();
         let mut silence = Vec::new();
         pad_for_parakeet(&mut silence);

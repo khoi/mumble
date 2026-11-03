@@ -6,7 +6,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 use color_eyre::eyre::{Result, WrapErr, eyre};
 
@@ -133,16 +132,10 @@ impl VocabularySlot {
     }
 }
 
-/// A run this recent leaves the weights resident (ggml keeps them so for three
-/// minutes), so a prewarm after it would only repeat work.
-const RECENT_RUN: Duration = Duration::from_secs(60);
-
 pub(crate) struct OfflineGgufSession {
     model: transcribe_cpp::Model,
     session: Option<transcribe_cpp::Session>,
     options: transcribe_cpp::SessionOptions,
-    /// When the last run or live stream completed; `None` until the first.
-    last_run: Option<Instant>,
     /// How runs take the vocabulary.
     vocabulary: VocabularySlot,
 }
@@ -164,7 +157,6 @@ impl OfflineGgufSession {
             model,
             session: Some(session),
             options,
-            last_run: None,
             vocabulary,
         })
     }
@@ -204,11 +196,6 @@ impl OfflineGgufSession {
             }
             _ => Cow::Borrowed(options),
         }
-    }
-
-    /// Whether a run or live stream completed within [`RECENT_RUN`].
-    pub(crate) fn ran_recently(&self) -> bool {
-        ran_within(self.last_run, Instant::now(), RECENT_RUN)
     }
 
     /// Streams only on a GPU (Metal, Vulkan): a CPU stream re-encodes each
@@ -304,9 +291,6 @@ impl OfflineGgufSession {
             .stream(&options, stream_options)
             .map(|mut stream| drive(&mut stream));
         drop(session);
-        if result.is_ok() {
-            self.last_run = Some(Instant::now());
-        }
         self.session = self.model.session_with(&self.options).ok();
         result
     }
@@ -337,9 +321,6 @@ impl OfflineGgufSession {
                 transcript
             });
         drop(session);
-        if result.is_ok() {
-            self.last_run = Some(Instant::now());
-        }
         match self.model.session_with(&self.options) {
             Ok(session) => {
                 self.session = Some(session);
@@ -396,10 +377,6 @@ fn keep_repetition_partial(
         }) => Ok(*partial),
         result => result,
     }
-}
-
-fn ran_within(last_run: Option<Instant>, now: Instant, window: Duration) -> bool {
-    last_run.is_some_and(|last_run| now.saturating_duration_since(last_run) < window)
 }
 
 fn normalize_spoken(text: &str) -> String {
@@ -548,20 +525,6 @@ mod tests {
     fn normalizes_spoken_numbers_and_punctuation() {
         assert_eq!(normalize_spoken("Move LEFT, three!"), "move left 3");
         assert_eq!(normalize_spoken("Ä ä A a ONE one"), "Ä ä a a 1 1");
-    }
-
-    #[test]
-    fn only_a_completed_run_inside_the_window_counts_as_recent() {
-        let now = Instant::now();
-        let window = Duration::from_secs(60);
-        assert!(!ran_within(None, now, window), "a fresh load has not run");
-        assert!(ran_within(Some(now), now, window));
-        assert!(ran_within(Some(now - Duration::from_secs(59)), now, window));
-        assert!(!ran_within(
-            Some(now - Duration::from_secs(60)),
-            now,
-            window
-        ));
     }
 
     #[test]

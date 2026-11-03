@@ -376,6 +376,7 @@ pub fn catalog_candidate(model: &ModelDefinition) -> Option<PathBuf> {
 }
 
 /// Whether the adopted file still holds the receipt of Hex's full check.
+#[cfg(any(not(target_os = "macos"), test))]
 pub fn catalog_verified(model: &ModelDefinition) -> bool {
     adopted(model).is_some_and(|adopted| {
         fs::metadata(&adopted.path).is_ok_and(|metadata| adopted.receipt.holds(&metadata))

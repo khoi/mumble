@@ -18,19 +18,10 @@
 
 use std::io::Write;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// How long quitting waits for the drain before ending the process anyway.
 const DEADLINE: Duration = Duration::from_secs(5);
-
-static QUITTING: AtomicBool = AtomicBool::new(false);
-
-/// Whether the process has begun quitting. Work that would outlast the
-/// drain, such as loading a model, checks this and stops instead.
-pub(crate) fn quitting() -> bool {
-    QUITTING.load(Ordering::Acquire)
-}
 
 /// Work that must finish before the process ends, run once by whichever
 /// quit path gets there first.
@@ -66,7 +57,6 @@ pub(crate) fn finish(drain: &Drain) -> ! {
 }
 
 fn finish_within(drain: &Drain, deadline: Duration) -> ! {
-    QUITTING.store(true, Ordering::Release);
     let _ = std::thread::Builder::new()
         .name("hex-exit-deadline".into())
         .spawn(move || {

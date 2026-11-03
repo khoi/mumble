@@ -62,12 +62,7 @@ enum Command {
         rune_args: Vec<String>,
     },
     /// Run Hex in the foreground without opening the window (systemd's entry point).
-    Service {
-        /// Run only the local API as a direct child whose stdin is owned by
-        /// the host application (the TypeScript SDK).
-        #[arg(long, hide = true)]
-        embedded: bool,
-    },
+    Service,
     /// Quit Hex after its accepted work finishes (same as `hex quit`).
     #[command(hide = true)]
     Stop,
@@ -101,7 +96,7 @@ pub(crate) fn run(shutdown: &'static AtomicBool) -> Result<()> {
     };
     // Before the log, which starts a thread: the service may need the
     // session's Wayland display (#756).
-    let adopted = matches!(command, Command::Service { embedded: false })
+    let adopted = matches!(command, Command::Service)
         .then(crate::linux::service::adopt_wayland_display)
         .flatten();
     // Rune reads its own flags (`--snap`, `--scene`, …) from the process
@@ -117,10 +112,8 @@ pub(crate) fn run(shutdown: &'static AtomicBool) -> Result<()> {
         tracing::info!(%wayland_display, "adopted the session's Wayland display");
     }
     // 2.3.1's updater installed this build into its own folder.
-    if matches!(
-        command,
-        Command::App { .. } | Command::Service { embedded: false }
-    ) && crate::updater::legacy::take_over()
+    if matches!(command, Command::App { .. } | Command::Service)
+        && crate::updater::legacy::take_over()
     {
         return Ok(());
     }
@@ -128,10 +121,7 @@ pub(crate) fn run(shutdown: &'static AtomicBool) -> Result<()> {
     let event_path = log_dir.join("live.ndjson");
     match command {
         Command::App { hidden, .. } => launch(&activation, !hidden, event_path, shutdown),
-        Command::Service { embedded: true } => {
-            crate::local_api::run_service(&log_dir, event_path, true, shutdown)
-        }
-        Command::Service { embedded: false } => {
+        Command::Service => {
             match crate::linux::app::run(event_path, shutdown, None) {
                 // A unit start that lost the race to another launch has nothing to do.
                 Err(_) if crate::linux::service::another_instance_answers() => Ok(()),

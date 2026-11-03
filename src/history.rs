@@ -753,11 +753,8 @@ mod tests {
         assert_eq!(recording_ids(&path), [id]);
 
         let file = store.recording_path(id).unwrap();
-        let clip = crate::transcription::service::AudioClip::decode_wav(std::io::BufReader::new(
-            fs::File::open(&file).unwrap(),
-        ))
-        .unwrap();
-        assert_eq!(clip.duration_ms, 100);
+        let samples = recordings::read(fs::File::open(&file).unwrap()).unwrap();
+        assert_eq!(samples, vec![0.25; 1_600]);
         let reopened = HistoryStore::open(path, HistoryRetention::Week, 3_000);
         assert!(reopened.entry(id).unwrap().has_recording());
         #[cfg(unix)]

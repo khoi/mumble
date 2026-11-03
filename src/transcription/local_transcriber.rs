@@ -414,16 +414,6 @@ impl LocalTranscriber {
         &self.selection == selection
     }
 
-    /// Brings an idle model's weights back before audio arrives, as loading
-    /// does; a model that ran recently is already warm.
-    pub(crate) fn prewarm(&mut self) -> Result<()> {
-        if self.session.ran_recently() {
-            return Ok(());
-        }
-        self.warm_on_silence()
-            .wrap_err("could not prewarm transcription model")
-    }
-
     /// Transcribes a complete 16 kHz clip, padded as a dictation's clip is.
     pub(crate) fn transcribe_clip(&mut self, mut samples: Vec<f32>) -> Result<String> {
         crate::dictation::pad_for_parakeet(&mut samples);
@@ -524,38 +514,6 @@ fn output_truncated(error: &color_eyre::eyre::Report) -> bool {
             Some(transcribe_cpp::Error::OutputTruncated { .. })
         )
     })
-}
-
-/// The local API's own model, loaded for the selection a host asks for
-/// when the dictation engine holds another one.
-#[derive(Default)]
-pub(crate) struct WarmLocal {
-    active: Option<LocalTranscriber>,
-}
-
-impl WarmLocal {
-    /// The loaded model, without switching or loading one.
-    pub(crate) fn active(&mut self) -> Option<&mut LocalTranscriber> {
-        self.active.as_mut()
-    }
-
-    pub(crate) fn activate(
-        &mut self,
-        selection: &TranscriptionSelection,
-    ) -> Result<&mut LocalTranscriber> {
-        if !self
-            .active
-            .as_ref()
-            .is_some_and(|model| model.matches_selection(selection))
-        {
-            self.active = None;
-            self.active = Some(LocalTranscriber::load(selection)?);
-        }
-        Ok(self
-            .active
-            .as_mut()
-            .expect("activated transcriber must be available"))
-    }
 }
 
 /// A running listener's model: the one it transcribes with, and the one it

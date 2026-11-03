@@ -1,13 +1,10 @@
-//! Pause detection over 16 kHz audio, so rolling transcription cuts chunks at
-//! natural pauses.
+//! Pause detection over 16 kHz audio, so a dictation stream hears only the
+//! ends of long pauses and the release tail grows while speech runs on.
 //!
 //! Speech is any 20 ms frame at least 12 dB above an adaptive noise floor and
 //! never quieter than -55 dBFS. The floor starts at the first frame, falls
 //! immediately, and rises slowly, so speech between word gaps cannot drag it
-//! up to the speech level. A piece ends in the middle of a pause, leaving both
-//! neighbours some silence as padding.
-
-use std::time::Duration;
+//! up to the speech level.
 
 const SAMPLE_RATE: usize = 16_000;
 pub(crate) const FRAME_SAMPLES: usize = SAMPLE_RATE / 50;
@@ -22,10 +19,6 @@ const QUIET_MINIMUM_DB: f32 = -70.0;
 const LOWEST_FLOOR_DB: f32 = -90.0;
 /// About 3 dB per second at 50 frames per second.
 const FLOOR_RISE_DB_PER_FRAME: f32 = 0.06;
-const MINIMUM_PIECE: Duration = Duration::from_secs(3);
-const PAUSE: Duration = Duration::from_millis(600);
-const LONG_PIECE: Duration = Duration::from_secs(8);
-const LONG_PIECE_PAUSE: Duration = Duration::from_millis(300);
 
 /// One frame against the noise floor. A frame can be neither quiet nor
 /// speech, but never both.
@@ -89,65 +82,6 @@ impl SpeechFrames {
     }
 }
 
-#[derive(Default)]
-pub struct PauseSegmenter {
-    speech: SpeechFrames,
-    frame: Vec<f32>,
-    position: usize,
-    piece_start: usize,
-    silent_frames: usize,
-    heard_speech: bool,
-}
-
-impl PauseSegmenter {
-    /// Consumes contiguous samples and returns the last cut found within them,
-    /// as an absolute sample offset from the first sample ever pushed.
-    pub fn push(&mut self, mut samples: &[f32]) -> Option<usize> {
-        let mut cut = None;
-        while !samples.is_empty() {
-            let take = samples.len().min(FRAME_SAMPLES - self.frame.len());
-            self.frame.extend_from_slice(&samples[..take]);
-            samples = &samples[take..];
-            if self.frame.len() == FRAME_SAMPLES {
-                cut = self.complete_frame().or(cut);
-                self.frame.clear();
-            }
-        }
-        cut
-    }
-
-    fn complete_frame(&mut self) -> Option<usize> {
-        self.position += FRAME_SAMPLES;
-        if self.speech.is_speech(&self.frame) {
-            self.silent_frames = 0;
-            self.heard_speech = true;
-            return None;
-        }
-        self.silent_frames += 1;
-        let piece = self.position - self.piece_start;
-        let pause = if piece >= samples(LONG_PIECE) {
-            LONG_PIECE_PAUSE
-        } else {
-            PAUSE
-        };
-        if !self.heard_speech
-            || piece < samples(MINIMUM_PIECE)
-            || self.silent_frames * FRAME_SAMPLES < samples(pause)
-        {
-            return None;
-        }
-        let cut = self.position - self.silent_frames * FRAME_SAMPLES / 2;
-        self.piece_start = cut;
-        self.silent_frames = 0;
-        self.heard_speech = false;
-        Some(cut)
-    }
-}
-
-const fn samples(duration: Duration) -> usize {
-    duration.as_millis() as usize * SAMPLE_RATE / 1_000
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -191,71 +125,27 @@ pub(crate) mod tests {
         audio
     }
 
-    fn cuts(audio: &[f32], chunk: usize) -> Vec<usize> {
-        let mut segmenter = PauseSegmenter::default();
+    fn speech_frames(audio: &[f32]) -> usize {
+        let mut speech = SpeechFrames::default();
         audio
-            .chunks(chunk)
-            .filter_map(|chunk| segmenter.push(chunk))
-            .collect()
-    }
-
-    fn ms(samples: usize) -> usize {
-        samples * 1_000 / SAMPLE_RATE
-    }
-
-    #[test]
-    fn cuts_in_the_middle_of_a_pause_after_a_long_enough_piece() {
-        let audio = utterance(&[(4_000, 1_000), (2_000, 0)], -70.0);
-        let found = cuts(&audio, 147);
-        assert_eq!(found.len(), 1);
-        // Speech ends at 4.0 s; the 600 ms pause completes at 4.6 s.
-        assert_eq!(ms(found[0]), 4_300);
+            .as_chunks::<FRAME_SAMPLES>()
+            .0
+            .iter()
+            .filter(|frame| speech.is_speech(frame.as_slice()))
+            .count()
     }
 
     #[test]
-    fn short_pieces_wait_for_a_later_pause() {
-        let audio = utterance(&[(800, 650), (800, 650), (2_000, 800), (500, 0)], -70.0);
-        let found = cuts(&audio, 320);
-        assert_eq!(found.len(), 1, "{found:?}");
-        // The first two pauses close pieces under three seconds.
-        assert_eq!(ms(found[0]), 5_200);
-    }
-
-    #[test]
-    fn short_pauses_split_only_long_pieces() {
-        let audio = utterance(&[(5_000, 400), (4_000, 400), (1_000, 0)], -70.0);
-        let found = cuts(&audio, 480);
-        assert_eq!(found.len(), 1, "{found:?}");
-        // 400 ms is too short at 5.4 s but enough after 8 s.
-        assert_eq!(ms(found[0]), 9_550);
-    }
-
-    #[test]
-    fn noise_floor_adapts_to_room_noise() {
-        let audio = utterance(&[(4_000, 1_000), (4_000, 1_000), (500, 0)], -40.0);
-        assert_eq!(cuts(&audio, 320).len(), 2);
-
-        // A noisy room with no speech never cuts.
+    fn the_noise_floor_adapts_to_room_noise() {
         let mut seed = 3;
-        assert!(cuts(&noise(20_000, -40.0, &mut seed), 320).is_empty());
+        assert_eq!(speech_frames(&noise(20_000, -40.0, &mut seed)), 0);
+        assert!(speech_frames(&utterance(&[(4_000, 1_000)], -40.0)) > 0);
     }
 
     #[test]
-    fn digital_silence_counts_as_a_pause_and_speech_still_registers_after_it() {
-        let audio = utterance(
-            &[(4_000, 1_000), (4_000, 2_000), (4_000, 1_000), (500, 0)],
-            f32::NEG_INFINITY,
-        );
-        let found = cuts(&audio, 512);
-        assert_eq!(found.len(), 3, "{found:?}");
-        assert_eq!(ms(found[0]), 4_300);
-        assert_eq!(ms(found[1]), 9_300);
-    }
-
-    #[test]
-    fn leading_silence_alone_never_cuts() {
+    fn speech_still_registers_after_digital_silence() {
         let mut audio = vec![0.0; SAMPLE_RATE * 5];
-        audio.extend(utterance(&[(2_000, 0)], -70.0));
-        assert!(cuts(&audio, 320).is_empty());
+        audio.extend(utterance(&[(2_000, 0)], f32::NEG_INFINITY));
+        assert!(speech_frames(&audio) > 0);
     }
 }

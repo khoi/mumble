@@ -258,7 +258,7 @@ pub(crate) fn run(
     crate::transcription::speech_detector::prewarm();
     // The engine outlives the output worker, which waits on its transcripts.
     let mut engine = Arc::new(TranscriptionEngine::start(transcriber)?);
-    // The local API transcribes host audio on this engine's model.
+    // History's Transcribe again runs on this engine's model.
     engine.share();
     // Drop audio/hotkeys and close the job queue before joining slow output on
     // every exit, including failures during startup or recording.
@@ -491,8 +491,8 @@ pub(crate) fn run(
                 let old =
                     std::mem::replace(&mut engine, Arc::new(TranscriptionEngine::start(next)?));
                 engine.share();
-                // A host-audio request still transcribing holds the old
-                // engine a moment.
+                // A Transcribe again still running holds the old engine a
+                // moment.
                 if let Ok(old) = Arc::try_unwrap(old) {
                     old.retire();
                 }

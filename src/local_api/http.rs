@@ -12,7 +12,6 @@ pub(super) struct HttpRequest {
     pub(super) path: String,
     pub(super) authorization: Option<String>,
     pub(super) dictation_token: Option<String>,
-    pub(super) stream_token: Option<String>,
     pub(super) content_type: Option<String>,
     pub(super) content_length: Option<usize>,
     pub(super) body_prefix: Vec<u8>,
@@ -161,7 +160,6 @@ pub(super) fn reason(status: u16) -> &'static str {
         411 => "Length Required",
         413 => "Content Too Large",
         415 => "Unsupported Media Type",
-        429 => "Too Many Requests",
         431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
@@ -253,7 +251,6 @@ pub(super) fn read_request_until(
     }
     let mut authorization = None;
     let mut dictation_token = None;
-    let mut stream_token = None;
     let mut content_type = None;
     let mut content_length = None;
     for (index, line) in lines.enumerate() {
@@ -268,11 +265,6 @@ pub(super) fn read_request_until(
                 return Err(RequestReadError::Invalid);
             }
             dictation_token = Some(value.trim().to_owned());
-        } else if name.eq_ignore_ascii_case("x-hex-stream-token") {
-            if stream_token.is_some() {
-                return Err(RequestReadError::Invalid);
-            }
-            stream_token = Some(value.trim().to_owned());
         } else if name.eq_ignore_ascii_case("content-type") {
             content_type = Some(value.trim().to_owned());
         } else if name.eq_ignore_ascii_case("content-length") {
@@ -298,7 +290,6 @@ pub(super) fn read_request_until(
         path: path.into(),
         authorization,
         dictation_token,
-        stream_token,
         content_type,
         content_length,
         body_prefix,

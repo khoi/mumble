@@ -443,7 +443,7 @@ pub enum CaptureState {
 #[serde(rename_all = "kebab-case")]
 pub enum CaptureKind {
     Dictation,
-    /// A host-audio dictation through the local API (`POST /dictations`).
+    /// A programmatic dictation through the local API (`POST /dictations`).
     Service,
 }
 

@@ -238,7 +238,7 @@ pub fn run(
         crate::windows::audio_control::AudioSuppressor::start(while_dictating);
     let mut model = crate::transcription::local_transcriber::ModelSwap::new(selection);
     let mut engine = Arc::new(TranscriptionEngine::start(transcriber)?);
-    // The local API transcribes host audio on this engine's model.
+    // History's Transcribe again runs on this engine's model.
     engine.share();
     let mut finishing: Option<Finishing> = None;
     let (jobs, job_receiver) = mpsc::sync_channel::<OutputJob>(2);

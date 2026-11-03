@@ -342,7 +342,6 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
             developer_control: crate::DEVELOPER_FEATURES_ENABLED.then(|| developer_sender.clone()),
             dictation_control: Some(recognition_controls.clone()),
             control: Some(control_sender),
-            ..Default::default()
         },
     )?;
     let (indicator, indicator_events) = crate::dictation::indicator::channel();
