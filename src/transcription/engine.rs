@@ -102,6 +102,9 @@ pub(crate) enum Command {
         clip: Vec<f32>,
         offline: Offline,
         job: Job,
+        /// The capture's released cloud stream, whose answer comes before
+        /// the model (Labs › Cloud transcription).
+        cloud: Option<crate::transcription::cloud::CloudAnswer>,
     },
     /// An offline run that waits for an open live stream to end instead of
     /// interrupting it, such as a capture's word chunk or a `/streams`
@@ -405,23 +408,49 @@ pub struct TranscriptionEngine {
 /// The GGUF selection the engine's model held after its last command.
 type Held = Arc<Mutex<Option<crate::transcription::models::TranscriptionSelection>>>;
 
-/// A live stream for one capture. Feed it the capture's 16 kHz audio in order,
+/// A live stream for one capture: the model's, or Labs › Cloud
+/// transcription's service. Feed it the capture's 16 kHz audio in order,
 /// then either [`TranscriptionEngine::finish`] or drop it to cancel.
 pub struct LiveStream {
-    id: u64,
-    cancel: CancelToken,
     fed: usize,
-    finished: bool,
-    commands: Sender<Command>,
     /// The stream's text so far, with live text on, and the last version
     /// [`Self::take_partial`] returned.
     partials: Option<(Partials, u64)>,
+    feeds: Feeds,
+}
+
+/// Where a live stream's audio goes.
+enum Feeds {
+    Model(ModelFeed),
+    Cloud(crate::transcription::cloud::CloudStream),
+}
+
+/// A stream on the engine's model, cancelled when dropped unfinished.
+struct ModelFeed {
+    id: u64,
+    cancel: CancelToken,
+    finished: bool,
+    commands: Sender<Command>,
+}
+
+impl Drop for ModelFeed {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.commands.send(Command::Cancel { stream: self.id });
+        }
+    }
 }
 
 impl LiveStream {
     /// Total samples handed to the stream so far.
     pub fn fed(&self) -> usize {
         self.fed
+    }
+
+    /// Whether the engine was told to abandon this model stream.
+    #[cfg(test)]
+    fn cancelled(&self) -> bool {
+        matches!(&self.feeds, Feeds::Model(feed) if feed.cancel.is_cancelled())
     }
 
     /// The model's text for the audio fed so far, when it changed since the
@@ -438,17 +467,14 @@ impl LiveStream {
             return;
         }
         self.fed += samples.len();
-        let _ = self.commands.send(Command::Feed {
-            stream: self.id,
-            samples: samples.to_vec(),
-        });
-    }
-}
-
-impl Drop for LiveStream {
-    fn drop(&mut self) {
-        if !self.finished {
-            let _ = self.commands.send(Command::Cancel { stream: self.id });
+        match &mut self.feeds {
+            Feeds::Model(feed) => {
+                let _ = feed.commands.send(Command::Feed {
+                    stream: feed.id,
+                    samples: samples.to_vec(),
+                });
+            }
+            Feeds::Cloud(cloud) => cloud.feed(samples),
         }
     }
 }
@@ -605,15 +631,24 @@ impl TranscriptionEngine {
         self
     }
 
-    /// Opens a live stream when the loaded model can stream on this device,
-    /// unless Labs › Cloud transcription sends the whole clip away instead.
+    /// Opens a live stream: to Labs › Cloud transcription's service while it
+    /// is on (none while that service refuses streams), else on the loaded
+    /// model when it can stream on this device.
     pub fn begin(&self) -> Option<LiveStream> {
-        if !self.streams.load(Ordering::Acquire) || crate::labs::cloud_transcription().is_some() {
+        let partials = (self.live_text)().then(Partials::default);
+        if let Some(provider) = crate::labs::cloud_transcription() {
+            let cloud = crate::transcription::cloud::CloudStream::open(provider, partials.clone())?;
+            return Some(LiveStream {
+                fed: 0,
+                partials: partials.map(|partials| (partials, 0)),
+                feeds: Feeds::Cloud(cloud),
+            });
+        }
+        if !self.streams.load(Ordering::Acquire) {
             return None;
         }
         let id = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
         let cancel = CancelToken::new();
-        let partials = (self.live_text)().then(Partials::default);
         self.requests.fetch_add(1, Ordering::AcqRel);
         self.commands
             .send(Command::Begin {
@@ -623,12 +658,14 @@ impl TranscriptionEngine {
             })
             .ok()?;
         Some(LiveStream {
-            id,
-            cancel,
             fed: 0,
-            finished: false,
-            commands: self.commands.clone(),
             partials: partials.map(|partials| (partials, 0)),
+            feeds: Feeds::Model(ModelFeed {
+                id,
+                cancel,
+                finished: false,
+                commands: self.commands.clone(),
+            }),
         })
     }
 
@@ -690,18 +727,26 @@ impl TranscriptionEngine {
         clip: Vec<f32>,
         offline: Offline,
     ) -> Result<PendingTranscript> {
-        let (stream, stream_cancel) = match stream {
-            Some(mut stream) => {
-                stream.finished = true;
-                (Some(stream.id), Some(stream.cancel.clone()))
+        let fed = stream.as_ref().map_or(0, |stream| stream.fed);
+        let (stream, stream_cancel, cloud) = match stream.map(|stream| stream.feeds) {
+            // Released at once, so the service finishes while earlier work runs.
+            Some(Feeds::Cloud(cloud)) => {
+                let overfed = fed > clip.len() + MAX_OVERFED_SAMPLES;
+                let tail = &clip[fed.min(clip.len())..];
+                (None, None, Some(cloud.end(tail, overfed)))
             }
-            None => (None, None),
+            Some(Feeds::Model(mut feed)) => {
+                feed.finished = true;
+                (Some(feed.id), Some(feed.cancel.clone()), None)
+            }
+            None => (None, None, None),
         };
         self.request(clip.len(), stream_cancel, |job| Command::Finish {
             stream,
             clip,
             offline,
             job,
+            cloud,
         })
     }
 
@@ -980,6 +1025,7 @@ impl Worker {
                     clip,
                     offline,
                     job,
+                    cloud,
                 } => {
                     let source = match stream {
                         // The stream was already closed: its begin failed or
@@ -989,7 +1035,7 @@ impl Worker {
                     };
                     self.dictating.store(true, Ordering::Release);
                     crate::dictation::vocabulary::for_dictation(|| {
-                        self.run_dictation(clip, offline, source, job);
+                        self.run_dictation(clip, offline, source, job, cloud);
                     });
                     self.dictating.store(false, Ordering::Release);
                 }
@@ -1112,15 +1158,22 @@ impl Worker {
         }
     }
 
-    /// A finished dictation without a usable stream: Labs › Cloud
-    /// transcription's service first, then the model, which a cloud answer
-    /// never loads.
-    fn run_dictation(&mut self, clip: Vec<f32>, offline: Offline, source: Source, job: Job) {
+    /// A finished dictation without a usable model stream: Labs › Cloud
+    /// transcription's service first (its stream's answer, or the whole
+    /// clip), then the model, which a cloud answer never loads.
+    fn run_dictation(
+        &mut self,
+        clip: Vec<f32>,
+        offline: Offline,
+        source: Source,
+        job: Job,
+        cloud: Option<crate::transcription::cloud::CloudAnswer>,
+    ) {
         let Some((job, started)) = self.admit(job) else {
             return;
         };
         self.running.enter(&job.cancel);
-        match crate::transcription::cloud::dictation(&clip, &job.cancel) {
+        match crate::transcription::cloud::dictation(&clip, &job.cancel, cloud) {
             Some(text) => job.finish(Ok(Transcribed {
                 text,
                 source: Source::Cloud,
@@ -1958,6 +2011,76 @@ mod tests {
         worker.join().unwrap();
     }
 
+    fn cloud_stream(
+        provider: crate::transcription::cloud::CloudProvider,
+        reply: Result<String, crate::transcription::cloud::CloudError>,
+    ) -> (LiveStream, Receiver<Vec<f32>>) {
+        let (cloud, heard) = crate::transcription::cloud::fake(provider, reply);
+        let stream = LiveStream {
+            fed: 0,
+            partials: None,
+            feeds: Feeds::Cloud(cloud),
+        };
+        (stream, heard)
+    }
+
+    /// The finish a released cloud stream hands the engine.
+    fn handed_over(
+        commands: &Receiver<Command>,
+    ) -> (Vec<f32>, crate::transcription::cloud::CloudAnswer) {
+        match commands.try_recv() {
+            Ok(Command::Finish {
+                stream: None,
+                clip,
+                cloud: Some(answer),
+                ..
+            }) => (clip, answer),
+            _ => panic!("the engine was handed the clip and the stream's answer"),
+        }
+    }
+
+    #[test]
+    fn a_released_cloud_stream_hears_the_rest_of_the_clip_at_once() {
+        use crate::transcription::cloud::CloudProvider;
+        let (engine, commands) = TranscriptionEngine::for_test();
+        let (mut stream, heard) = cloud_stream(CloudProvider::Claude, Ok("hello there".into()));
+        stream.feed(&[0.1, 0.2]);
+        let _pending = engine
+            .finish_with(
+                Some(stream),
+                vec![0.1, 0.2, 0.3, 0.4],
+                Box::new(|_, _| panic!("a cloud answer never reaches the model")),
+            )
+            .unwrap();
+        // No worker runs here: the service hears the end before the engine
+        // reaches the finish.
+        assert_eq!(
+            heard.recv_timeout(Duration::from_secs(5)).unwrap(),
+            [0.1, 0.2, 0.3, 0.4]
+        );
+        let (clip, answer) = handed_over(&commands);
+        assert_eq!(clip, [0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(
+            answer.wait(&CancelToken::new()).as_deref(),
+            Ok("hello there")
+        );
+    }
+
+    #[test]
+    fn a_cloud_stream_that_heard_past_the_clip_is_dropped() {
+        use crate::transcription::cloud::CloudProvider;
+        let (engine, commands) = TranscriptionEngine::for_test();
+        let (mut stream, heard) = cloud_stream(CloudProvider::Claude, Ok("and more".into()));
+        stream.feed(&[0.1; 16_000]);
+        let _pending = engine
+            .finish_with(Some(stream), vec![0.1; 8_000], silent())
+            .unwrap();
+        assert!(heard.recv_timeout(Duration::from_secs(5)).is_err());
+        let (clip, answer) = handed_over(&commands);
+        assert_eq!(clip.len(), 8_000, "the exact clip is transcribed");
+        assert!(answer.wait(&CancelToken::new()).is_err());
+    }
+
     #[test]
     fn a_timed_out_job_cancels_only_itself_not_the_next_capture() {
         let (engine, commands) = TranscriptionEngine::for_test();
@@ -1969,14 +2092,14 @@ mod tests {
         let second = engine.begin().expect("the test engine streams");
         assert_eq!(first.wait().unwrap_err(), "transcription timed out");
         assert!(first_job.cancel.is_cancelled());
-        assert!(!second.cancel.is_cancelled(), "capture 2's stream survives");
+        assert!(!second.cancelled(), "capture 2's stream survives");
         let Some(Command::Begin { cancel, .. }) = commands.try_iter().next() else {
             panic!("capture 2 began a stream");
         };
         assert!(!cancel.is_cancelled());
         // A capture that begins after the timeout is untouched too.
         let third = engine.begin().expect("the test engine streams");
-        assert!(!third.cancel.is_cancelled());
+        assert!(!third.cancelled());
     }
 
     #[test]

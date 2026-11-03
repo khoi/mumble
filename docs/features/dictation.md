@@ -711,8 +711,6 @@ Model advertises streaming, GPU device             // dictate.streaming
   Load or switch model -> Probe a one-second silent stream (also prewarms the stream graph)
        ├── Succeeds -> Stream shortcut captures
        └── Fails, CPU device, Apple Speech, or HEX_STREAMING=0 -> Whole-clip path only
-  Labs › Cloud transcription on -> No stream opens; the whole clip goes to Claude or Codex
-       first, then Hex's model on any failure (Cloud transcription in labs.md)
   Shortcut capture passes the hold threshold (Toggle on Windows and Linux: on press)
     -> Open one live stream; feed the 16 kHz backlog, then every 160 ms
        // same audio as the final clip, pre-roll included; never blocks capture
@@ -762,6 +760,12 @@ Model advertises streaming, GPU device             // dictate.streaming
   │   Whisper turbo's 5.36%, Hex's run), then Whisper turbo for Vocabulary (#952)
   └── Every other available model follows without a badge, selectable and
       deletable; never auto-switched or auto-downloaded (setup.language-select)
+
+Labs › Cloud transcription on                     // its own guarantees: Cloud transcription in labs.md
+  The stream goes to Claude or Codex instead of the model, on any device; none of the
+  model stream's finish checks above apply (no 400 ms of silence, no 1.5 s finish, no
+  late-phrase check) except one: a stream that heard more than 250 ms past the clip is
+  dropped and the exact clip is sent instead
 ```
 
 Source: [transcription/engine.rs](../../src/transcription/engine.rs) (one thread

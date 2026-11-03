@@ -1,31 +1,33 @@
 //! Claude's dictation service as Claude Code's voice mode reaches it: the
 //! sign-in Claude Code saved (its token variable, then the macOS Keychain,
 //! then `.credentials.json`), and its speech-to-text WebSocket with Claude
-//! Code's own identity.
+//! Code's own identity, fed while the dictation records.
 
-use std::io::{ErrorKind, Read, Write};
-use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
+use tungstenite::Message;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::HeaderValue;
 use tungstenite::protocol::frame::coding::CloseCode;
-use tungstenite::{HandshakeError, Message};
 
 use super::CloudError;
+use super::socket::{self, Event};
+use super::stream::{Audio, joined, publish};
+use crate::transcription::engine::Partials;
 
 const HOST: &str = "api.anthropic.com";
 const PATH: &str = "/api/ws/speech_to_text/voice_stream";
 const CLI_VERSION: &str = "2.1.317";
-/// One second of 16 kHz 16-bit audio per binary frame.
+/// One second of 16 kHz 16-bit audio per binary frame at most.
 const FRAME_BYTES: usize = 32_000;
 const KEEP_ALIVE: &str = r#"{"type":"KeepAlive"}"#;
 const CLOSE_STREAM: &str = r#"{"type":"CloseStream"}"#;
 const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(8);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-const POLL: Duration = Duration::from_millis(250);
+/// After CloseStream, the service needs at least this long, or half the
+/// length of audio still unheard (a whole clip sent at once).
+const MIN_FINISH: Duration = Duration::from_secs(15);
 const MAX_KEYTERMS: usize = 50;
 const MAX_KEYTERM_CHARS: usize = 1_024;
 const LANGUAGES: [&str; 20] = [
@@ -33,47 +35,74 @@ const LANGUAGES: [&str; 20] = [
     "cs", "da", "sv", "no",
 ];
 
-type Socket = tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<Bounded>>;
-
-/// The clip's text, or why there is none, by `deadline`: connecting,
-/// sending, and waiting for the service all count against it.
+/// A whole clip's text, or why there is none, by `deadline`.
 pub(super) fn transcribe(
     clip: &[f32],
     language: &str,
     keyterms: &[String],
     deadline: Instant,
 ) -> Result<String, CloudError> {
+    stream(
+        &Audio::whole(clip),
+        language,
+        keyterms,
+        None,
+        Some(deadline),
+    )
+}
+
+/// Sends `audio` as it arrives and returns the text once the service
+/// closes after the end; every read and write stops by `deadline`.
+pub(super) fn stream(
+    audio: &Audio,
+    language: &str,
+    keyterms: &[String],
+    partials: Option<&Partials>,
+    deadline: Option<Instant>,
+) -> Result<String, CloudError> {
     let language = spoken_language(language)?;
-    let request = request(&token()?, language, keyterms)?;
-    let mut socket = connect(request, deadline)?;
-    let failed = |error: tungstenite::Error| CloudError::Failed(format!("Claude: {error}"));
-    socket.send(Message::text(KEEP_ALIVE)).map_err(failed)?;
-    let pcm: Vec<u8> = super::pcm16(clip).flat_map(i16::to_le_bytes).collect();
-    for frame in pcm.chunks(FRAME_BYTES) {
-        socket
-            .send(Message::binary(frame.to_vec()))
-            .map_err(failed)?;
-    }
-    socket.send(Message::text(CLOSE_STREAM)).map_err(failed)?;
+    let mut socket = socket::connect(HOST, request(&token()?, language, keyterms)?, deadline)?;
+    socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
     let mut keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
     let mut transcript = Transcript::default();
+    let mut ending = false;
     loop {
-        if Instant::now() >= deadline {
-            return Err(CloudError::Failed("Claude didn't finish in time".into()));
+        if !ending {
+            let taken = audio.take()?;
+            let pcm: Vec<u8> = super::pcm16(&taken.audio)
+                .flat_map(i16::to_le_bytes)
+                .collect();
+            for frame in pcm.chunks(FRAME_BYTES) {
+                socket::send(&mut socket, Message::binary(frame.to_vec()))?;
+            }
+            if taken.ended {
+                socket::send(&mut socket, Message::text(CLOSE_STREAM))?;
+                let unheard = Duration::from_secs_f64(taken.audio.len() as f64 / 16_000.0);
+                let finish = Instant::now() + MIN_FINISH.max(unheard / 2);
+                socket::limit(
+                    &mut socket,
+                    Some(deadline.map_or(finish, |deadline| deadline.min(finish))),
+                );
+                ending = true;
+            }
         }
-        match socket.read() {
-            Ok(Message::Text(frame)) => transcript.frame(frame.as_str())?,
-            Ok(Message::Close(frame)) => return transcript.closed(frame.map(|frame| frame.code)),
-            Ok(_) => {}
-            Err(tungstenite::Error::Io(error))
-                if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
-            {
-                if Instant::now() >= keep_alive {
-                    socket.send(Message::text(KEEP_ALIVE)).map_err(failed)?;
-                    keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
+        match socket::next(&mut socket)? {
+            Event::Text(frame) => {
+                if transcript.frame(&frame)? {
+                    publish(partials, transcript.committed(), transcript.pending.clone());
                 }
             }
-            Err(error) => return Err(failed(error)),
+            Event::Closed(code) if ending => return transcript.closed(code),
+            Event::Closed(_) => {
+                return Err(CloudError::Failed(
+                    "Claude closed the stream before the dictation ended".into(),
+                ));
+            }
+            Event::Idle if Instant::now() >= keep_alive => {
+                socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
+                keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
+            }
+            Event::Idle => {}
         }
     }
 }
@@ -98,7 +127,8 @@ struct Transcript {
 }
 
 impl Transcript {
-    fn frame(&mut self, data: &str) -> Result<(), CloudError> {
+    /// Takes one frame; true when the text changed.
+    fn frame(&mut self, data: &str) -> Result<bool, CloudError> {
         #[derive(Deserialize)]
         struct Frame {
             #[serde(rename = "type")]
@@ -106,34 +136,39 @@ impl Transcript {
             data: Option<String>,
         }
         let Ok(frame) = serde_json::from_str::<Frame>(data) else {
-            return Ok(());
+            return Ok(false);
         };
         match frame.kind.as_str() {
-            "TranscriptText" => self.pending = frame.data.unwrap_or_default(),
+            "TranscriptText" => {
+                let text = frame.data.unwrap_or_default();
+                let changed = text != self.pending;
+                self.pending = text;
+                Ok(changed)
+            }
             "TranscriptEndpoint" if !self.pending.is_empty() => {
                 self.committed.push(std::mem::take(&mut self.pending));
+                Ok(true)
             }
-            "TranscriptError" | "error" => {
-                return Err(CloudError::Failed(
-                    "Claude reported a transcription error".into(),
-                ));
-            }
-            _ => {}
+            "TranscriptError" | "error" => Err(CloudError::Failed(
+                "Claude reported a transcription error".into(),
+            )),
+            _ => Ok(false),
         }
-        Ok(())
+    }
+
+    fn committed(&self) -> String {
+        joined(self.committed.iter().map(String::as_str))
     }
 
     /// The text once the service closed the socket with `code`.
     fn closed(self, code: Option<CloseCode>) -> Result<String, CloudError> {
         match code {
-            None | Some(CloseCode::Normal) => Ok(self
-                .committed
-                .iter()
-                .chain([&self.pending])
-                .map(|segment| segment.trim())
-                .filter(|segment| !segment.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ")),
+            None | Some(CloseCode::Normal) => Ok(joined(
+                self.committed
+                    .iter()
+                    .chain([&self.pending])
+                    .map(String::as_str),
+            )),
             Some(code) => Err(CloudError::Failed(format!(
                 "Claude closed the connection ({})",
                 u16::from(code)
@@ -211,94 +246,6 @@ fn keyterms_header(terms: &[String]) -> String {
         kept.push(clean);
     }
     kept.join(",")
-}
-
-fn connect(
-    request: tungstenite::handshake::client::Request,
-    deadline: Instant,
-) -> Result<Socket, CloudError> {
-    let unreachable =
-        |detail: String| CloudError::Failed(format!("Couldn't reach {HOST}: {detail}"));
-    let step = CONNECT_TIMEOUT.min(deadline.saturating_duration_since(Instant::now()));
-    let stream = crate::net::tunnel(HOST, 443, step.max(POLL)).map_err(CloudError::Failed)?;
-    let timeouts = |read| {
-        stream
-            .set_read_timeout(Some(read))
-            .and_then(|()| stream.set_write_timeout(Some(CONNECT_TIMEOUT)))
-            .map_err(|error| unreachable(error.to_string()))
-    };
-    timeouts(CONNECT_TIMEOUT)?;
-    // A clone shares the socket, so its timeouts still apply under TLS.
-    let control = stream
-        .try_clone()
-        .map_err(|error| unreachable(error.to_string()))?;
-    let socket = match tungstenite::client_tls(request, Bounded { stream, deadline }) {
-        Ok((socket, _)) => socket,
-        Err(HandshakeError::Failure(tungstenite::Error::Http(response))) => {
-            return Err(refusal(
-                response.status().as_u16(),
-                response.headers().contains_key("cf-mitigated"),
-            ));
-        }
-        Err(HandshakeError::Failure(error)) => return Err(unreachable(error.to_string())),
-        Err(HandshakeError::Interrupted(_)) => {
-            return Err(unreachable("the connection timed out".into()));
-        }
-    };
-    control
-        .set_read_timeout(Some(POLL))
-        .map_err(|error| unreachable(error.to_string()))?;
-    Ok(socket)
-}
-
-/// The socket, refusing every read and write once `deadline` passes, so a
-/// service that trickles bytes can't hold a read open past it.
-struct Bounded {
-    stream: TcpStream,
-    deadline: Instant,
-}
-
-impl Bounded {
-    fn check(&self) -> std::io::Result<()> {
-        if Instant::now() < self.deadline {
-            Ok(())
-        } else {
-            Err(std::io::Error::new(
-                ErrorKind::TimedOut,
-                "Claude didn't finish in time",
-            ))
-        }
-    }
-}
-
-impl Read for Bounded {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        self.check()?;
-        self.stream.read(buffer)
-    }
-}
-
-impl Write for Bounded {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        self.check()?;
-        self.stream.write(buffer)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.stream.flush()
-    }
-}
-
-/// Why the service refused the WebSocket. A 403 can mean the account has no
-/// voice access, so it isn't read as signed out.
-fn refusal(status: u16, mitigated: bool) -> CloudError {
-    match status {
-        _ if mitigated => CloudError::Refused(status),
-        401 => CloudError::SignedOut,
-        429 => CloudError::RateLimited,
-        403 => CloudError::Refused(status),
-        status => CloudError::Failed(format!("Claude answered HTTP {status}")),
-    }
 }
 
 /// Claude Code's sign-in, read the way it reads it.
@@ -451,6 +398,34 @@ mod tests {
     }
 
     #[test]
+    fn live_text_shows_committed_words_then_the_segment_in_progress() {
+        let mut transcript = Transcript::default();
+        assert!(
+            transcript
+                .frame(r#"{"type":"TranscriptText","data":"so the"}"#)
+                .unwrap()
+        );
+        assert!(
+            !transcript
+                .frame(r#"{"type":"TranscriptText","data":"so the"}"#)
+                .unwrap()
+        );
+        assert!(
+            transcript
+                .frame(r#"{"type":"TranscriptEndpoint"}"#)
+                .unwrap()
+        );
+        assert!(
+            transcript
+                .frame(r#"{"type":"TranscriptText","data":"plan is"}"#)
+                .unwrap()
+        );
+        assert_eq!(transcript.committed(), "so the");
+        assert_eq!(transcript.pending, "plan is");
+        assert!(!transcript.frame(r#"{"type":"Metadata"}"#).unwrap());
+    }
+
+    #[test]
     fn segments_join_once_the_service_closes_normally() {
         let frames = [
             r#"{"type":"TranscriptText","data":"hello"}"#,
@@ -496,24 +471,6 @@ mod tests {
     }
 
     #[test]
-    fn a_passed_deadline_refuses_reads_and_writes() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        let mut bounded = Bounded {
-            stream,
-            deadline: Instant::now(),
-        };
-        assert_eq!(
-            bounded.read(&mut [0; 4]).unwrap_err().kind(),
-            ErrorKind::TimedOut
-        );
-        assert_eq!(
-            bounded.write(b"late").unwrap_err().kind(),
-            ErrorKind::TimedOut
-        );
-    }
-
-    #[test]
     fn auto_dictates_in_english_and_unsupported_languages_stay_local() {
         assert_eq!(spoken_language("auto"), Ok("en"));
         assert_eq!(spoken_language("de"), Ok("de"));
@@ -549,15 +506,6 @@ mod tests {
         );
         assert_eq!(access_token(Some("{}"), 0.0), Err(CloudError::SignedOut));
         assert_eq!(access_token(None, 0.0), Err(CloudError::SignedOut));
-    }
-
-    #[test]
-    fn refusals_name_why() {
-        assert_eq!(refusal(401, false), CloudError::SignedOut);
-        assert_eq!(refusal(401, true), CloudError::Refused(401));
-        assert_eq!(refusal(403, false), CloudError::Refused(403));
-        assert_eq!(refusal(429, false), CloudError::RateLimited);
-        assert!(matches!(refusal(500, false), CloudError::Failed(_)));
     }
 
     #[test]
