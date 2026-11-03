@@ -49,7 +49,6 @@ pub(crate) enum ShortcutTarget {
     #[default]
     Dictation,
     PasteLast,
-    Capture,
     RawDictation,
     /// Toggle mode's cancel shortcut.
     Cancel,
@@ -770,10 +769,8 @@ impl LinuxDesktopHost {
             return;
         };
         let key = format!(
-            "{wanted} {:?} {:?} {:?}",
-            self.settings.dictation_hotkey,
-            self.settings.paste_last_hotkey,
-            capture_shortcut(&self.settings)
+            "{wanted} {:?} {:?}",
+            self.settings.dictation_hotkey, self.settings.paste_last_hotkey
         );
         if self.gnome_shortcuts.as_deref() == Some(key.as_str()) {
             return;
@@ -1062,7 +1059,6 @@ impl LinuxDesktopHost {
                     match target {
                         ShortcutTarget::Dictation => settings.dictation_hotkey = binding,
                         ShortcutTarget::PasteLast => settings.paste_last_hotkey = Some(binding),
-                        ShortcutTarget::Capture => settings.capture.hotkey = binding,
                         ShortcutTarget::RawDictation => {
                             settings.raw_dictation_hotkey = Some(binding)
                         }
@@ -1240,16 +1236,6 @@ impl LinuxDesktopHost {
 
 /// Saves one host-owned change on top of the current `settings.json`, so
 /// edits the window saved meanwhile survive.
-/// Annotate's shortcut, while Annotate is on.
-fn capture_shortcut(settings: &AppSettings) -> Option<&crate::app_settings::HotkeyBinding> {
-    #[cfg(hex_capture)]
-    if settings.capture.enabled {
-        return Some(&settings.capture.hotkey);
-    }
-    let _ = settings;
-    None
-}
-
 fn settings_modified() -> Option<std::time::SystemTime> {
     let path = crate::app_settings::path().ok()?;
     std::fs::metadata(path)

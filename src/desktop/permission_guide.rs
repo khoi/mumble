@@ -26,7 +26,6 @@ const fn code(kind: PermissionKind) -> i32 {
         PermissionKind::Accessibility => 1,
         PermissionKind::Microphone => 2,
         PermissionKind::SystemAudio => 3,
-        PermissionKind::ScreenRecording => 4,
     }
 }
 
@@ -135,7 +134,7 @@ pub(crate) fn clear_legacy_entries_async(kind: PermissionKind) {
     }
     let guard = match kind {
         PermissionKind::Accessibility => &ACCESSIBILITY_CLEARED,
-        PermissionKind::SystemAudio | PermissionKind::ScreenRecording => &SCREEN_AUDIO_CLEARED,
+        PermissionKind::SystemAudio => &SCREEN_AUDIO_CLEARED,
         PermissionKind::Microphone => return,
     };
     if guard.swap(true, Ordering::Relaxed) {

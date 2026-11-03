@@ -40,7 +40,7 @@ expect_rejection 'wrong executable name'
 mkdir -p "$bundle/Contents/MacOS"
 printf '#!/bin/sh\n' >"$bundle/Contents/MacOS/hex"
 chmod +x "$bundle/Contents/MacOS/hex"
-expect_rejection 'scrawl-helper is missing'
+expect_rejection 'packaged executable is not arm64-only'
 
 for script in build-app.sh build-service-app.sh release-app.sh; do
   if output=$(env -u HEX_TEAM_ID sh "$root/scripts/$script" 2>&1); then

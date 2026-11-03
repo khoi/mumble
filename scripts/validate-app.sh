@@ -39,9 +39,6 @@ plist_value() {
 [ ! -e "$bundle/Contents/Frameworks/Sparkle.framework" ] || fail "Sparkle.framework is still bundled"
 [ "$(plist_value LSUIElement)" = true ] || fail "menu-bar application policy is disabled"
 [ -x "$bundle/Contents/MacOS/hex" ] || fail "packaged executable is missing"
-# The `capture` experiment's movie decoder, and the camera its iPhone mirror asks for.
-[ -x "$bundle/Contents/MacOS/scrawl-helper" ] || fail "scrawl-helper is missing"
-plist_value NSCameraUsageDescription >/dev/null 2>&1 || fail "Info.plist does not explain the camera"
 [ "$(lipo -archs "$bundle/Contents/MacOS/hex")" = arm64 ] || fail "packaged executable is not arm64-only"
 [ -x "$bundle/Contents/Library/HexMicrophone.driver/Contents/MacOS/HexMicrophoneDriver" ] || fail "bundled HexMicrophone.driver is missing"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Contents/Library/HexMicrophone.driver/Contents/Info.plist")" = anomaly.hex.microphone.driver ] || fail "bundled driver has wrong bundle identifier"

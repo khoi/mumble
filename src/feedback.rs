@@ -86,20 +86,6 @@ pub enum Tone {
     OnboardingSuccess,
     /// A first-run onboarding cue (typing clacks, shortcut keycap, motion landings).
     Onboarding(OnboardingTone),
-    /// A Scrawl capture started recording.
-    #[cfg(hex_capture)]
-    CaptureStart,
-    /// It stopped and is being written.
-    #[cfg(hex_capture)]
-    CaptureStop,
-    /// Its auto-send went, once Undo ran out.
-    #[cfg(hex_capture)]
-    CaptureSent,
-    /// A send was taken back, or a recording cancelled.
-    #[cfg(hex_capture)]
-    CaptureUndo,
-    #[cfg(hex_capture)]
-    CaptureFailed,
 }
 
 /// A request to the playback worker. The start tone of a shortcut press is
@@ -774,8 +760,6 @@ struct Sounds {
     /// In [`SoundSet::ALL`]'s order.
     sets: Vec<SetSounds>,
     onboarding: OnboardingSounds,
-    #[cfg(hex_capture)]
-    capture: [SamplesBuffer; 5],
 }
 
 impl Sounds {
@@ -786,8 +770,6 @@ impl Sounds {
                 .map(SetSounds::load)
                 .collect::<Result<_>>()?,
             onboarding: OnboardingSounds::load()?,
-            #[cfg(hex_capture)]
-            capture: capture_sounds()?,
         })
     }
 
@@ -826,39 +808,8 @@ impl Sounds {
             }
             Tone::Onboarding(cue) => return self.onboarding.get(cue),
             Tone::Error => return sounds.error.as_ref(),
-            #[cfg(hex_capture)]
-            Tone::CaptureStart => &self.capture[0],
-            #[cfg(hex_capture)]
-            Tone::CaptureStop => &self.capture[1],
-            #[cfg(hex_capture)]
-            Tone::CaptureSent => &self.capture[2],
-            #[cfg(hex_capture)]
-            Tone::CaptureUndo => &self.capture[3],
-            #[cfg(hex_capture)]
-            Tone::CaptureFailed => &self.capture[4],
         })
     }
-}
-
-/// The capture tones, in [`Tone`]'s order: start, stop, sent, undo, failed.
-#[cfg(hex_capture)]
-fn capture_sounds() -> Result<[SamplesBuffer; 5]> {
-    macro_rules! sound {
-        ($name:literal) => {
-            decode(include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/resources/audio/",
-                $name
-            )))?
-        };
-    }
-    Ok([
-        sound!("captureStart.mp3"),
-        sound!("captureStop.mp3"),
-        sound!("captureSent.mp3"),
-        sound!("captureUndo.mp3"),
-        sound!("captureFailed.mp3"),
-    ])
 }
 
 /// Plays the start tone for a shortcut press that may still become a chord or
@@ -1197,19 +1148,6 @@ fn decode_wav(bytes: &'static [u8]) -> Result<SamplesBuffer> {
         .collect::<Result<Vec<_>, _>>()
         .wrap_err("could not decode feedback audio")?;
     Ok(SamplesBuffer::new(channels, sample_rate, samples))
-}
-
-#[cfg(hex_capture)]
-fn decode(bytes: &'static [u8]) -> Result<SamplesBuffer> {
-    let decoder =
-        rodio::Decoder::new(Cursor::new(bytes)).wrap_err("could not decode feedback audio")?;
-    let channels = decoder.channels();
-    let sample_rate = decoder.sample_rate();
-    Ok(SamplesBuffer::new(
-        channels,
-        sample_rate,
-        decoder.collect::<Vec<_>>(),
-    ))
 }
 
 #[cfg(test)]

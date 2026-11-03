@@ -14,7 +14,8 @@ use crate::linux::gsettings::{gsettings, string_list, string_list_text, string_t
 const LIST_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
 const ENTRY_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding";
 const BASE: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/";
-/// Every entry Hex may write, by path name.
+/// Every entry Hex may have written, by path name. Builds with Annotate
+/// wrote `hex-annotate`; it is only ever removed now.
 const ENTRIES: [&str; 3] = ["hex-dictation", "hex-paste-last", "hex-annotate"];
 
 /// One custom shortcut: its path name, its name in GNOME Settings, the `hex`
@@ -123,15 +124,6 @@ fn entries(settings: &AppSettings) -> Vec<Entry> {
         "paste-last",
         settings.paste_last_hotkey.as_ref(),
     );
-    #[cfg(hex_capture)]
-    if settings.capture.enabled {
-        add(
-            "hex-annotate",
-            "Hex: annotate",
-            "annotate toggle",
-            Some(&settings.capture.hotkey),
-        );
-    }
     entries
 }
 

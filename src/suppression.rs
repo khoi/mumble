@@ -38,16 +38,6 @@ const EVENT_LEFT_MOUSE_DRAGGED: u32 = 6;
 const EVENT_RIGHT_MOUSE_DRAGGED: u32 = 7;
 const EVENT_OTHER_MOUSE_DRAGGED: u32 = 27;
 const MOUSE_EVENT_BUTTON_NUMBER: u32 = 3;
-#[cfg(hex_capture)]
-const EVENT_MOUSE_MOVED: u32 = 5;
-#[cfg(hex_capture)]
-const EVENT_SCROLL_WHEEL: u32 = 22;
-#[cfg(hex_capture)]
-const KEYBOARD_EVENT_AUTOREPEAT: u32 = 8;
-#[cfg(hex_capture)]
-const SCROLL_WHEEL_DELTA_AXIS_1: u32 = 11;
-#[cfg(hex_capture)]
-const SCROLL_WHEEL_DELTA_AXIS_2: u32 = 12;
 const EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = u32::MAX - 1;
 const EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = u32::MAX;
 const KEYBOARD_EVENT_KEYCODE: u32 = 9;
@@ -96,23 +86,6 @@ unsafe extern "C" {
     fn CGEventGetFlags(event: EventRef) -> u64;
     fn CGEventGetTimestamp(event: EventRef) -> u64;
     fn CGEventGetIntegerValueField(event: EventRef, field: u32) -> i64;
-    #[cfg(hex_capture)]
-    fn CGEventGetLocation(event: EventRef) -> CgPoint;
-    #[cfg(hex_capture)]
-    fn CGEventKeyboardGetUnicodeString(
-        event: EventRef,
-        max_length: usize,
-        actual_length: *mut usize,
-        buffer: *mut u16,
-    );
-}
-
-#[cfg(hex_capture)]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct CgPoint {
-    x: f64,
-    y: f64,
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -218,19 +191,6 @@ impl DiscardCause {
     }
 }
 
-impl InputEvent {
-    pub fn is_escape_down(self) -> bool {
-        matches!(
-            self,
-            Self::Key {
-                code: ESCAPE_KEY_CODE,
-                down: true,
-                ..
-            }
-        )
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct ObservedInputEvent {
     sequence: u64,
@@ -277,7 +237,6 @@ pub struct InputMonitor {
     pub events: Receiver<ObservedInputEvent>,
     pub activity: InputActivity,
     pending: PendingInputEvents,
-    takes_escape: Arc<AtomicBool>,
     takes_cancel: Arc<AtomicBool>,
     run_loop: Arc<AtomicPtr<c_void>>,
     worker: Option<JoinHandle<()>>,
@@ -326,8 +285,6 @@ impl InputMonitor {
         let tap_activity = activity.clone();
         let run_loop = Arc::new(AtomicPtr::new(ptr::null_mut()));
         let tap_run_loop = run_loop.clone();
-        let takes_escape = Arc::new(AtomicBool::new(false));
-        let tap_takes_escape = takes_escape.clone();
         let takes_cancel = Arc::new(AtomicBool::new(false));
         let tap_takes_cancel = takes_cancel.clone();
         let pending = PendingInputEvents::default();
@@ -336,7 +293,6 @@ impl InputMonitor {
             run_event_tap(
                 sender,
                 tap_activity,
-                tap_takes_escape,
                 tap_takes_cancel,
                 tap_pending,
                 tap_run_loop,
@@ -350,15 +306,10 @@ impl InputMonitor {
             events,
             activity,
             pending,
-            takes_escape,
             takes_cancel,
             run_loop,
             worker: Some(worker),
         })
-    }
-
-    pub fn set_takes_escape(&self, enabled: bool) {
-        self.takes_escape.store(enabled, Ordering::Release);
     }
 
     /// Whether the tap keeps Toggle's cancel shortcut from the app in front:
@@ -395,7 +346,6 @@ impl Drop for InputMonitor {
 struct EventTapContext {
     sender: Sender<ObservedInputEvent>,
     activity: InputActivity,
-    takes_escape: Arc<AtomicBool>,
     takes_cancel: Arc<AtomicBool>,
     key_tap: AtomicPtr<c_void>,
     observation_tap: AtomicPtr<c_void>,
@@ -542,34 +492,6 @@ unsafe extern "C" fn event_callback(
             event
         };
     }
-    #[cfg(hex_capture)]
-    let list_swallows = match list_tap(event_type, event) {
-        ListSwallow::No => false,
-        ListSwallow::Only => return ptr::null_mut(),
-        ListSwallow::AfterListener => true,
-    };
-    #[cfg(not(hex_capture))]
-    let list_swallows = false;
-    #[cfg(hex_capture)]
-    let capture_key = if crate::capture_host::wants_input() {
-        match report_capture_input(event_type, event) {
-            CaptureTap::Only => return event,
-            CaptureTap::Shared => None,
-            CaptureTap::Key(key) => Some(key),
-        }
-    } else {
-        None
-    };
-    // A press anywhere while the list or suggestions are open may fold it; the click still
-    // goes to the app and to the listener as chord evidence.
-    #[cfg(hex_capture)]
-    if matches!(
-        event_type,
-        EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN | EVENT_OTHER_MOUSE_DOWN
-    ) && (crate::capture_host::list_open() || crate::capture_host::suggesting())
-    {
-        crate::capture_host::capsule_key(crate::capture_host::CapsuleKey::Press);
-    }
     if matches!(
         event_type,
         EVENT_LEFT_MOUSE_DRAGGED | EVENT_RIGHT_MOUSE_DRAGGED | EVENT_OTHER_MOUSE_DRAGGED
@@ -659,239 +581,10 @@ unsafe extern "C" fn event_callback(
     if !context.takes_cancel.load(Ordering::Acquire) {
         hotkeys.cancel = None;
     }
-    let suppress = suppression.process_all(
-        input,
-        hotkeys,
-        delivered,
-        context.takes_escape.load(Ordering::Acquire),
-    );
+    let suppress = suppression.process_all(input, hotkeys, delivered);
     context.activity.observe(input, suppress);
-    // A key Hex consumed (its shortcuts, Escape) was never the app's chord.
-    #[cfg(hex_capture)]
-    if let Some(key) = capture_key
-        && !suppress
-        && !list_swallows
-    {
-        crate::capture_host::report_input(capture_at, key);
-    }
-    if suppress || list_swallows {
-        ptr::null_mut()
-    } else {
-        event
-    }
-}
-
-/// What the session tap does with a key while the capture capsule's list
-/// is open (`capture_host::list_open`).
-#[cfg(hex_capture)]
-enum ListSwallow {
-    /// Not the list's.
-    No,
-    /// The list's Escape: kept from the app and from the listener, so it
-    /// cancels nothing else.
-    Only,
-    /// The list's, or the release of a key it took: kept from the app, but
-    /// the listener still sees it, so a held ⌥ typing a character stays a
-    /// chord rather than a dictation.
-    AfterListener,
-}
-
-/// Whether the capsule's list or suggestions may take a key press: only
-/// while captures are on, something is open, and no shortcut is being
-/// recorded. With captures turned off, a capsule left open takes nothing.
-#[cfg(hex_capture)]
-fn list_takes_keys(capture_on: bool, open: bool, recording_shortcut: bool) -> bool {
-    capture_on && open && !recording_shortcut
-}
-
-/// Hands the open list its keys (`capture_host::list_key`) on the tap's
-/// thread; their releases stay with it even after it closes.
-#[cfg(hex_capture)]
-fn list_tap(event_type: u32, event: EventRef) -> ListSwallow {
-    use crate::capture_host::{CapsuleKey, ListTap, capsule_key, list_key, list_open, suggesting};
-    static TAKEN: Mutex<u128> = Mutex::new(0);
-    // Shift is followed always, so a release while nothing showed never
-    // leaves it stuck down; the list or suggestions hear each change.
-    static SHIFT: AtomicBool = AtomicBool::new(false);
-    if event_type == EVENT_FLAGS_CHANGED {
-        const SHIFT_MASK: u64 = 1 << 17;
-        // SAFETY: CoreGraphics supplied a valid event.
-        let down = unsafe { CGEventGetFlags(event) } & SHIFT_MASK != 0;
-        if SHIFT.swap(down, Ordering::Relaxed) != down
-            && list_takes_keys(
-                crate::app_settings::capture_on(),
-                list_open() || suggesting(),
-                crate::app_settings::hotkey_capture_active(),
-            )
-        {
-            capsule_key(CapsuleKey::Shift(down));
-        }
-        return ListSwallow::No;
-    }
-    if !matches!(event_type, EVENT_KEY_DOWN | EVENT_KEY_UP) {
-        return ListSwallow::No;
-    }
-    // SAFETY: CoreGraphics supplied a valid keyboard event.
-    let code = unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE) } as u16;
-    let Some(bit) = 1u128.checked_shl(u32::from(code)) else {
-        return ListSwallow::No;
-    };
-    let mut taken = TAKEN.lock().unwrap_or_else(|error| error.into_inner());
-    if event_type == EVENT_KEY_UP {
-        let ours = *taken & bit != 0;
-        *taken &= !bit;
-        return if ours {
-            ListSwallow::AfterListener
-        } else {
-            ListSwallow::No
-        };
-    }
-    let suggesting = suggesting();
-    if !list_takes_keys(
-        crate::app_settings::capture_on(),
-        list_open() || suggesting,
-        crate::app_settings::hotkey_capture_active(),
-    ) {
-        return ListSwallow::No;
-    }
-    // SAFETY: CoreGraphics supplied a valid event.
-    let flags = unsafe { CGEventGetFlags(event) };
-    if crate::app_settings::runtime_hotkeys()
-        .all()
-        .iter()
-        .flatten()
-        .any(|hotkey| hotkey.matches_key_press(code, flags))
-    {
-        return ListSwallow::No;
-    }
-    let mut typed = [0u16; 8];
-    let mut length = 0usize;
-    // SAFETY: the buffer holds `typed.len()` UTF-16 units; CoreGraphics
-    // writes at most that many and reports how many in `length`.
-    unsafe { CGEventKeyboardGetUnicodeString(event, typed.len(), &mut length, typed.as_mut_ptr()) };
-    let typed = String::from_utf16_lossy(&typed[..length.min(typed.len())]);
-    match list_key(code, flags, &typed) {
-        // The suggestions take only the toast's Return and Tab; the rest
-        // goes on (the capture shortcut reaches them through the listener).
-        ListTap::Key(key @ (CapsuleKey::Return { .. } | CapsuleKey::Tab { .. })) if suggesting => {
-            *taken |= bit;
-            drop(taken);
-            if capsule_key(key) {
-                ListSwallow::AfterListener
-            } else {
-                *TAKEN.lock().unwrap_or_else(|error| error.into_inner()) &= !bit;
-                ListSwallow::No
-            }
-        }
-        _ if suggesting => ListSwallow::No,
-        ListTap::Pass => ListSwallow::No,
-        ListTap::Swallow => {
-            *taken |= bit;
-            ListSwallow::AfterListener
-        }
-        ListTap::Key(key) => {
-            *taken |= bit;
-            drop(taken);
-            let escape = key == CapsuleKey::Escape;
-            capsule_key(key);
-            if escape {
-                ListSwallow::Only
-            } else {
-                ListSwallow::AfterListener
-            }
-        }
-    }
-}
-
-/// What the session tap does with an event while a capture records.
-#[cfg(hex_capture)]
-enum CaptureTap {
-    /// Reported; only a capture wants it, so the listener never sees it.
-    Only,
-    /// Reported, and it goes on to the listener too (mouse downs, modifier
-    /// changes) or isn't a capture's (key ups, other buttons).
-    Shared,
-    /// A fresh key press: reported after suppression, only if it reaches
-    /// the app, and never while a shortcut is being recorded.
-    Key(crate::capture_host::Tapped),
-}
-
-/// Reports a pointer or modifier event to a recording capture
-/// (`capture_host::report_input`) and says what else happens to the event.
-#[cfg(hex_capture)]
-fn report_capture_input(event_type: u32, event: EventRef) -> CaptureTap {
-    use crate::capture_host::{Tapped, modifiers, report_input};
-    use scrawl_capture::hosted_input::HostInput;
-    // SAFETY: CoreGraphics supplied a valid event to this callback.
-    let at = CaptureInstant::from_nanos(unsafe { CGEventGetTimestamp(event) });
-    // SAFETY: CoreGraphics supplied a valid event.
-    let flags = unsafe { CGEventGetFlags(event) };
-    // SAFETY: CoreGraphics supplied a valid event; every event has a location.
-    let CgPoint { x, y } = unsafe { CGEventGetLocation(event) };
-    let held = modifiers(flags);
-    let (input, capture_only) = match event_type {
-        EVENT_LEFT_MOUSE_DOWN
-        | EVENT_RIGHT_MOUSE_DOWN
-        | EVENT_LEFT_MOUSE_UP
-        | EVENT_RIGHT_MOUSE_UP => (
-            Tapped::Pointer(HostInput::Button {
-                down: matches!(event_type, EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN),
-                right: matches!(event_type, EVENT_RIGHT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_UP),
-                x,
-                y,
-                modifiers: held,
-            }),
-            !matches!(event_type, EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN),
-        ),
-        EVENT_MOUSE_MOVED
-        | EVENT_LEFT_MOUSE_DRAGGED
-        | EVENT_RIGHT_MOUSE_DRAGGED
-        | EVENT_OTHER_MOUSE_DRAGGED => (
-            Tapped::Pointer(HostInput::Moved {
-                x,
-                y,
-                modifiers: held,
-            }),
-            true,
-        ),
-        EVENT_SCROLL_WHEEL => (
-            Tapped::Pointer(HostInput::Scroll {
-                x,
-                y,
-                // SAFETY: CoreGraphics supplied a valid scroll event.
-                dx: unsafe { CGEventGetIntegerValueField(event, SCROLL_WHEEL_DELTA_AXIS_2) } as f64,
-                // SAFETY: CoreGraphics supplied a valid scroll event.
-                dy: unsafe { CGEventGetIntegerValueField(event, SCROLL_WHEEL_DELTA_AXIS_1) } as f64,
-            }),
-            true,
-        ),
-        EVENT_FLAGS_CHANGED => (
-            Tapped::Pointer(HostInput::ModifiersChanged {
-                x,
-                y,
-                modifiers: held,
-            }),
-            false,
-        ),
-        // SAFETY: CoreGraphics supplied a valid keyboard event.
-        EVENT_KEY_DOWN
-            if unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_AUTOREPEAT) } == 0 =>
-        {
-            return CaptureTap::Key(Tapped::Key {
-                // SAFETY: CoreGraphics supplied a valid keyboard event.
-                code: unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE) as u16 },
-                flags,
-            });
-        }
-        EVENT_OTHER_MOUSE_DOWN | EVENT_KEY_DOWN | EVENT_KEY_UP => return CaptureTap::Shared,
-        _ => return CaptureTap::Only,
-    };
-    report_input(at, input);
-    if capture_only {
-        CaptureTap::Only
-    } else {
-        CaptureTap::Shared
-    }
+    // A key Hex consumed (its shortcuts) was never the app's chord.
+    if suppress { ptr::null_mut() } else { event }
 }
 
 fn send_input(context: &EventTapContext, event: InputEvent, capture_at: CaptureInstant) -> bool {
@@ -941,16 +634,10 @@ impl ShortcutSuppression {
         self.key_presses.clear();
     }
 
-    /// Whether the tap keeps `input` from the app in front: Hex's shortcuts,
-    /// Escape while Hex takes it, and `hotkeys.cancel`, which the caller
-    /// leaves set only while a toggled recording runs.
-    fn process_all(
-        &mut self,
-        input: InputEvent,
-        hotkeys: RuntimeHotkeys,
-        delivered: bool,
-        takes_escape: bool,
-    ) -> bool {
+    /// Whether the tap keeps `input` from the app in front: Hex's shortcuts
+    /// and `hotkeys.cancel`, which the caller leaves set only while a
+    /// toggled recording runs.
+    fn process_all(&mut self, input: InputEvent, hotkeys: RuntimeHotkeys, delivered: bool) -> bool {
         let bindings = hotkeys.all();
         match input {
             InputEvent::Key {
@@ -959,12 +646,11 @@ impl ShortcutSuppression {
                 flags,
             } => *self.key_presses.entry(code).or_insert_with(|| {
                 delivered
-                    && ((code == ESCAPE_KEY_CODE && takes_escape)
-                        || bindings
-                            .iter()
-                            .flatten()
-                            .chain(hotkeys.cancel.iter())
-                            .any(|hotkey| hotkey.matches_key_press(code, flags)))
+                    && bindings
+                        .iter()
+                        .flatten()
+                        .chain(hotkeys.cancel.iter())
+                        .any(|hotkey| hotkey.matches_key_press(code, flags))
             }),
             InputEvent::Key {
                 code, down: false, ..
@@ -988,13 +674,11 @@ impl ShortcutSuppression {
             RuntimeHotkeys {
                 dictation: hotkey,
                 paste_last: Some(paste_last),
-                capture: None,
                 raw_dictation: None,
                 second_dictation: None,
                 cancel: None,
             },
             delivered,
-            false,
         )
     }
 }

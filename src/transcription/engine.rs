@@ -107,9 +107,8 @@ pub(crate) enum Command {
         cloud: Option<crate::transcription::cloud::CloudAnswer>,
     },
     /// An offline run that waits for an open live stream to end instead of
-    /// interrupting it, such as a capture's word chunk or a `/streams`
-    /// window. Like a finish it is a dictation request, so background work
-    /// sent before it yields.
+    /// interrupting it, such as a `/streams` window. Like a finish it is a
+    /// dictation request, so background work sent before it yields.
     Foreground {
         clip: Vec<f32>,
         offline: Offline,

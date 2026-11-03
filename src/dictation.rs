@@ -515,83 +515,6 @@ pub fn try_resample_for_parakeet(samples: &[f32], source_rate: u32) -> Result<Ve
     Ok(recording.finish(None))
 }
 
-/// Incremental [`resample_for_parakeet`] for long recordings that must not be
-/// held in memory. Output excludes the resampler delay, and the total length
-/// after `finish` matches the whole-buffer conversion.
-pub struct StreamingResampler {
-    source_rate: u32,
-    resampler: Option<Fft<f32>>,
-    input: Vec<f32>,
-    source_samples: usize,
-    delay_remaining: usize,
-    produced: usize,
-}
-
-impl StreamingResampler {
-    pub fn new(source_rate: u32) -> Result<Self, String> {
-        let recording = Recording::try_new(CaptureInstant::ZERO, source_rate)?;
-        let delay_remaining = recording.resampler.as_ref().map_or(0, Fft::output_delay);
-        Ok(Self {
-            source_rate,
-            resampler: recording.resampler,
-            input: Vec::with_capacity(Recording::CHUNK_SIZE),
-            source_samples: 0,
-            delay_remaining,
-            produced: 0,
-        })
-    }
-
-    pub fn push(&mut self, mut samples: &[f32]) -> Vec<f32> {
-        self.source_samples += samples.len();
-        let Some(resampler) = &mut self.resampler else {
-            self.produced += samples.len();
-            return samples.to_vec();
-        };
-        let mut output = Vec::new();
-        while !samples.is_empty() {
-            let take = samples.len().min(Recording::CHUNK_SIZE - self.input.len());
-            self.input.extend_from_slice(&samples[..take]);
-            samples = &samples[take..];
-            if self.input.len() == Recording::CHUNK_SIZE {
-                output.extend(resample_chunk(resampler, &self.input, false));
-                self.input.clear();
-            }
-        }
-        self.trim_delay(output)
-    }
-
-    pub fn finish(mut self) -> Vec<f32> {
-        let expected =
-            self.source_samples * PARAKEET_SAMPLE_RATE as usize / self.source_rate as usize;
-        let Some(mut resampler) = self.resampler.take() else {
-            return Vec::new();
-        };
-        let mut output = Vec::new();
-        if !self.input.is_empty() {
-            let flushed = resample_chunk(&mut resampler, &self.input, true);
-            output.extend(self.trim_delay(flushed));
-        }
-        for _ in 0..8 {
-            if self.produced >= expected {
-                break;
-            }
-            let flushed = resample_chunk(&mut resampler, &[], true);
-            output.extend(self.trim_delay(flushed));
-        }
-        let excess = self.produced.saturating_sub(expected);
-        output.truncate(output.len().saturating_sub(excess));
-        output
-    }
-
-    fn trim_delay(&mut self, mut output: Vec<f32>) -> Vec<f32> {
-        let trimmed = self.delay_remaining.min(output.len());
-        output.drain(..trimmed);
-        self.delay_remaining -= trimmed;
-        self.produced += output.len();
-        output
-    }
-}
-
 pub struct DictationCapture {
     sample_rate: u32,
     ring: VecDeque<f32>,
@@ -1234,30 +1157,6 @@ mod tests {
         (0..samples).map(move |index| {
             amplitude * (2.0 * std::f32::consts::PI * 220.0 * index as f32 / 16_000.0).sin()
         })
-    }
-
-    #[test]
-    fn streaming_resampler_matches_whole_buffer_conversion() {
-        for rate in [16_000, 44_100, 48_000] {
-            let source: Vec<f32> = (0..rate as usize * 3 + 777)
-                .map(|index| (index as f32 * 0.013).sin() * 0.4)
-                .collect();
-            let whole = resample_for_parakeet(&source, rate);
-            let mut streaming = StreamingResampler::new(rate).unwrap();
-            let mut output = Vec::new();
-            for block in source.chunks(1_337) {
-                output.extend(streaming.push(block));
-            }
-            output.extend(streaming.finish());
-            assert_eq!(output.len(), whole.len(), "rate {rate}");
-            assert!(
-                output
-                    .iter()
-                    .zip(&whole)
-                    .all(|(left, right)| (left - right).abs() < 1e-5),
-                "rate {rate}"
-            );
-        }
     }
 
     #[test]

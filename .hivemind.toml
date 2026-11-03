@@ -4,7 +4,7 @@ batch_max = 4
 verify = [
   "cargo test --locked --workspace --lib",
   "[ -d sdk/node_modules ] || (cd sdk && bun install --frozen-lockfile)",
-  "HEX_TEAM_ID=${HEX_TEAM_ID:-QC99C9JE59} HEX_CAPTURE=1 HEX_LOCAL_BUILD=1 scripts/build-app.sh",
+  "HEX_TEAM_ID=${HEX_TEAM_ID:-QC99C9JE59} HEX_LOCAL_BUILD=1 scripts/build-app.sh",
 ]
 
 [land.app]

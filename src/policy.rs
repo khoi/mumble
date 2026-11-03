@@ -1,5 +1,5 @@
 //! Feature locks an organization sets through managed preferences (macOS
-//! configuration profiles) in the `anomaly.hex` domain: `DisableAnnotate`,
+//! configuration profiles) in the `anomaly.hex` domain:
 //! `DisableOpenCodeProcessing`, `DisableTransforms`, and `DisableLabs`, plus `RestrictTransformsToLoopback`, which keeps
 //! transformations on but holds their `fetch` to this computer and runs no
 //! programs. Only a value the profile forces counts, so a key a person
@@ -9,8 +9,8 @@
 //! everywhere without its saved setting changing: `AppSettings` turns its
 //! switches off as they load and writes the saved values back on save
 //! ([`Policy::enforce`], [`Policy::keep_saved`]); work that follows a list
-//! rather than a switch (mode rewrites, transformations, Annotate's sends,
-//! the transformation host) checks [`Policy::locks`] where it starts.
+//! rather than a switch (mode rewrites, transformations, the transformation
+//! host) checks [`Policy::locks`] where it starts.
 
 use std::sync::OnceLock;
 
@@ -19,9 +19,7 @@ use crate::app_settings::AppSettings;
 /// One managed lock.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Lock {
-    Annotate,
-    /// No OpenCode generation: mode rewrites and Annotate's sends to
-    /// OpenCode sessions.
+    /// No OpenCode generation: mode rewrites.
     OpenCodeProcessing,
     /// No transformations at all, built in or from `hex.config.ts`.
     Transforms,
@@ -34,8 +32,7 @@ pub enum Lock {
 }
 
 impl Lock {
-    pub const ALL: [Self; 5] = [
-        Self::Annotate,
+    pub const ALL: [Self; 4] = [
         Self::OpenCodeProcessing,
         Self::Transforms,
         Self::Labs,
@@ -45,7 +42,6 @@ impl Lock {
     /// Its key in the `anomaly.hex` managed preferences.
     pub const fn key(self) -> &'static str {
         match self {
-            Self::Annotate => "DisableAnnotate",
             Self::OpenCodeProcessing => "DisableOpenCodeProcessing",
             Self::Transforms => "DisableTransforms",
             Self::Labs => "DisableLabs",
@@ -60,7 +56,6 @@ impl Lock {
     /// What a refusal says.
     pub const fn refusal(self) -> &'static str {
         match self {
-            Self::Annotate => "Annotate is managed by your organization",
             Self::OpenCodeProcessing => "OpenCode processing is managed by your organization",
             Self::Transforms => "Transformations are managed by your organization",
             Self::Labs => "Labs features are managed by your organization",
@@ -122,19 +117,12 @@ impl Policy {
 
     /// The lock on `hex settings` key `name`, if any.
     pub fn setting_lock(self, name: &str) -> Option<Lock> {
-        if crate::labs::Feature::for_settings_key(name).is_some() {
-            return self.labs_lock();
-        }
-        (name == "capture.enabled" && self.locks(Lock::Annotate)).then_some(Lock::Annotate)
+        crate::labs::Feature::for_settings_key(name).and_then(|_| self.labs_lock())
     }
 
     /// The switches `lock` holds off in `settings`.
     fn switches(settings: &mut AppSettings, lock: Lock) -> Vec<&mut bool> {
         match lock {
-            #[cfg(hex_capture)]
-            Lock::Annotate => vec![&mut settings.capture.enabled],
-            #[cfg(not(hex_capture))]
-            Lock::Annotate => Vec::new(),
             Lock::OpenCodeProcessing | Lock::Transforms | Lock::LoopbackTransforms => Vec::new(),
             Lock::Labs => crate::labs::Feature::switches(settings),
         }
@@ -198,17 +186,16 @@ mod tests {
 
     #[test]
     fn only_forced_keys_lock() {
-        let policy = Policy::from_forced(|key| key == "DisableAnnotate" || key == "DisableLabs");
-        assert!(policy.locks(Lock::Annotate));
+        let policy = Policy::from_forced(|key| key == "DisableTransforms" || key == "DisableLabs");
+        assert!(policy.locks(Lock::Transforms));
         assert!(policy.locks(Lock::Labs));
         assert!(!policy.locks(Lock::OpenCodeProcessing));
-        assert!(!policy.locks(Lock::Transforms));
+        assert!(!policy.locks(Lock::LoopbackTransforms));
         assert!(!Policy::from_forced(|_| false).any());
         let keys: Vec<_> = Lock::ALL.map(Lock::key).into();
         assert_eq!(
             keys,
             [
-                "DisableAnnotate",
                 "DisableOpenCodeProcessing",
                 "DisableTransforms",
                 "DisableLabs",
@@ -259,11 +246,5 @@ mod tests {
         assert_eq!(labs.setting_lock("labs.live_text"), Some(Lock::Labs));
         assert_eq!(labs.setting_lock("pause_browser_media"), Some(Lock::Labs));
         assert_eq!(labs.setting_lock("sound_effects"), None);
-        assert_eq!(labs.setting_lock("capture.enabled"), None);
-        let annotate = Policy::default().with(Lock::Annotate);
-        assert_eq!(
-            annotate.setting_lock("capture.enabled"),
-            Some(Lock::Annotate)
-        );
     }
 }

@@ -120,50 +120,6 @@ impl Capabilities {
     }
 }
 
-/// What the Scrawl pane shows (the `capture` experiment).
-#[cfg(hex_capture)]
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct ScrawlView {
-    /// Screen Recording, which a capture needs to record the screen.
-    pub(super) screen_recording: bool,
-    /// Screen Recording is on in System Settings, but this Hex can't use it
-    /// until it restarts.
-    pub(super) screen_needs_restart: bool,
-    /// Scrawl's own app runs, so it owns the capture shortcut.
-    pub(super) scrawl_running: bool,
-    /// Use Hex for annotations was pressed and Scrawl has not quit yet.
-    pub(super) quitting_scrawl: bool,
-    /// A captures folder that could not be revealed or chosen.
-    pub(super) folder_error: Option<String>,
-    /// Turning captures on or off failed (the pane sets it).
-    pub(super) enable_error: Option<String>,
-}
-
-#[cfg(hex_capture)]
-impl ScrawlView {
-    /// Screen Recording allowed and Scrawl not running.
-    pub(super) fn preview() -> Self {
-        Self {
-            screen_recording: true,
-            ..Self::default()
-        }
-    }
-}
-
-/// What the Scrawl pane asks the host for.
-#[cfg(hex_capture)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ScrawlRequest {
-    /// Read Screen Recording and Scrawl's app again now (the pane opened
-    /// or the window became key), not at the next once-a-second refresh.
-    Refresh,
-    /// Use Hex for annotations: ask Scrawl's own app to quit. Nothing else
-    /// ever quits it.
-    QuitScrawl,
-    RevealFolder,
-    ChooseFolder,
-}
-
 /// The OS-only state the panes show; the host keeps it current.
 #[derive(Clone, Debug)]
 pub(super) struct PlatformState {
@@ -220,10 +176,6 @@ pub(super) struct PlatformState {
     /// The dictation event log the Activity pane reads (`live.ndjson`);
     /// `None` where the host keeps none.
     pub(super) activity_log: Option<std::path::PathBuf>,
-    /// The Scrawl pane, while the `capture` experiment is on; `None` hides
-    /// it.
-    #[cfg(hex_capture)]
-    pub(super) scrawl: Option<ScrawlView>,
 }
 
 /// The indicator state HUD Lab demonstrates.
@@ -278,8 +230,6 @@ impl PlatformState {
             demo: None,
             hud: HudLab::default(),
             activity_log: None,
-            #[cfg(hex_capture)]
-            scrawl: None,
         }
     }
 
@@ -465,8 +415,6 @@ pub(super) enum PlatformRequest {
     /// Save Dot scope's tuning as `dot-scope.json`, which the HUD loads at
     /// launch.
     SaveDotScope(crate::rune_hud::dot_scope::Tuning),
-    #[cfg(hex_capture)]
-    Scrawl(ScrawlRequest),
 }
 
 /// Performs a Voice Filter request on the Hex Microphone in this process.
@@ -540,8 +488,8 @@ pub(super) trait NativeHost {
 pub(super) enum PlatformHost {
     /// Linux and Windows: their runtimes own everything but the practice
     /// dictation, which the window reads from the listener's event log. On
-    /// Linux the dictation host runs in this process, so Scrawl and the
-    /// Voice Filter are asked of it directly.
+    /// Linux the dictation host runs in this process, so the Voice Filter is
+    /// asked of it directly.
     Local(super::practice::LocalPractice),
     /// Scenes and tests: requests are recorded, never performed.
     Fixture(Vec<PlatformRequest>),
@@ -554,10 +502,7 @@ impl PlatformHost {
         match self {
             #[cfg(target_os = "linux")]
             Self::Local(_) => {
-                match request {
-                    PlatformRequest::Scrawl(request) => scrawl_request(request),
-                    request => voice_filter_request(request),
-                }
+                voice_filter_request(request);
                 Ok(())
             }
             // Windows: the one permission is the microphone switch in Settings.
@@ -572,9 +517,6 @@ impl PlatformHost {
                         crate::desktop::onboarding::WINDOWS_MICROPHONE_SETTINGS,
                     )
                     .map_err(|error| format!("{error:#}"))?;
-                }
-                if let PlatformRequest::Scrawl(request) = request {
-                    scrawl_request(request);
                 }
                 Ok(())
             }
@@ -594,9 +536,7 @@ impl PlatformHost {
             // Hex Microphone's status is a few atomics on Linux, so it
             // refreshes every frame.
             #[cfg(target_os = "linux")]
-            Self::Local(_) => scrawl_poll(state) | poll_voice_filter(state, true),
-            #[cfg(target_os = "windows")]
-            Self::Local(_) => scrawl_poll(state),
+            Self::Local(_) => poll_voice_filter(state, true),
             _ => false,
         }
     }
@@ -611,35 +551,6 @@ impl PlatformHost {
 
     pub(super) fn is_fixture(&self) -> bool {
         matches!(self, Self::Fixture(_))
-    }
-}
-
-/// The Annotate pane on Linux and Windows. Linux's portal asks for the screen at each capture and
-/// Windows asks nothing, so nothing is granted ahead of time, and Scrawl's
-/// own app is macOS's.
-#[cfg(not(target_os = "macos"))]
-fn scrawl_poll(state: &mut PlatformState) -> bool {
-    if state.scrawl.is_some() {
-        return false;
-    }
-    state.scrawl = Some(ScrawlView::preview());
-    true
-}
-
-/// Reveals the captures folder; choosing another is set in `settings.json`
-/// (`capture.folder`) for now.
-#[cfg(not(target_os = "macos"))]
-fn scrawl_request(request: ScrawlRequest) {
-    if request == ScrawlRequest::RevealFolder {
-        let folder = crate::app_settings::capture_settings().captures_dir();
-        if std::fs::create_dir_all(&folder).is_ok()
-            && let Err(error) = scrawl_capture::handoff::open_path(&folder)
-        {
-            tracing::warn!(
-                error = format!("{error:#}"),
-                "could not reveal the captures folder"
-            );
-        }
     }
 }
 

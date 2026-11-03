@@ -39,11 +39,6 @@ fn permission_copy(
             tr("Screen & System Audio Recording"),
             tr("Lets Hex hear whether a tab is playing"),
         ),
-        PermissionKind::ScreenRecording => (
-            "permission-screen-recording",
-            tr("Screen Recording"),
-            tr("Lets Annotate record your screen"),
-        ),
     }
 }
 
@@ -172,19 +167,6 @@ pub(super) fn update_shown_permissions(ui: &mut Ui) {
             )
         {
             shown.push(PermissionKind::Accessibility);
-        }
-        if ui.tour.is_none() && !ui.labs_open {
-            #[cfg(hex_capture)]
-            if ui.pane == Pane::Annotate
-                && ui.settings.capture.enabled
-                && ui
-                    .platform
-                    .scrawl
-                    .as_ref()
-                    .is_some_and(|view| !view.screen_recording && !view.screen_needs_restart)
-            {
-                shown.push(PermissionKind::ScreenRecording);
-            }
         }
     }
     ui.platform.permissions_shown = shown;

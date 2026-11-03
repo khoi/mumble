@@ -1,6 +1,6 @@
 //! Whether this build is a developer, local, test, or dev-channel build.
-//! Production builds (`!is_dev_build()`) hide Annotate and the developer
-//! tools so the public app runs as the dictation appliance.
+//! Production builds (`!is_dev_build()`) hide the developer tools so the
+//! public app runs as the dictation appliance.
 
 /// Whether this is a developer, local, test, or dev-channel build.
 pub fn is_dev_build() -> bool {

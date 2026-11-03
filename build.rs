@@ -5,15 +5,6 @@ fn main() {
     check_windows_split();
     build_version();
     test_build_commit();
-    // `hex_capture`: the `capture` experiment's code, in every macOS, Linux,
-    // and Windows build (`scrawl-capture` is their dependency).
-    println!("cargo::rustc-check-cfg=cfg(hex_capture)");
-    if matches!(
-        std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
-        Ok("macos" | "linux" | "windows")
-    ) {
-        println!("cargo::rustc-cfg=hex_capture");
-    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
             // transcribe-cpp's static manifest records OpenBLAS as an absolute
@@ -43,7 +34,7 @@ fn main() {
     let output = Command::new("xcode-select")
         .arg("-p")
         .output()
-        .expect("xcode-select is required to link ScreenCaptureKit");
+        .expect("xcode-select is required to build the Swift bridges");
     assert!(output.status.success(), "xcode-select -p failed");
     let developer_dir = String::from_utf8(output.stdout).expect("Xcode path must be UTF-8");
     compile_swift_bridge("apple_speech", "HEXAppleSpeechBridge");

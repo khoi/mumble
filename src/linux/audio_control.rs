@@ -34,26 +34,12 @@ pub(crate) struct AudioSuppressor {
 }
 
 impl AudioSuppressor {
-    /// "While dictating" for a capture, which does not prevent sleep.
-    pub(crate) fn new(behavior: RecordingAudioBehavior) -> Self {
-        Self::start(behavior, false)
-    }
-
     /// "While dictating" for a dictation, which also prevents idle sleep.
     pub(crate) fn dictation(behavior: RecordingAudioBehavior) -> Self {
-        Self::start(behavior, true)
-    }
-
-    fn start(behavior: RecordingAudioBehavior, prevent_sleep: bool) -> Self {
-        if behavior == RecordingAudioBehavior::DoNothing && !prevent_sleep {
-            return Self { requests: None };
-        }
         let (requests, receiver) = mpsc::channel();
         let hold = move || Held {
             audio: suppress(behavior),
-            _sleep: prevent_sleep
-                .then(crate::audio::idle_sleep::prevent_sleep)
-                .flatten(),
+            _sleep: crate::audio::idle_sleep::prevent_sleep(),
         };
         let spawned = std::thread::Builder::new()
             .name("linux-audio-control".into())
@@ -64,6 +50,12 @@ impl AudioSuppressor {
         Self {
             requests: spawned.ok().map(|_| requests),
         }
+    }
+
+    /// One that changes nothing, for tests.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self { requests: None }
     }
 
     pub(crate) fn suppress(&self) {
@@ -446,17 +438,6 @@ mod tests {
         assert_eq!(parse_pactl_volume("Connection failure"), None);
         assert_eq!(parse_wpctl_volume("Volume: 0.47\n"), Some(0.47));
         assert_eq!(parse_wpctl_volume("Volume: 0.25 [MUTED]\n"), Some(0.25));
-    }
-
-    #[test]
-    fn doing_nothing_starts_no_worker() {
-        let suppressor = AudioSuppressor::new(RecordingAudioBehavior::DoNothing);
-        assert!(suppressor.requests.is_none());
-        suppressor.suppress();
-        suppressor.restore();
-        let (ran, done) = mpsc::channel();
-        suppressor.restore_then(move || ran.send(()).unwrap());
-        assert!(done.try_recv().is_ok());
     }
 
     #[test]

@@ -15,7 +15,7 @@ use rune_kit::TextInput;
 
 use super::Ui;
 use super::controls::{ButtonKind, Paint, button};
-use crate::desktop::file_dialog::{Dialog, Filter, Pending, Target};
+use crate::desktop::file_dialog::{Dialog, Filter, Pending};
 use crate::desktop::i18n::{tr, tr_named};
 use crate::transcription::custom_models::{self, Status};
 use crate::transcription::models::{CustomModelId, ModelDefinition, TranscriptionModelId};
@@ -155,7 +155,7 @@ fn choose(ui: &mut Ui) {
     ui.picker.import.chooser = Some(crate::desktop::file_dialog::open(
         Dialog {
             title: tr("Add model file").into(),
-            target: Target::File(vec![
+            filters: vec![
                 Filter {
                     label: tr("GGUF speech models").into(),
                     extensions: &["gguf"],
@@ -164,7 +164,7 @@ fn choose(ui: &mut Ui) {
                     label: tr("All files").into(),
                     extensions: &["*"],
                 },
-            ]),
+            ],
             directory: dirs::download_dir(),
         },
         wake(ui.modes.waker.clone()),

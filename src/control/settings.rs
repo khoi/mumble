@@ -34,19 +34,10 @@ fn available() -> bool {
 #[derive(Clone, Copy, Debug)]
 enum Kind {
     Bool,
-    Number {
-        min: f64,
-        max: f64,
-    },
-    #[cfg_attr(not(hex_capture), allow(dead_code))]
-    Integer {
-        min: u64,
-        max: u64,
-    },
+    Number { min: f64, max: f64 },
     Choice(&'static [&'static str]),
     Text,
     Shortcut(HotkeySlot),
-    Path,
     Json,
 }
 
@@ -55,11 +46,9 @@ impl Kind {
         match self {
             Self::Bool => "bool",
             Self::Number { .. } => "number",
-            Self::Integer { .. } => "integer",
             Self::Choice(_) => "choice",
             Self::Text => "text",
             Self::Shortcut(_) => "shortcut",
-            Self::Path => "path",
             Self::Json => "json",
         }
     }
@@ -501,61 +490,6 @@ const KEYS: &[Key] = &[
     ),
 ];
 
-/// Captures exist only in builds with the `capture` build option.
-#[cfg(hex_capture)]
-const CAPTURE_KEYS: &[Key] = &[
-    key(
-        "capture.enabled",
-        Kind::Bool,
-        "Annotate: record the screen while you draw and talk (on by default)",
-    ),
-    key(
-        "capture.hotkey",
-        Kind::Shortcut(HotkeySlot::Capture),
-        "The Annotate shortcut: press to start recording and again to finish",
-    ),
-    key(
-        "capture.transcriber",
-        Kind::Choice(&["parakeet", "apple"]),
-        "What transcribes a capture's narration: Hex's loaded model or Apple's",
-    ),
-    optional(
-        "capture.folder",
-        Kind::Path,
-        "Folder for new captures; none uses Scrawl's captures folder",
-    ),
-    optional(
-        "capture.media_days",
-        RETENTION_DAYS,
-        "Days a capture keeps its video and audio; none keeps them",
-    ),
-    optional(
-        "capture.bundle_days",
-        RETENTION_DAYS,
-        "Days a capture is kept; none keeps it",
-    ),
-    key(
-        "capture.capsule_flow",
-        Kind::Choice(&["list", "toast", "menu_bar", "cursor", "notch"]),
-        "How the capture capsule offers where to send a capture (prototypes): a list, a \
-         one-line toast, the menu bar, a card at the pointer, or a notch",
-    ),
-    key(
-        "capture.routing",
-        Kind::Json,
-        "Where captures go among OpenCode sessions: Scrawl's router settings (autoSend, sites, apps, smartRouting, …) as a JSON object",
-    ),
-    key(
-        "capture.show_overlays_in_recordings",
-        Kind::Bool,
-        "Let screen recordings, captures included, show Hex's capsules, ink, and HUD (for demos)",
-    ),
-];
-#[cfg(hex_capture)]
-const RETENTION_DAYS: Kind = Kind::Integer { min: 1, max: 3650 };
-#[cfg(not(hex_capture))]
-const CAPTURE_KEYS: &[Key] = &[];
-
 /// Settings that act only where Hex has a capability (by its
 /// `rune_ui::capabilities` name), the same one that shows their row in the
 /// window. The first matching prefix decides.
@@ -611,7 +545,7 @@ fn managed(name: &str, lock: crate::policy::Lock) -> ControlError {
 
 /// Every key, in registry order.
 fn keys() -> impl Iterator<Item = &'static Key> {
-    KEYS.iter().chain(CAPTURE_KEYS)
+    KEYS.iter()
 }
 
 /// Settings `hex settings` never shows: Hex's own bookkeeping.
@@ -819,8 +753,7 @@ pub fn apply(
         | "paste_last_hotkey"
         | "raw_dictation_hotkey"
         | "second_dictation_hotkey"
-        | "cancel_hotkey"
-        | "capture.hotkey" => {
+        | "cancel_hotkey" => {
             let Kind::Shortcut(slot) = key.kind else {
                 unreachable!("shortcut keys have the shortcut kind");
             };
@@ -830,8 +763,6 @@ pub fn apply(
                 HotkeySlot::RawDictation => candidate.raw_dictation_hotkey.as_ref(),
                 HotkeySlot::SecondDictation => candidate.second_dictation_hotkey.as_ref(),
                 HotkeySlot::Cancel => Some(&candidate.cancel_hotkey),
-                #[cfg(hex_capture)]
-                HotkeySlot::Capture => Some(&candidate.capture.hotkey),
             };
             if let Some(binding) = binding {
                 if cfg!(target_os = "macos")
@@ -879,17 +810,6 @@ pub fn apply(
                     return Err(invalid(name, "every mode needs a unique, non-empty name"));
                 }
             }
-        }
-        #[cfg(hex_capture)]
-        "capture.enabled"
-            if candidate.capture.enabled
-                && candidate.hotkey_in_use(HotkeySlot::Capture, &candidate.capture.hotkey) =>
-        {
-            return Err(ControlError::new(
-                "shortcut-in-use",
-                "The capture shortcut is already in use; set capture.hotkey to another \
-                 shortcut first",
-            ));
         }
         "labs.standalone_special_keys" => candidate.repair_special_keys(),
         "labs.section_key_alone" => candidate.repair_section_key(),
@@ -1025,17 +945,6 @@ fn parse(key: &Key, raw: &str, shortcuts: &ShortcutRules) -> Result<Value, Contr
             .and_then(serde_json::Number::from_f64)
             .map(Value::Number)
             .ok_or_else(|| invalid(name, &format!("expected a number from {min} to {max}"))),
-        Kind::Integer { min, max } => trimmed
-            .parse::<u64>()
-            .ok()
-            .filter(|value| (min..=max).contains(value))
-            .map(Value::from)
-            .ok_or_else(|| {
-                invalid(
-                    name,
-                    &format!("expected a whole number from {min} to {max}"),
-                )
-            }),
         Kind::Choice(choices) => {
             let normalized = trimmed.to_ascii_lowercase().replace('-', "_");
             let choice = choices
@@ -1051,18 +960,6 @@ fn parse(key: &Key, raw: &str, shortcuts: &ShortcutRules) -> Result<Value, Contr
             })
         }
         Kind::Text => Ok(Value::String(raw.into())),
-        Kind::Path => {
-            let path = match trimmed.strip_prefix("~/") {
-                Some(rest) => dirs::home_dir()
-                    .ok_or_else(|| invalid(name, "no home folder to expand ~ in"))?
-                    .join(rest),
-                None => std::path::PathBuf::from(trimmed),
-            };
-            if !path.is_absolute() {
-                return Err(invalid(name, "expected an absolute path"));
-            }
-            Ok(Value::String(path.to_string_lossy().into_owned()))
-        }
         Kind::Json => serde_json::from_str(raw).map_err(|error| invalid(name, &error.to_string())),
         Kind::Shortcut(_) => {
             let binding =
@@ -1242,18 +1139,12 @@ mod tests {
     fn a_managed_setting_is_refused() {
         use crate::policy::{Lock, Policy};
         let policy = Policy::default()
-            .with(Lock::Annotate)
+            .with(Lock::Labs)
             .with(Lock::OpenCodeProcessing);
-        let error = unavailable_under("capture.enabled", policy).expect("capture.enabled");
+        let error = unavailable_under("labs.live_text", policy).expect("labs.live_text");
         assert_eq!(error.code, "managed");
         assert!(error.message.contains("managed by your organization"));
         assert!(unavailable_under("sound_effects", policy).is_none());
-        assert!(unavailable_under("labs.live_text", policy).is_none());
-        let labs = Policy::default().with(Lock::Labs);
-        assert_eq!(
-            unavailable_under("labs.live_text", labs).map(|error| error.code),
-            Some("managed")
-        );
         assert!(unavailable_under("labs.live_text", Policy::default()).is_none());
     }
 
@@ -1370,29 +1261,6 @@ mod tests {
         }
     }
 
-    #[cfg(hex_capture)]
-    #[test]
-    fn capture_routing_is_set_as_one_object_without_a_jev_key() {
-        let settings = AppSettings::default();
-        let value = concat!(
-            r#"{"smartRouting": true, "sites": {"https://example.com": "ses_a"}, "#,
-            r#""jevApiKey": "not-a-real-key"}"#
-        );
-        let change = apply(&settings, "capture.routing", value, &rules()).unwrap();
-        let config = change.settings.capture.routing.config();
-        assert!(config.smart_routing);
-        assert_eq!(config.sites.len(), 1);
-        assert_eq!(config.jev_api_key, None);
-        let shown = get(&change.settings, "capture.routing").unwrap();
-        assert!(!shown[0].value.to_string().contains("not-a-real-key"));
-        assert_eq!(
-            apply(&settings, "capture.routing", "[", &rules())
-                .unwrap_err()
-                .code,
-            "invalid-value"
-        );
-    }
-
     #[test]
     fn keyboard_model_switching_settings_map_sources_to_a_model_and_its_language() {
         let settings = apply(
@@ -1496,7 +1364,6 @@ mod tests {
             ("sound_effect_volume", "2"),
             ("shortcut_mode", "tap"),
             ("labs.unload_idle_minutes", "3"),
-            ("capture.folder", "relative/path"),
             ("dictation_processing.modes", "[{"),
         ] {
             assert_eq!(

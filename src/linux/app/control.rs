@@ -180,23 +180,4 @@ impl crate::control::host::Host for LinuxControl {
     fn shortcut_rules(&self) -> crate::control::settings::ShortcutRules {
         crate::rune_ui::shortcut_rules()
     }
-
-    fn annotate(&self, command: crate::control::ControlCommand) -> ControlReply {
-        match command {
-            crate::control::ControlCommand::ScrawlCapture {
-                action: crate::control::ScrawlCaptureAction::Status,
-            } => linux_service::capture_status(),
-            crate::control::ControlCommand::ScrawlCapture { action } => {
-                match crate::capture_host::send_to_listener(
-                    crate::capture_host::CaptureControl::Scrawl(action),
-                ) {
-                    Ok(()) => ControlReply::done("Sent to Hex"),
-                    Err(error) => ControlReply::error("failed", format!("{error:#}")),
-                }
-            }
-            _ => crate::control::host::unsupported(
-                "run this `hex annotate` command directly; it reads the captures folder itself",
-            ),
-        }
-    }
 }

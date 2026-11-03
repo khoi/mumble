@@ -140,8 +140,8 @@ impl AppSettings {
         }
     }
 
-    /// Puts back every shortcut `matches`: dictation, Paste last dictation,
-    /// and Annotate to their defaults, the optional ones unbound. Returns
+    /// Puts back every shortcut `matches`: dictation and Paste last
+    /// dictation to their defaults, the optional ones unbound. Returns
     /// whether any changed.
     fn reset_shortcuts(&mut self, matches: impl Fn(&HotkeyBinding) -> bool) -> bool {
         let mut reset = false;
@@ -159,11 +159,6 @@ impl AppSettings {
         }
         if self.second_dictation_hotkey.as_ref().is_some_and(&matches) {
             self.second_dictation_hotkey = None;
-            reset = true;
-        }
-        #[cfg(hex_capture)]
-        if matches(&self.capture.hotkey) {
-            self.capture.hotkey = HotkeyBinding::capture_default();
             reset = true;
         }
         reset

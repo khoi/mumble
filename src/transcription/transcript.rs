@@ -1,4 +1,4 @@
-//! A transcript with segment and word timings, as every OS's models give it.
+//! A transcript with segment timings, as Apple's speech recognizer gives it.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,4 @@ pub struct TranscriptSegment {
 pub struct Transcript {
     pub text: String,
     pub segments: Vec<TranscriptSegment>,
-    /// Word timings, when the model produces them.
-    #[serde(default)]
-    pub words: Vec<TranscriptSegment>,
 }

@@ -26,7 +26,7 @@ use super::models::{self, Target};
 use super::{Menu, Ui};
 use crate::app_settings::{AppSettings, DictationMode};
 use crate::application_catalog::InstalledApplication;
-use crate::desktop::file_dialog::{Choice, Dialog, Filter, Pending, Target as DialogTarget};
+use crate::desktop::file_dialog::{Choice, Dialog, Filter, Pending};
 use crate::desktop::i18n::{tr, tr_fill, tr_named};
 use crate::desktop::opencode_catalog::OpenCodeFeature;
 use crate::dictation::text_replacements::TextReplacement;
@@ -517,7 +517,7 @@ fn application_dialog() -> Dialog {
     };
     Dialog {
         title: tr("Add Application").into(),
-        target: DialogTarget::File(filters),
+        filters,
         directory,
     }
 }

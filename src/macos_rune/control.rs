@@ -124,67 +124,6 @@ impl Pump {
                 });
                 None
             }
-            #[cfg(hex_capture)]
-            ControlCommand::ScrawlCapture { action } => {
-                background(reply, move || {
-                    listener_ready(&runtime)?;
-                    ask(&runtime, |reply| RecognitionControl::ScrawlCapture {
-                        action,
-                        reply,
-                    })
-                });
-                None
-            }
-            #[cfg(hex_capture)]
-            ControlCommand::ScrawlCaptureList { limit } => {
-                background(reply, move || crate::capture_host::list_captures(limit));
-                None
-            }
-            #[cfg(hex_capture)]
-            ControlCommand::ScrawlCaptureShow { capture } => {
-                background(reply, move || crate::capture_host::show_capture(&capture));
-                None
-            }
-            #[cfg(hex_capture)]
-            ControlCommand::ScrawlCaptureSend {
-                capture,
-                to,
-                always,
-            } => {
-                background(reply, move || {
-                    listener_ready(&runtime)?;
-                    crate::capture_host::send_capture(&capture, to, always)
-                });
-                None
-            }
-            #[cfg(hex_capture)]
-            ControlCommand::ScrawlCaptureUndo => {
-                background(reply, move || {
-                    listener_ready(&runtime)?;
-                    ask(&runtime, |reply| RecognitionControl::CaptureCommand {
-                        command: crate::capture_host::CaptureCommand::Undo,
-                        reply,
-                    })
-                });
-                None
-            }
-            #[cfg(hex_capture)]
-            ControlCommand::ScrawlCaptureRoute { capture, ask_jev } => {
-                background(reply, move || {
-                    crate::capture_host::explain_capture(&capture, ask_jev)
-                });
-                None
-            }
-            #[cfg(not(hex_capture))]
-            ControlCommand::ScrawlCapture { .. }
-            | ControlCommand::ScrawlCaptureList { .. }
-            | ControlCommand::ScrawlCaptureShow { .. }
-            | ControlCommand::ScrawlCaptureSend { .. }
-            | ControlCommand::ScrawlCaptureUndo
-            | ControlCommand::ScrawlCaptureRoute { .. } => Some(ControlReply::error(
-                "unsupported",
-                "this build has no capture engine: it is a build option (`--features capture`), off in public builds",
-            )),
             ControlCommand::PasteLast => {
                 background(reply, move || {
                     listener_ready(&runtime)?;

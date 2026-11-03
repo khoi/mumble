@@ -25,9 +25,6 @@ pub enum StatusItemAction {
     PasteLast,
     /// Copy History entry `id` (Labs › Copy recent dictations).
     CopyRecentDictation(u64),
-    /// Flips `capture.show_overlays_in_recordings`.
-    #[cfg(hex_capture)]
-    ToggleOverlaysInRecordings,
     /// The update item: check, download, or restart into an update.
     Update,
     Quit,
@@ -90,15 +87,6 @@ objc2::define_class!(
             refresh_recent_dictations();
         }
 
-        #[unsafe(method(toggleOverlaysInRecordings:))]
-        fn toggle_overlays_in_recordings(&self, _sender: &AnyObject) {
-            #[cfg(hex_capture)]
-            let _ = self
-                .ivars()
-                .actions
-                .try_send(StatusItemAction::ToggleOverlaysInRecordings);
-        }
-
         #[unsafe(method(checkForUpdates:))]
         fn check_for_updates(&self, _sender: &AnyObject) {
             let _ = self
@@ -128,10 +116,6 @@ struct StatusItemController {
     recent_menu: Retained<NSMenu>,
     update: Option<Retained<NSMenuItem>>,
     update_title: RefCell<String>,
-    /// A checkmark for `capture.show_overlays_in_recordings`, in builds
-    /// that can capture with the experiment on.
-    #[cfg(hex_capture)]
-    overlays_in_recordings: Retained<NSMenuItem>,
     _menu: Retained<NSMenu>,
     target: Retained<StatusItemTarget>,
     model_items: Vec<(TranscriptionModelId, Retained<NSMenuItem>)>,
@@ -167,18 +151,6 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
     recent.setHidden(true);
     menu.addItem(&recent);
     add_item(&menu, &target, "Settings…", sel!(openSettings:), mtm);
-    #[cfg(hex_capture)]
-    let overlays_in_recordings = {
-        let item = add_item(
-            &menu,
-            &target,
-            "Show Hex in Screen Recordings",
-            sel!(toggleOverlaysInRecordings:),
-            mtm,
-        );
-        item.setState(isize::from(crate::capture_host::own_windows_recorded()));
-        item
-    };
     let models = NSMenu::initWithTitle(
         NSMenu::alloc(mtm),
         &NSString::from_str("Transcription Model"),
@@ -272,8 +244,6 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
             recent_menu,
             update,
             update_title: RefCell::new("Check for Updates…".into()),
-            #[cfg(hex_capture)]
-            overlays_in_recordings,
             _menu: menu,
             target,
             model_items,
@@ -443,18 +413,6 @@ fn update_title(status: &crate::desktop::host::DesktopUpdateStatus) -> String {
         }
         _ => "Check for Updates…".into(),
     }
-}
-
-/// Checks or unchecks Show Hex in Screen Recordings.
-#[cfg(hex_capture)]
-pub fn update_overlays_in_recordings(shown: bool) {
-    STATUS_ITEM.with(|controller| {
-        if let Some(controller) = controller.borrow().as_ref() {
-            controller
-                .overlays_in_recordings
-                .setState(isize::from(shown));
-        }
-    });
 }
 
 /// Retitles the update item after the updater's status, so an update ready

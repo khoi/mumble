@@ -1,8 +1,7 @@
 //! Where a HUD sits on its screen: under the menu bar (or above the Dock),
 //! in the menu bar, or as a black island grown out of the notch. Pure
-//! geometry over one screen's metrics, so the dictation HUD and the capture
-//! capsule can place alike; `dictation_indicator` reads the metrics from
-//! `NSScreen` and applies the result.
+//! geometry over one screen's metrics; `dictation_indicator` reads the
+//! metrics from `NSScreen` and applies the result.
 
 use crate::rune_hud::dot_scope::Placement;
 

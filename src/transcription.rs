@@ -29,6 +29,7 @@ pub(crate) mod service;
 pub(crate) mod speech_detector;
 pub(crate) mod stream;
 pub(crate) mod subtitle_credits;
+#[cfg(target_os = "macos")]
 pub(crate) mod transcript;
 
 #[cfg(target_os = "macos")]
@@ -43,7 +44,7 @@ use crate::transcription::models::{
     ModelRuntime, TranscriptionModelId, TranscriptionSelection, validate,
 };
 #[cfg(target_os = "macos")]
-pub use crate::transcription::transcript::{Transcript, TranscriptSegment};
+pub use crate::transcription::transcript::Transcript;
 
 /// Silence after a Unified English clip (400 ms at 16 kHz), so the model
 /// has the context to emit the final word and its closing punctuation
@@ -104,40 +105,6 @@ impl Transcriber {
                 model.transcribe(&samples)
             }
             Self::AppleSpeech(model) => model.transcribe(&samples).map(|result| result.text),
-        }
-    }
-
-    /// Transcribe one normalized segment with the same input preparation as
-    /// plain dictation. The caller retains ownership of segment offsets.
-    pub fn transcribe_segments(&mut self, mut samples: Vec<f32>) -> Result<Transcript> {
-        match self {
-            Self::Gguf(model) => {
-                prepare_gguf_samples(&mut samples, model.model_id());
-                model
-                    .transcribe_segments(&samples)
-                    .map(|result| Transcript {
-                        text: result.text,
-                        segments: result
-                            .segments
-                            .into_iter()
-                            .map(|segment| TranscriptSegment {
-                                start_ms: segment.t0_ms,
-                                end_ms: segment.t1_ms,
-                                text: segment.text,
-                            })
-                            .collect(),
-                        words: result
-                            .words
-                            .into_iter()
-                            .map(|word| TranscriptSegment {
-                                start_ms: word.t0_ms,
-                                end_ms: word.t1_ms,
-                                text: word.text,
-                            })
-                            .collect(),
-                    })
-            }
-            Self::AppleSpeech(model) => model.transcribe(&samples),
         }
     }
 }

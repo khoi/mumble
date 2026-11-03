@@ -12,12 +12,11 @@ unsafe extern "C" {
     fn CGEventSetIntegerValueField(event: EventRef, field: u32, value: i64);
 }
 
-fn test_tap_context(takes_escape: bool) -> (EventTapContext, mpsc::Receiver<ObservedInputEvent>) {
+fn test_tap_context() -> (EventTapContext, mpsc::Receiver<ObservedInputEvent>) {
     let (sender, receiver) = mpsc::channel();
     let context = EventTapContext {
         sender,
         activity: InputActivity::default(),
-        takes_escape: Arc::new(AtomicBool::new(takes_escape)),
         takes_cancel: Arc::new(AtomicBool::new(false)),
         key_tap: AtomicPtr::new(ptr::null_mut()),
         observation_tap: AtomicPtr::new(ptr::null_mut()),
@@ -31,14 +30,7 @@ fn test_tap_context(takes_escape: bool) -> (EventTapContext, mpsc::Receiver<Obse
 
 // Drive the real callback without installing a tap or posting global input.
 fn callback_input(timestamps_and_events: &[(u64, InputEvent)]) -> Vec<ObservedInputEvent> {
-    callback_input_with(false, timestamps_and_events)
-}
-
-fn callback_input_with(
-    takes_escape: bool,
-    timestamps_and_events: &[(u64, InputEvent)],
-) -> Vec<ObservedInputEvent> {
-    let (mut context, receiver) = test_tap_context(takes_escape);
+    let (mut context, receiver) = test_tap_context();
     for &(timestamp, input) in timestamps_and_events {
         // SAFETY: This locally owned event and context live through the callback.
         unsafe {
@@ -76,46 +68,6 @@ fn callback_input_with(
         }
     }
     receiver.try_iter().collect()
-}
-
-#[cfg(hex_capture)]
-#[test]
-fn a_capture_logs_only_keys_that_reach_the_app() {
-    const ESCAPE: u16 = 53;
-    const K: u16 = 40;
-    let now = capture_time().as_nanos();
-    let tapped = crate::capture_host::tapped_while(|| {
-        callback_input_with(
-            true,
-            &[
-                // Hex takes Escape (the capsule's picker): it consumes it.
-                (
-                    now,
-                    InputEvent::Key {
-                        code: ESCAPE,
-                        down: true,
-                        flags: 0,
-                    },
-                ),
-                // ⌘K goes to the app, so the capture logs it.
-                (
-                    now + 1,
-                    InputEvent::Key {
-                        code: K,
-                        down: true,
-                        flags: COMMAND_KEY_MASK,
-                    },
-                ),
-            ],
-        );
-    });
-    assert!(
-        matches!(
-            tapped.as_slice(),
-            [crate::capture_host::Tapped::Key { code: K, .. }]
-        ),
-        "{tapped:?}"
-    );
 }
 
 #[test]
@@ -443,7 +395,6 @@ fn mouse_hotkeys() -> RuntimeHotkeys {
         }
         .runtime(),
         paste_last: None,
-        capture: None,
         raw_dictation: None,
         second_dictation: None,
         cancel: None,
@@ -552,16 +503,11 @@ fn mouse_double_tap_locks_and_a_fresh_press_finishes() {
 fn mouse_release_stays_balanced_after_its_binding_is_removed() {
     let bindings = mouse_hotkeys();
     let mut suppression = ShortcutSuppression::default();
-    assert!(suppression.process_all(
-        mouse_input(3, true, 0, bindings).unwrap(),
-        bindings,
-        true,
-        false
-    ));
+    assert!(suppression.process_all(mouse_input(3, true, 0, bindings).unwrap(), bindings, true,));
     let removed = RuntimeHotkeys::default();
     assert!(mouse_input(3, false, 0, removed).is_none());
     let release = suppression.tracked_mouse_release(3, 0).unwrap();
-    assert!(suppression.process_all(release, removed, true, false));
+    assert!(suppression.process_all(release, removed, true));
     assert!(suppression.tracked_mouse_release(3, 0).is_none());
     assert!(!suppression.suppresses_mouse_drag(3));
 }
@@ -573,18 +519,13 @@ fn mouse_suppression_balances_release_and_drag_even_after_modifiers_change() {
     let mut suppression = ShortcutSuppression::default();
     let activity = InputActivity::default();
     let down = mouse_input(3, true, OPTION_KEY_MASK, bindings).unwrap();
-    let suppressed = suppression.process_all(down, bindings, true, false);
+    let suppressed = suppression.process_all(down, bindings, true);
     assert!(suppressed);
     activity.observe(down, suppressed);
     assert_eq!(activity.revision(), 0);
     assert!(suppression.suppresses_mouse_drag(3));
     assert!(!suppression.suppresses_mouse_drag(0));
-    assert!(suppression.process_all(
-        mouse_input(3, false, 0, bindings).unwrap(),
-        bindings,
-        true,
-        false
-    ));
+    assert!(suppression.process_all(mouse_input(3, false, 0, bindings).unwrap(), bindings, true,));
     assert!(!suppression.suppresses_mouse_drag(3));
     // Wrong modifiers and failed delivery must leave the ordinary click alone.
     for (flags, delivered) in [(0, true), (OPTION_KEY_MASK, false)] {
@@ -592,14 +533,12 @@ fn mouse_suppression_balances_release_and_drag_even_after_modifiers_change() {
             mouse_input(3, true, flags, bindings).unwrap(),
             bindings,
             delivered,
-            false
         ));
         assert!(!suppression.suppresses_mouse_drag(3));
         assert!(!suppression.process_all(
             mouse_input(3, false, flags, bindings).unwrap(),
             bindings,
             true,
-            false
         ));
     }
 }
@@ -2535,14 +2474,14 @@ fn the_cancel_key_is_suppressed_only_while_armed() {
         flags: NO_FLAGS,
     };
     let idle = RuntimeHotkeys::default();
-    assert!(!suppression.process_all(escape(true), idle, true, false));
-    assert!(!suppression.process_all(escape(false), idle, true, false));
+    assert!(!suppression.process_all(escape(true), idle, true));
+    assert!(!suppression.process_all(escape(false), idle, true));
     let armed = RuntimeHotkeys {
         cancel: Some(HotkeyBinding::cancel_default().runtime()),
         ..RuntimeHotkeys::default()
     };
-    assert!(suppression.process_all(escape(true), armed, true, false));
-    assert!(suppression.process_all(escape(false), armed, true, false));
+    assert!(suppression.process_all(escape(true), armed, true));
+    assert!(suppression.process_all(escape(false), armed, true));
 }
 
 #[test]
@@ -2960,7 +2899,7 @@ fn locked_and_toggle_captures_break_the_chord_only_for_presses_hex_owns() {
     assert!(!toggle.take_chord_break(at(1_000)));
     toggle.process(InputEvent::Flags(OPTION_KEY_MASK), at(2_000));
     assert!(toggle.take_chord_break(at(2_000)));
-    // Shift pressed with it, as for Option-Shift-S, discards the press first.
+    // Shift pressed with it discards the press first.
     let mut chord = test_hotkey(false, now);
     chord.set_toggle(true);
     chord.process(InputEvent::Flags(OPTION_KEY_MASK), now);
@@ -2979,7 +2918,7 @@ fn locked_and_toggle_captures_break_the_chord_only_for_presses_hex_owns() {
 fn marked_chord_breaker_never_reaches_the_shortcut_machines_or_the_app() {
     let breaker = crate::keyboard::CHORD_BREAKER_KEY_CODE;
     for (code, marked) in [(breaker, true), (breaker, false), (9, true)] {
-        let (mut context, receiver) = test_tap_context(false);
+        let (mut context, receiver) = test_tap_context();
         // SAFETY: This locally owned event and context live through both callbacks.
         unsafe {
             let user_info = (&mut context as *mut EventTapContext).cast();
@@ -3607,71 +3546,6 @@ fn escape_never_ends_a_held_capture() {
     );
 }
 
-/// A capsule list left open when captures are turned off takes no keys.
-#[cfg(hex_capture)]
-#[test]
-fn the_list_takes_keys_only_while_captures_are_on() {
-    assert!(list_takes_keys(true, true, false));
-    assert!(!list_takes_keys(false, true, false));
-    assert!(!list_takes_keys(true, false, false));
-    assert!(!list_takes_keys(true, true, true));
-}
-
-/// Escape during a dictation hold while a screen capture records ends
-/// neither: the capture shortcut lets it pass, and the dictation keeps
-/// recording.
-#[cfg(hex_capture)]
-#[test]
-fn escape_during_a_capture_ends_nothing() {
-    use crate::capture_host::{CaptureShortcut, ShortcutAction, ShortcutActivity};
-    let now = capture_time();
-    let mut hotkey = test_hotkey(true, now);
-    let escape = InputEvent::Key {
-        code: ESCAPE_KEY_CODE,
-        down: true,
-        flags: OPTION_KEY_MASK,
-    };
-    let mut capture = CaptureShortcut::default();
-    let recording = ShortcutActivity::Recording {
-        elapsed: std::time::Duration::from_secs(5),
-    };
-    assert_eq!(
-        capture.input(escape, RuntimeHotkeys::default(), recording),
-        ShortcutAction::None
-    );
-    assert!(!capture.takes_escape());
-    assert_eq!(hotkey.process(escape, now), None);
-    assert!(hotkey.is_recording());
-}
-
-#[test]
-fn escape_is_suppressed_only_while_hex_takes_it() {
-    let mut suppression = ShortcutSuppression::default();
-    let hotkeys = RuntimeHotkeys::default();
-    let down = InputEvent::Key {
-        code: ESCAPE_KEY_CODE,
-        down: true,
-        flags: NO_FLAGS,
-    };
-    let up = InputEvent::Key {
-        code: ESCAPE_KEY_CODE,
-        down: false,
-        flags: NO_FLAGS,
-    };
-
-    assert!(!suppression.process_all(down, hotkeys, true, false));
-    assert!(!suppression.process_all(up, hotkeys, true, false));
-    assert!(!suppression.process_all(down, hotkeys, false, true));
-    assert!(!suppression.process_all(up, hotkeys, false, true));
-
-    // Hex can stop taking Escape before the key lifts;
-    // the repeat and release keep the press's suppression decision.
-    assert!(suppression.process_all(down, hotkeys, true, true));
-    assert!(suppression.process_all(down, hotkeys, true, false));
-    assert!(suppression.process_all(up, hotkeys, true, false));
-    assert!(!suppression.process_all(down, hotkeys, true, false));
-}
-
 #[test]
 fn extra_modifier_after_threshold_is_ignored() {
     let now = capture_time();
@@ -3721,33 +3595,6 @@ fn option_shift_v_pastes_last_transcript() {
         option_binding(),
         true,
     ));
-}
-
-#[test]
-fn the_capture_shortcut_is_suppressed_and_never_chord_evidence() {
-    let hotkeys = RuntimeHotkeys {
-        capture: Some(RuntimeHotkey {
-            modifiers: crate::app_settings::HotkeyModifiers {
-                option: Some(crate::app_settings::ModifierSide::Either),
-                shift: Some(crate::app_settings::ModifierSide::Either),
-                ..Default::default()
-            },
-            key_code: Some(1),
-        }),
-        ..RuntimeHotkeys::default()
-    };
-    let flags = OPTION_KEY_MASK | SHIFT_KEY_MASK;
-    assert!(!is_chord_evidence(1, flags, hotkeys));
-    assert!(is_chord_evidence(1, flags, RuntimeHotkeys::default()));
-    let mut suppression = ShortcutSuppression::default();
-    let key = |down| InputEvent::Key {
-        code: 1,
-        down,
-        flags,
-    };
-    assert!(suppression.process_all(key(true), hotkeys, true, false));
-    assert!(suppression.process_all(key(false), hotkeys, true, false));
-    assert!(!suppression.process_all(key(true), RuntimeHotkeys::default(), true, false));
 }
 
 #[test]

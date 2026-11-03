@@ -85,8 +85,6 @@ pub(crate) enum ShortcutTarget {
     #[default]
     Dictation,
     PasteLast,
-    /// Annotate (the `capture` experiment).
-    Capture,
     /// Dictate without processing.
     RawDictation,
     /// Toggle mode's cancel shortcut.
@@ -204,9 +202,6 @@ pub fn open(event_path: PathBuf, shutdown: &'static AtomicBool, start_hidden: bo
     };
     let hud = crate::rune_hud::install(&mut app);
     crate::rune_ui::live_text::install(&mut app, crate::rune_hud::live_text_place);
-    // The capture capsule, picker, and ink.
-    let _capture_overlays =
-        crate::rune_ui::capture_capsule::feed::CaptureOverlays::install(&mut app);
     let (requests, receiver) = mpsc::channel();
     let shared = Arc::new(Shared::default());
     RUNTIME
@@ -492,42 +487,6 @@ impl crate::control::host::Host for WindowsControl {
 
     fn shortcut_rules(&self) -> crate::control::settings::ShortcutRules {
         crate::rune_ui::shortcut_rules()
-    }
-
-    /// `hex annotate`: recording commands wait for the listener's capture
-    /// host; the captures folder is read here.
-    fn annotate(&self, command: crate::control::ControlCommand) -> ControlReply {
-        use crate::capture_host::{self as capture, CaptureCommand, CaptureControl};
-        use crate::control::ControlCommand as C;
-        let result = match command {
-            C::ScrawlCapture { action } => {
-                let (sender, receiver) = mpsc::sync_channel(1);
-                capture::send_to_listener(CaptureControl::Reply(action, sender))
-                    .map_err(|error| ControlError::new("not-ready", format!("{error:#}")))
-                    .and_then(|()| {
-                        receiver.recv_timeout(Duration::from_secs(5)).map_err(|_| {
-                            ControlError::new("unavailable", "the listener didn't answer")
-                        })
-                    })
-            }
-            C::ScrawlCaptureList { limit } => capture::list_captures(limit),
-            C::ScrawlCaptureShow { capture } => capture::show_capture(&capture),
-            C::ScrawlCaptureSend {
-                capture,
-                to,
-                always,
-            } => capture::send_capture(&capture, to, always),
-            C::ScrawlCaptureUndo => {
-                capture::send_to_listener(CaptureControl::Command(CaptureCommand::Undo))
-                    .map(|()| ControlReply::done("Asked Hex to take the newest send back"))
-                    .map_err(|error| ControlError::new("not-ready", format!("{error:#}")))
-            }
-            C::ScrawlCaptureRoute { capture, ask_jev } => {
-                capture::explain_capture(&capture, ask_jev)
-            }
-            _ => unreachable!("only Annotate's commands"),
-        };
-        result.unwrap_or_else(ControlReply::from)
     }
 }
 

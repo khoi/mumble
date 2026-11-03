@@ -1,4 +1,4 @@
-//! Native open dialogs for one file or one folder, through Rune's
+//! Native open dialogs for one file, through Rune's
 //! `FileDialogs`: `NSOpenPanel` on macOS, the common item dialog on Windows,
 //! and the FileChooser portal on Linux. Each runs on its own thread and
 //! answers on a channel, so neither the window nor the runtime waits on the
@@ -18,32 +18,20 @@ fn show(dialog: Dialog, reply: Reply) {
                 directory: dialog.directory.filter(|path| path.is_dir()),
                 ..Default::default()
             };
-            let choice = match dialog.target {
-                Target::Folder => pollster::block_on(dialogs.open_folder(options)),
-                Target::File(filters) => {
-                    for filter in filters {
-                        options = options.filter(filter.label, filter.extensions);
-                    }
-                    pollster::block_on(dialogs.open(options))
-                }
-            };
+            for filter in dialog.filters {
+                options = options.filter(filter.label, filter.extensions);
+            }
+            let choice = pollster::block_on(dialogs.open(options));
             reply.send(choice.map_err(|error| error.to_string()));
         });
 }
 
 pub(crate) struct Dialog {
     pub(crate) title: String,
-    pub(crate) target: Target,
+    /// What one existing file may be.
+    pub(crate) filters: Vec<Filter>,
     /// Where the dialog starts, when it exists.
     pub(crate) directory: Option<PathBuf>,
-}
-
-pub(crate) enum Target {
-    /// One existing file.
-    File(Vec<Filter>),
-    /// Only the macOS annotations folder asks for one yet.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    Folder,
 }
 
 /// A named set of extensions without the dot ("app", "exe"); `"*"` is any

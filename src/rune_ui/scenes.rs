@@ -454,25 +454,6 @@ pub(super) const SCENES: &[Scene] = &[
         ui.host = platform::PlatformHost::Fixture(Vec::new());
         ui.settings.paste_with_shift = false;
     }),
-    #[cfg(hex_capture)]
-    ("mac-scrawl-off", |ui| scrawl_fixture(ui, false, |_| {})),
-    #[cfg(hex_capture)]
-    ("mac-scrawl", |ui| scrawl_fixture(ui, true, |_| {})),
-    #[cfg(hex_capture)]
-    ("mac-scrawl-running", |ui| {
-        scrawl_fixture(ui, true, |view| view.scrawl_running = true)
-    }),
-    #[cfg(hex_capture)]
-    ("mac-scrawl-permission", |ui| {
-        scrawl_fixture(ui, true, |view| view.screen_recording = false)
-    }),
-    #[cfg(hex_capture)]
-    ("mac-scrawl-restart", |ui| {
-        scrawl_fixture(ui, true, |view| {
-            view.screen_recording = false;
-            view.screen_needs_restart = true;
-        })
-    }),
     ("mac-voice-filter", |ui| {
         *ui = mac_fixture();
         ui.pane = Pane::VoiceFilter;
@@ -523,10 +504,6 @@ pub(super) const SCENES: &[Scene] = &[
     }),
     ("mac-labs", |ui| {
         *ui = mac_fixture();
-        #[cfg(hex_capture)]
-        {
-            ui.platform.scrawl = Some(platform::ScrawlView::preview());
-        }
         ui.labs_open = true;
     }),
     ("mac-labs-link", |ui| {
@@ -646,19 +623,6 @@ fn mac_first_run(ui: &mut Ui, step: onboarding::MacStep, page: Page) {
     *ui = mac_fixture();
     onboarding::mac_fixture(ui, step);
     onboarding_kit::live::fixture(ui, page);
-}
-
-/// The Annotate pane with captures `enabled`, a 3-day video retention, and
-/// `adjust` applied to what the host shows.
-#[cfg(hex_capture)]
-fn scrawl_fixture(ui: &mut Ui, enabled: bool, adjust: fn(&mut platform::ScrawlView)) {
-    *ui = mac_fixture();
-    ui.settings.capture.enabled = enabled;
-    ui.settings.capture.media_days = Some(3);
-    let mut view = platform::ScrawlView::preview();
-    adjust(&mut view);
-    ui.platform.scrawl = Some(view);
-    ui.pane = Pane::Annotate;
 }
 
 pub(super) fn mac_fixture() -> Ui {

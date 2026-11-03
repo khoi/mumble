@@ -1151,16 +1151,6 @@ fn visible_untrusted_permission_rows_are_reported_for_legacy_cleanup() {
         rt.state.platform.permissions_shown,
         [PermissionKind::Accessibility]
     );
-
-    #[cfg(hex_capture)]
-    {
-        let mut rt = runtime("mac-scrawl-permission", true, PANE_SIZE);
-        refresh(&mut rt);
-        assert_eq!(
-            rt.state.platform.permissions_shown,
-            [PermissionKind::ScreenRecording]
-        );
-    }
 }
 
 /// The macOS and Windows surfaces in both appearances.
@@ -1352,7 +1342,6 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
     rt.state.platform.hex_microphone = None;
     refresh(&mut rt);
     for hidden in [
-        "nav-annotate",
         "nav-voice-filter",
         "nav-playground",
         "nav-hud-lab",

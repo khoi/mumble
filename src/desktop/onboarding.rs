@@ -37,9 +37,6 @@ pub enum PermissionKind {
     Accessibility,
     /// System Audio Recording, asked only for Labs › Also pause the browser.
     SystemAudio,
-    /// Screen Recording, asked only from the Scrawl pane or at a first
-    /// capture, never in the tour.
-    ScreenRecording,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -601,9 +598,7 @@ pub enum TccResetOutcome {
 pub const fn legacy_tcc_services(kind: PermissionKind) -> &'static [&'static str] {
     match kind {
         PermissionKind::Accessibility => &["Accessibility"],
-        PermissionKind::SystemAudio | PermissionKind::ScreenRecording => {
-            &["ScreenCapture", "AudioCapture"]
-        }
+        PermissionKind::SystemAudio => &["ScreenCapture", "AudioCapture"],
         PermissionKind::Microphone => &[],
     }
 }
@@ -615,7 +610,6 @@ pub const fn own_tcc_services(kind: PermissionKind) -> &'static [&'static str] {
     match kind {
         PermissionKind::Accessibility => &["Accessibility"],
         PermissionKind::SystemAudio => &["AudioCapture"],
-        PermissionKind::ScreenRecording => &["ScreenCapture"],
         PermissionKind::Microphone => &[],
     }
 }
@@ -2036,10 +2030,6 @@ mod tests {
             own_tcc_services(PermissionKind::SystemAudio),
             ["AudioCapture"]
         );
-        assert_eq!(
-            own_tcc_services(PermissionKind::ScreenRecording),
-            ["ScreenCapture"]
-        );
         assert!(own_tcc_services(PermissionKind::Microphone).is_empty());
 
         assert_eq!(
@@ -2048,10 +2038,6 @@ mod tests {
         );
         assert_eq!(
             legacy_tcc_services(PermissionKind::SystemAudio),
-            ["ScreenCapture", "AudioCapture"]
-        );
-        assert_eq!(
-            legacy_tcc_services(PermissionKind::ScreenRecording),
             ["ScreenCapture", "AudioCapture"]
         );
         assert!(legacy_tcc_services(PermissionKind::Microphone).is_empty());

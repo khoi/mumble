@@ -1555,7 +1555,7 @@ mod tests {
             post_to(
                 port,
                 &client_token,
-                r#"{"version":5,"command":"dictation","action":"start"}"#,
+                r#"{"version":6,"command":"dictation","action":"start"}"#,
             )
         });
         let call = controls.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -1579,9 +1579,9 @@ mod tests {
             ControlReply::done("Started recording")
         );
 
-        let unauthorized = post("hex_wrong", r#"{"version":5,"command":"status"}"#);
+        let unauthorized = post("hex_wrong", r#"{"version":6,"command":"status"}"#);
         assert!(unauthorized.starts_with("HTTP/1.1 401"));
-        let unknown = post(&token, r#"{"version":5,"command":"explode"}"#);
+        let unknown = post(&token, r#"{"version":6,"command":"explode"}"#);
         assert!(unknown.starts_with("HTTP/1.1 400"));
         // Another protocol version is answered without reaching the app.
         for body in [

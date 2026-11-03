@@ -64,10 +64,6 @@ pub(crate) trait Host {
     /// Quits Hex (and, for `restart`, reopens it) once this reply is out.
     fn quit(&self, restart: bool) -> Result<(), ControlError>;
     fn shortcut_rules(&self) -> settings::ShortcutRules;
-    /// Annotate's commands, where this OS has a capture engine.
-    fn annotate(&self, _command: ControlCommand) -> ControlReply {
-        unsupported("Annotate isn't available on this OS yet")
-    }
 }
 
 pub(crate) fn unsupported(message: impl Into<String>) -> ControlReply {
@@ -227,12 +223,6 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
                 Ok(reply)
             }))
         }
-        command @ (ControlCommand::ScrawlCapture { .. }
-        | ControlCommand::ScrawlCaptureList { .. }
-        | ControlCommand::ScrawlCaptureShow { .. }
-        | ControlCommand::ScrawlCaptureSend { .. }
-        | ControlCommand::ScrawlCaptureUndo
-        | ControlCommand::ScrawlCaptureRoute { .. }) => host.annotate(command),
     }
 }
 
@@ -665,7 +655,6 @@ mod tests {
         let host = FakeHost::default();
         for command in [
             ControlCommand::LaunchAtLogin { enabled: None },
-            ControlCommand::ScrawlCaptureUndo,
             ControlCommand::WindowStory {
                 story: "HUD".into(),
                 variant: None,

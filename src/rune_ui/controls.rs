@@ -4,8 +4,7 @@
 //! type, radii, elevation, and motion come from the kit's tokens.
 
 use rune::{
-    Color, Edge, El, LoopSpec, Shadow, Spring, SpringPair, TextStyle, Transition, Tx, col, el, row,
-    text,
+    Color, El, LoopSpec, Shadow, Spring, SpringPair, TextStyle, Transition, Tx, col, el, row, text,
 };
 use rune_kit::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Kit, Menu, MenuItem,
@@ -917,39 +916,6 @@ pub(super) fn key_tray(
             ..Shadow::default()
         })
         .children(keys)
-}
-
-/// A shortcut's keys at rest, in one `Small` tray. Keys a new shortcut
-/// adds rise into the well, and keys it drops leave through its top.
-pub(super) fn keycaps(p: Paint, key: &str, parts: &[String]) -> El {
-    key_tray(
-        p,
-        key,
-        KeySize::Small,
-        parts.iter().enumerate().map(|(index, part)| {
-            keycap(p, index, part, KeySize::Small, false).transition(tray_roll())
-        }),
-    )
-}
-
-/// The width [`keycaps`] draws `parts` at, with `measure` giving a
-/// legend's width.
-#[cfg(hex_capture)]
-pub(super) fn keycaps_width(parts: &[String], measure: impl Fn(&str, TextStyle) -> f32) -> f32 {
-    let size = KeySize::Small;
-    let caps: f32 = parts
-        .iter()
-        .map(|part| {
-            (measure(part, size.legend()) + 2.0 * (size.face_padding() + KEY_RIM))
-                .max(size.min_width())
-        })
-        .sum();
-    caps + KEY_GAP * parts.len().saturating_sub(1) as f32 + 2.0 * TRAY_PADDING
-}
-
-/// In from the well's bottom, out through its top, inside its clip.
-pub(super) fn tray_roll() -> Transition {
-    Transition::push(Edge::Bottom)
 }
 
 /// One key: a face on a cap whose skirt shows below it. A press sinks the

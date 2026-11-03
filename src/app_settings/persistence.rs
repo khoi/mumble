@@ -250,11 +250,6 @@ fn needs_backup(data: &[u8]) -> bool {
         || crate::transcription::models::validate_saved(&settings.transcription).is_err()
 }
 
-#[cfg(hex_capture)]
-pub(super) fn healthy_file(path: &Path) -> bool {
-    fs::read(path).is_ok_and(|data| !needs_backup(&data))
-}
-
 fn backup_path(path: &Path, data: &[u8]) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     // Content-addressing also deduplicates a retry after a failed save or a

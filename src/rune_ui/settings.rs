@@ -387,8 +387,6 @@ pub(super) fn conflicts(
         ShortcutTarget::PasteLast => HotkeySlot::PasteLast,
         ShortcutTarget::RawDictation => HotkeySlot::RawDictation,
         ShortcutTarget::Cancel => HotkeySlot::Cancel,
-        #[cfg(hex_capture)]
-        ShortcutTarget::Capture => HotkeySlot::Capture,
         #[cfg(target_os = "macos")]
         ShortcutTarget::SecondDictation => HotkeySlot::SecondDictation,
     };
@@ -417,8 +415,6 @@ pub(super) fn binding(settings: &AppSettings, target: ShortcutTarget) -> Option<
         ShortcutTarget::PasteLast => settings.paste_last_hotkey.as_ref(),
         ShortcutTarget::RawDictation => settings.raw_dictation_hotkey.as_ref(),
         ShortcutTarget::Cancel => Some(&settings.cancel_hotkey),
-        #[cfg(hex_capture)]
-        ShortcutTarget::Capture => Some(&settings.capture.hotkey),
         #[cfg(target_os = "macos")]
         ShortcutTarget::SecondDictation => settings.second_dictation_hotkey.as_ref(),
     }
@@ -434,8 +430,6 @@ pub(super) fn set_binding(
         ShortcutTarget::PasteLast => settings.paste_last_hotkey = Some(binding),
         ShortcutTarget::RawDictation => settings.raw_dictation_hotkey = Some(binding),
         ShortcutTarget::Cancel => settings.cancel_hotkey = binding,
-        #[cfg(hex_capture)]
-        ShortcutTarget::Capture => settings.capture.hotkey = binding,
         #[cfg(target_os = "macos")]
         ShortcutTarget::SecondDictation => settings.second_dictation_hotkey = Some(binding),
     }
@@ -730,9 +724,6 @@ fn portal_grant(ui: &Ui, target: ShortcutTarget) -> Option<&DesktopGrantedShortc
         ShortcutTarget::RawDictation => "Dictate without processing",
         // The portal never holds the cancel key.
         ShortcutTarget::Cancel => return None,
-        // The portal lists Annotate's shortcut under that name.
-        #[cfg(hex_capture)]
-        ShortcutTarget::Capture => "Annotate",
         // macOS has no shortcuts portal.
         #[cfg(target_os = "macos")]
         ShortcutTarget::SecondDictation => return None,
@@ -902,7 +893,7 @@ fn gnome_shortcuts_row(ui: &Ui, p: Paint) -> El {
         )
     } else {
         tr(
-            "Adds dictation, paste last and Annotate to GNOME Settings › Keyboard › Custom Shortcuts with your shortcuts. GNOME runs them on the key press, so dictation toggles.",
+            "Adds dictation and paste last to GNOME Settings › Keyboard › Custom Shortcuts with your shortcuts. GNOME runs them on the key press, so dictation toggles.",
         )
     };
     let action = button(
@@ -1176,8 +1167,6 @@ pub(super) fn hotkey_key(target: ShortcutTarget) -> &'static str {
         ShortcutTarget::PasteLast => "paste-last-hotkey",
         ShortcutTarget::RawDictation => "raw-dictation-hotkey",
         ShortcutTarget::Cancel => "cancel-hotkey",
-        #[cfg(hex_capture)]
-        ShortcutTarget::Capture => "capture-hotkey",
         #[cfg(target_os = "macos")]
         ShortcutTarget::SecondDictation => "second-dictation-hotkey",
     }

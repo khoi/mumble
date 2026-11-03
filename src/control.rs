@@ -24,7 +24,7 @@ use crate::dictation::vocabulary::{self, VocabularyEntry};
 
 /// The wire version of [`ControlRequest`] and [`ControlResponse`]. A change
 /// that breaks either shape increments it.
-pub const CONTROL_VERSION: u32 = 5;
+pub const CONTROL_VERSION: u32 = 6;
 
 /// What a capture command does. Commands are idempotent: starting while
 /// recording or stopping while idle changes nothing and succeeds.
@@ -41,22 +41,6 @@ pub enum CaptureAction {
     /// Discard the recording: nothing is transcribed, pasted, or saved.
     /// Dictations already transcribing finish.
     Cancel,
-}
-
-/// What `hex capture` does (the `capture` experiment).
-/// Idempotent like [`CaptureAction`].
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, clap::ValueEnum)]
-#[serde(rename_all = "kebab-case")]
-pub enum ScrawlCaptureAction {
-    Start,
-    /// End the capture and write its bundle in the background.
-    Stop,
-    /// End the capture and discard its bundle.
-    Cancel,
-    /// Stop the capture that records, else start one: for keybindings that
-    /// fire on the press only (GNOME's custom shortcuts, #781).
-    Toggle,
-    Status,
 }
 
 /// The window's panes, by the names `hex window show` takes.
@@ -151,39 +135,6 @@ pub enum ControlCommand {
     VocabularyRemove {
         term: String,
     },
-    /// A Scrawl capture (the `capture` experiment).
-    ScrawlCapture {
-        action: ScrawlCaptureAction,
-    },
-    /// The newest captures in the captures folder, newest first.
-    ScrawlCaptureList {
-        #[serde(default)]
-        limit: Option<usize>,
-    },
-    /// One capture, by bundle name, path, or `latest`.
-    ScrawlCaptureShow {
-        capture: String,
-    },
-    /// Sends a capture to an OpenCode session: `to`, or where its route or
-    /// its last send says.
-    ScrawlCaptureSend {
-        capture: String,
-        #[serde(default)]
-        to: Option<String>,
-        /// Also save a rule sending the capture's site or app there (the
-        /// newest routed capture only).
-        #[serde(default)]
-        always: bool,
-    },
-    /// Takes the newest send back while it can be undone.
-    ScrawlCaptureUndo,
-    /// What routing sees for a capture and what it decides. `ask_jev` asks
-    /// Jev again (one call).
-    ScrawlCaptureRoute {
-        capture: String,
-        #[serde(default)]
-        ask_jev: bool,
-    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -219,14 +170,6 @@ pub enum ControlReply {
     },
     Vocabulary {
         entries: Vec<VocabularyEntry>,
-    },
-    ScrawlCapture(Box<ScrawlCaptureReport>),
-    ScrawlCaptures {
-        captures: Vec<ScrawlCaptureSummary>,
-    },
-    ScrawlCaptureDetail(Box<ScrawlCaptureDetail>),
-    ScrawlCaptureRoute {
-        explanation: String,
     },
     /// `hex dictation stop --print`: the processed transcript.
     Transcript {
@@ -281,87 +224,6 @@ impl From<ControlReply> for ControlResponse {
             reply,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ScrawlCaptureState {
-    #[default]
-    Idle,
-    Recording,
-}
-
-/// A `scrawl-capture` command's answer.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct ScrawlCaptureReport {
-    /// False when the command found nothing to do.
-    pub changed: bool,
-    pub state: ScrawlCaptureState,
-    /// The recording capture's bundle, or the one `stop`/`cancel` just ended.
-    pub bundle: Option<std::path::PathBuf>,
-    pub elapsed_ms: Option<u64>,
-    /// Stopped captures still transcribing or writing.
-    #[serde(default)]
-    pub finishing: Vec<std::path::PathBuf>,
-    /// The most recent capture that finished, failed, or was cancelled.
-    pub last: Option<ScrawlCaptureOutcome>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ScrawlCaptureOutcome {
-    pub bundle: std::path::PathBuf,
-    /// done, failed, or cancelled.
-    pub stage: String,
-    pub words: Option<usize>,
-    /// Spans of a written capture's audio that went missing.
-    #[serde(default)]
-    pub gaps: Option<usize>,
-    /// Why a written capture has no transcript: `no_audio`, or the engine's
-    /// reason.
-    #[serde(default)]
-    pub missing_transcript: Option<String>,
-}
-
-/// A capture on disk, as `hex capture list` shows it.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ScrawlCaptureSummary {
-    /// The bundle's folder name, which `show`, `send`, and `route` take.
-    pub id: String,
-    pub bundle: std::path::PathBuf,
-    pub created_at_ms: u64,
-    pub duration_ms: u64,
-    /// `screen`, `window`, `area`, or `iphone`.
-    pub mode: String,
-    pub app: Option<String>,
-    pub words: usize,
-    /// The session it was sent to, if it was.
-    pub sent_to: Option<ScrawlCaptureSession>,
-    /// OpenCode didn't take its send yet; Hex retries it.
-    #[serde(default)]
-    pub queued: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ScrawlCaptureSession {
-    pub session: String,
-    pub title: String,
-}
-
-/// `hex capture show`: a capture's summary with its words and files.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ScrawlCaptureDetail {
-    #[serde(flatten)]
-    pub summary: ScrawlCaptureSummary,
-    pub window_title: Option<String>,
-    pub transcript: String,
-    pub note: Option<String>,
-    /// Why there is no transcript although there was audio.
-    pub missing_transcript: Option<String>,
-    pub marks: usize,
-    pub keyframes: usize,
-    pub video: Option<std::path::PathBuf>,
-    pub audio: Option<std::path::PathBuf>,
-    pub contact_sheet: Option<std::path::PathBuf>,
 }
 
 /// A refused or failed command, with a stable code (see `docs/cli.md`).
@@ -976,7 +838,7 @@ mod tests {
         assert!(check_flags(CaptureAction::Stop, false, true).is_err());
         assert_eq!(
             serde_json::from_str::<ControlRequest>(
-                r#"{"version":5,"command":"dictation","action":"stop"}"#
+                r#"{"version":6,"command":"dictation","action":"stop"}"#
             )
             .unwrap()
             .command,
@@ -992,7 +854,7 @@ mod tests {
     #[test]
     fn cancel_parses_and_takes_no_flags() {
         let cancel = serde_json::from_str::<ControlRequest>(
-            r#"{"version":5,"command":"dictation","action":"cancel"}"#,
+            r#"{"version":6,"command":"dictation","action":"cancel"}"#,
         )
         .unwrap();
         let ControlCommand::Dictation { action, .. } = cancel.command else {
@@ -1080,7 +942,7 @@ mod tests {
             round_trip_request(command);
         }
         let request: ControlRequest =
-            serde_json::from_str(r#"{"version":5,"command":"vocabulary-add","term":"Rune"}"#)
+            serde_json::from_str(r#"{"version":6,"command":"vocabulary-add","term":"Rune"}"#)
                 .unwrap();
         assert_eq!(
             request.command,
@@ -1134,34 +996,13 @@ mod tests {
                 .unwrap();
         assert_eq!(
             json,
-            serde_json::json!({"version": 5, "command": "restart", "force": true})
+            serde_json::json!({"version": 6, "command": "restart", "force": true})
         );
         // Optional fields may be left out.
         let request: ControlRequest =
-            serde_json::from_str(r#"{"version":5,"command":"quit"}"#).unwrap();
+            serde_json::from_str(r#"{"version":6,"command":"quit"}"#).unwrap();
         assert_eq!(request.command, ControlCommand::Quit { force: false });
-        assert!(serde_json::from_str::<ControlRequest>(r#"{"version":5,"command":"x"}"#).is_err());
-        let capture: ControlRequest =
-            serde_json::from_str(r#"{"version":5,"command":"scrawl-capture","action":"stop"}"#)
-                .unwrap();
-        assert_eq!(
-            capture.command,
-            ControlCommand::ScrawlCapture {
-                action: ScrawlCaptureAction::Stop
-            }
-        );
-        let send: ControlRequest = serde_json::from_str(
-            r#"{"version":5,"command":"scrawl-capture-send","capture":"latest"}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            send.command,
-            ControlCommand::ScrawlCaptureSend {
-                capture: "latest".into(),
-                to: None,
-                always: false,
-            }
-        );
+        assert!(serde_json::from_str::<ControlRequest>(r#"{"version":6,"command":"x"}"#).is_err());
     }
 
     #[test]
@@ -1188,43 +1029,6 @@ mod tests {
                     sounds_like: vec!["capuchin".into()],
                 }],
             },
-            ControlReply::ScrawlCapture(Box::new(ScrawlCaptureReport {
-                changed: true,
-                state: ScrawlCaptureState::Idle,
-                bundle: Some("/tmp/1.capture".into()),
-                elapsed_ms: None,
-                finishing: vec!["/tmp/1.capture".into()],
-                last: Some(ScrawlCaptureOutcome {
-                    bundle: "/tmp/0.capture".into(),
-                    stage: "done".into(),
-                    words: Some(3),
-                    gaps: Some(1),
-                    missing_transcript: None,
-                }),
-            })),
-            ControlReply::ScrawlCaptures {
-                captures: vec![ScrawlCaptureSummary {
-                    id: "1.scrawl".into(),
-                    sent_to: Some(ScrawlCaptureSession {
-                        session: "ses_1".into(),
-                        title: "Hex".into(),
-                    }),
-                    ..ScrawlCaptureSummary::default()
-                }],
-            },
-            ControlReply::ScrawlCaptureDetail(Box::new(ScrawlCaptureDetail {
-                summary: ScrawlCaptureSummary {
-                    id: "1.scrawl".into(),
-                    words: 3,
-                    ..ScrawlCaptureSummary::default()
-                },
-                transcript: "make it blue".into(),
-                video: Some("/tmp/1.scrawl/video.mp4".into()),
-                ..ScrawlCaptureDetail::default()
-            })),
-            ControlReply::ScrawlCaptureRoute {
-                explanation: "Capture   1.scrawl".into(),
-            },
             ControlReply::Transcript {
                 text: "Ship it.".into(),
             },
@@ -1243,13 +1047,13 @@ mod tests {
         .unwrap();
         assert_eq!(
             json,
-            serde_json::json!({"version": 5, "status": "transcript", "text": "Ship it."})
+            serde_json::json!({"version": 6, "status": "transcript", "text": "Ship it."})
         );
         let json =
             serde_json::to_value(ControlResponse::from(ControlReply::error("busy", "x"))).unwrap();
         assert_eq!(
             json,
-            serde_json::json!({"version": 5, "status": "error", "code": "busy", "message": "x"})
+            serde_json::json!({"version": 6, "status": "error", "code": "busy", "message": "x"})
         );
     }
 

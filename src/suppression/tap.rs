@@ -128,26 +128,9 @@ pub(super) fn reads_held(code: u16, down: impl Fn(u32, u16) -> bool) -> bool {
             || down(HID_SYSTEM_STATE, code))
 }
 
-/// What the observation tap adds in builds with captures, while the
-/// `capture` experiment is on: the pointer moving and scrolling. Clicks and
-/// drags already reach the key tap, for mouse shortcuts. The callback drops
-/// them at once unless a capture records (`capture_host::wants_input`); they
-/// never reach the listener.
-#[cfg(hex_capture)]
-pub(super) const CAPTURE_POINTER_MASK: u64 =
-    (1_u64 << EVENT_MOUSE_MOVED) | (1_u64 << EVENT_SCROLL_WHEEL);
-
-pub(super) fn observation_mask() -> u64 {
-    #[cfg(hex_capture)]
-    return OBSERVATION_MASK | CAPTURE_POINTER_MASK;
-    #[cfg(not(hex_capture))]
-    OBSERVATION_MASK
-}
-
 pub(super) fn run_event_tap(
     sender: Sender<ObservedInputEvent>,
     activity: InputActivity,
-    takes_escape: Arc<AtomicBool>,
     takes_cancel: Arc<AtomicBool>,
     pending: PendingInputEvents,
     run_loop: Arc<AtomicPtr<c_void>>,
@@ -156,7 +139,6 @@ pub(super) fn run_event_tap(
     let mut context = Box::new(EventTapContext {
         sender,
         activity,
-        takes_escape,
         takes_cancel,
         key_tap: AtomicPtr::new(ptr::null_mut()),
         observation_tap: AtomicPtr::new(ptr::null_mut()),
@@ -280,7 +262,7 @@ impl ManagedTap {
             TapKind::Observation => (
                 ANNOTATED_SESSION_EVENT_TAP,
                 LISTEN_ONLY_EVENT_TAP,
-                observation_mask(),
+                OBSERVATION_MASK,
                 event_callback,
             ),
             // Listens for key presses at the HID level, where shortcuts that other apps

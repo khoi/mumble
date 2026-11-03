@@ -107,8 +107,6 @@ pub(crate) enum ShortcutTarget {
     #[default]
     Dictation,
     PasteLast,
-    #[cfg(hex_capture)]
-    Capture,
     RawDictation,
     /// Labs › Second dictation shortcut.
     SecondDictation,
@@ -460,14 +458,8 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     };
     let hud = crate::rune_hud::install(&mut app);
     crate::rune_ui::live_text::install(&mut app, crate::rune_hud::live_text_place);
-    // The capture capsule, picker, and ink.
-    #[cfg(hex_capture)]
-    let capture_overlays =
-        Some(crate::rune_ui::capture_capsule::feed::CaptureOverlays::install(&mut app));
     let pump = Pump {
         window: window.clone(),
-        #[cfg(hex_capture)]
-        capture_overlays,
         runtime: handle,
         shutdown,
         indicator_events,
@@ -775,8 +767,6 @@ impl Runtime {
 
 struct Pump {
     window: rune::AppHandle<Ui>,
-    #[cfg(hex_capture)]
-    capture_overlays: Option<crate::rune_ui::capture_capsule::feed::CaptureOverlays>,
     runtime: RuntimeHandle,
     shutdown: &'static AtomicBool,
     indicator_events: Receiver<DictationIndicatorEvent>,
@@ -984,12 +974,6 @@ impl Pump {
         {
             self.status_action(action);
         }
-        #[cfg(hex_capture)]
-        if let Some(overlays) = &mut self.capture_overlays
-            && let Some(shown) = overlays.follow_recordings()
-        {
-            crate::macos_rune::status_item::update_overlays_in_recordings(shown);
-        }
         if self.status_actions.is_none() {
             return;
         }
@@ -1063,30 +1047,9 @@ impl Pump {
                     tracing::warn!(error = %format!("{error:#}"), "the update menu item failed");
                 }
             }
-            #[cfg(hex_capture)]
-            StatusItemAction::ToggleOverlaysInRecordings => self.toggle_overlays_in_recordings(),
             StatusItemAction::Quit => {
                 self.runtime_cancel();
                 self.window.quit();
-            }
-        }
-    }
-
-    /// Saves the flipped setting as the window would; the overlays and the
-    /// menu item follow it from [`Pump::tick`].
-    #[cfg(hex_capture)]
-    fn toggle_overlays_in_recordings(&self) {
-        let saved = AppSettings::load().and_then(|mut settings| {
-            settings.capture.show_overlays_in_recordings =
-                !settings.capture.show_overlays_in_recordings;
-            settings.save()
-        });
-        match saved {
-            Ok(()) => {
-                let _ = self.runtime.send(Request::ReloadSettings);
-            }
-            Err(error) => {
-                tracing::warn!(error = %format!("{error:#}"), "could not save the recordings setting");
             }
         }
     }
@@ -1214,11 +1177,6 @@ impl MenuTarget {
         // SAFETY: NSObject's init on a freshly allocated instance.
         unsafe { msg_send![super(this), init] }
     }
-}
-
-/// Runs `f` on the AppKit main thread through the window's event loop.
-pub(crate) fn on_main_thread(f: impl FnOnce() + Send + 'static) {
-    with_window(|window| window.update(move |_, _| f()));
 }
 
 fn with_window(f: impl FnOnce(&rune::AppHandle<Ui>)) {

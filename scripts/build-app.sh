@@ -28,10 +28,6 @@ else
   app_name=Hex
   bundle_id=anomaly.hex
 fi
-# Every build carries the `capture` experiment (dormant until enabled), with
-# Scrawl's `scrawl-helper` beside `hex`, where the engine looks for it.
-# crates/capture/build.rs compiles the helper from crates/capture/helper into
-# target/release.
 icon_output="$root/target/AppIcon.assets"
 icon_info="$root/target/AppIcon-info.plist"
 version=$(hex_version "$root")
@@ -66,13 +62,10 @@ for name in HEX_LOCAL_BUILD HEX_TEST_BUILD HEX_COMMIT HEX_BUILD_CHANNEL; do
     env_args+=(--config "env.$name='$value'")
   fi
 done
-# The helper's embedded Info.plist names Hex, not Scrawl.
-SCRAWL_HELPER_PLIST="$root/packaging/macos/scrawl-helper-Info.plist" \
-  cargo build --locked --release ${env_args[@]+"${env_args[@]}"} --manifest-path "$root/Cargo.toml"
+cargo build --locked --release ${env_args[@]+"${env_args[@]}"} --manifest-path "$root/Cargo.toml"
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources" "$bundle/Contents/Library"
 cp "$root/target/release/hex" "$executable"
-cp "$root/target/release/scrawl-helper" "$bundle/Contents/MacOS/scrawl-helper"
 cp "$root/app/Info.plist" "$bundle/Contents/Info.plist"
 cp "$root/LICENSE" "$root/THIRD_PARTY_NOTICES.md" "$bundle/Contents/Resources/"
 HEX_VERSION="$version" HEX_BUILD_NUMBER="$build_number" HEX_TEAM_ID="$team_id" HEX_CODESIGN_IDENTITY="${identity#-}" HEX_SKIP_INSTALL_SCRIPT=1 \
@@ -89,8 +82,6 @@ url_scheme=hex
 [ "${HEX_TEST_BUILD:-}" = 1 ] && url_scheme=hex-test
 /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName $bundle_id" "$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 $url_scheme" "$bundle/Contents/Info.plist"
-# The helper mirrors a cabled iPhone as a camera; macOS asks on Hex's behalf.
-plutil -replace NSCameraUsageDescription -string "Hex mirrors and records a cabled iPhone's screen for a capture." "$bundle/Contents/Info.plist"
 rm -rf "$icon_output"
 mkdir -p "$icon_output"
 xcrun actool "$root/app/AppIcon.icon" \
@@ -106,10 +97,6 @@ xcrun actool "$root/app/AppIcon.icon" \
 cp "$icon_output/AppIcon.icns" "$icon_output/Assets.car" "$bundle/Contents/Resources/"
 
 sign "$bundle/Contents/Library/HexMicrophone.driver"
-# Hex runs it only to decode the capture's movie, which needs no
-# entitlement; anything it touches is attributed to Hex, its responsible
-# process.
-sign --identifier "$bundle_id.scrawl-helper" "$bundle/Contents/MacOS/scrawl-helper"
 sign --entitlements "$root/.github/release/hex.entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 echo "$bundle"

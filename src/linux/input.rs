@@ -268,11 +268,6 @@ pub(crate) enum HotkeyEvent {
     FinishPrinting(crate::control::PrintReply),
     Cancel,
     PasteLast,
-    /// The Annotate key went down: nothing recording, a capture starts;
-    /// recording, the capture host waits to tell a tap from a hold.
-    Capture,
-    /// It came up: a tap stops the recording, a hold stops drawing.
-    CaptureUp,
 }
 
 /// What a `hex` command asks of the running listener. Each one is
@@ -318,20 +313,9 @@ pub(crate) struct HotkeyOptions {
     pub(crate) paste_last: Option<LinuxHotkey>,
     /// Dictate without processing, while it is bound.
     pub(crate) raw_dictation: Option<LinuxHotkey>,
-    /// Annotate's one key, while Annotate is on: tap to start and stop,
-    /// hold to draw.
-    pub(crate) capture: Option<LinuxHotkey>,
     /// Toggle mode's cancel shortcut, which Hex takes only while a
     /// recording runs; `None` in Hold mode, which has no cancel.
     pub(crate) cancel: Option<LinuxHotkey>,
-}
-
-/// Whether Annotate draws now, so Escape is Hex's (it stops drawing).
-fn annotate_drawing() -> bool {
-    #[cfg(hex_capture)]
-    return crate::capture_host::drawing();
-    #[cfg(not(hex_capture))]
-    false
 }
 
 /// What the running listener reports about its shortcuts.
@@ -537,17 +521,11 @@ fn project_grants(
 enum Shortcut {
     Dictation,
     PasteLast,
-    Capture,
     RawDictation,
 }
 
 impl Shortcut {
-    const ALL: [Self; 4] = [
-        Self::Dictation,
-        Self::PasteLast,
-        Self::Capture,
-        Self::RawDictation,
-    ];
+    const ALL: [Self; 3] = [Self::Dictation, Self::PasteLast, Self::RawDictation];
 
     fn index(self) -> usize {
         self as usize
@@ -558,7 +536,6 @@ impl Shortcut {
         match self {
             Self::Dictation => ("dictation", "Dictation"),
             Self::PasteLast => ("paste-last", "Paste last dictation"),
-            Self::Capture => ("capture", "Annotate"),
             Self::RawDictation => ("raw-dictation", "Dictate without processing"),
         }
     }
@@ -568,8 +545,6 @@ impl Shortcut {
 enum Input {
     Pressed(Shortcut),
     Released(Shortcut),
-    /// Escape, which only stops Annotate's drawing (#786).
-    Escape,
     /// The cancel shortcut, pressed while Hex held it.
     Cancel,
     /// The backend can no longer tell which keys are down.
@@ -689,13 +664,6 @@ impl ShortcutState {
 
     fn update(&mut self, input: Input, now: Instant) -> Option<HotkeyEvent> {
         match input {
-            // Escape while Annotate draws stops drawing, never the recording,
-            // and it ends no dictation (#786).
-            Input::Escape => {
-                #[cfg(hex_capture)]
-                crate::capture_host::exit_drawing();
-                None
-            }
             Input::Lost => {
                 self.down = false;
                 self.cancel()
@@ -789,8 +757,6 @@ impl ShortcutState {
                 self.idle().then_some(HotkeyEvent::PasteLast)
             }
             Input::Released(Shortcut::PasteLast) => None,
-            Input::Pressed(Shortcut::Capture) => Some(HotkeyEvent::Capture),
-            Input::Released(Shortcut::Capture) => Some(HotkeyEvent::CaptureUp),
             Input::Command(command) => match command {
                 ShortcutCommand::DictationStart => self.start_dictation(false),
                 ShortcutCommand::DictationStartRaw => self.start_dictation(true),
@@ -1047,7 +1013,6 @@ impl Backend {
                 .paste_last
                 .as_ref()
                 .map(|key| (Shortcut::PasteLast, key)),
-            options.capture.as_ref().map(|key| (Shortcut::Capture, key)),
             options
                 .raw_dictation
                 .as_ref()
@@ -1766,8 +1731,6 @@ mod tests {
             test.now += Duration::from_millis(20);
             test.tap();
             assert_eq!(test.events, [START, Finish, START]);
-            test.input(Input::Escape);
-            assert_eq!(test.events, [START, Finish, START]);
             assert_eq!(test.state.capture, Capture::Locked);
         }
     }
@@ -1972,25 +1935,6 @@ mod tests {
         test.now += Duration::from_secs(1);
         test.command(Command::DictationStop);
         assert_eq!(test.events, [RAW, Finish, START, Finish]);
-    }
-
-    /// #786: Escape ends no dictation, held, locked, or idle.
-    #[test]
-    fn escape_never_ends_a_dictation() {
-        let mut test = Test::new(true);
-        test.input(Input::Escape);
-        assert!(test.events.is_empty());
-        test.press(Shortcut::Dictation);
-        test.input(Input::Escape);
-        test.release(Shortcut::Dictation);
-        assert_eq!(test.events, [START, Finish]);
-
-        let mut test = Test::new(true);
-        test.lock();
-        test.input(Input::Escape);
-        assert_eq!(test.state.capture, Capture::Locked);
-        test.tap();
-        assert_eq!(test.events, [Finish]);
     }
 
     fn toggle_with_cancel() -> HotkeyOptions {

@@ -10,8 +10,6 @@
 //! design language (`rune-theme-opencode`); see `docs/design-system.md`.
 
 mod activity;
-#[cfg(hex_capture)]
-pub(crate) mod capture_capsule;
 mod controls;
 #[cfg(target_os = "macos")]
 pub(crate) mod deep_link;
@@ -47,8 +45,6 @@ mod platform_settings;
 pub(crate) mod playground;
 mod practice;
 mod scenes;
-#[cfg(hex_capture)]
-mod scrawl;
 mod settings;
 mod shortcut_mode;
 mod sidebar;
@@ -106,9 +102,6 @@ pub(crate) fn run_app(
     }
     crate::linux::rune_hud::install(&mut app);
     live_text::install(&mut app, crate::rune_hud::live_text_place);
-    // The capture capsule, picker, and ink.
-    let _capture_overlays =
-        crate::rune_ui::capture_capsule::feed::CaptureOverlays::install(&mut app);
     let handle = app.handle();
     host.set_window_visible({
         let handle = handle.clone();
@@ -427,8 +420,6 @@ pub(crate) fn shortcut_rule(
         HotkeySlot::PasteLast => ShortcutTarget::PasteLast,
         HotkeySlot::RawDictation => ShortcutTarget::RawDictation,
         HotkeySlot::Cancel => ShortcutTarget::Cancel,
-        #[cfg(hex_capture)]
-        HotkeySlot::Capture => ShortcutTarget::Capture,
         #[cfg(target_os = "macos")]
         HotkeySlot::SecondDictation => ShortcutTarget::SecondDictation,
         // Labs › Second dictation shortcut is macOS's; elsewhere a saved one
@@ -569,9 +560,6 @@ enum Menu {
     Variant,
     /// The transformations a mode can add (the Modes pane).
     Transformations,
-    /// How long annotations are kept (the Annotate pane).
-    #[cfg(hex_capture)]
-    CaptureRetention,
     /// A settings row's quiet select, by the row's key.
     Pick(&'static str),
 }
@@ -854,16 +842,6 @@ impl Ui {
             platform::PlatformRequest::Permission(
                 crate::desktop::onboarding::PermissionAction::ShowGuide(kind),
             ) => {
-                // Previews grant Screen Recording on the second ask, as for
-                // system audio.
-                #[cfg(hex_capture)]
-                if *kind == crate::desktop::onboarding::PermissionKind::ScreenRecording
-                    && self.host.is_fixture()
-                    && self.platform.asked(*kind)
-                    && let Some(view) = self.platform.scrawl.as_mut()
-                {
-                    view.screen_recording = true;
-                }
                 self.platform.clear_stale(*kind);
                 self.platform.note_asked(*kind);
             }
@@ -882,16 +860,6 @@ impl Ui {
                 }
                 self.platform.clear_stale(kind);
                 self.platform.note_asked(kind);
-            }
-            #[cfg(hex_capture)]
-            platform::PlatformRequest::Scrawl(platform::ScrawlRequest::QuitScrawl) => {
-                let fixture = self.host.is_fixture();
-                if let Some(view) = self.platform.scrawl.as_mut() {
-                    view.quitting_scrawl = true;
-                    if fixture {
-                        view.scrawl_running = false;
-                    }
-                }
             }
             platform::PlatformRequest::SetLaunchAtLogin(enabled) => match &self.host {
                 // Windows (its Run key) and Linux (XDG autostart) write
@@ -952,7 +920,7 @@ impl Ui {
     /// edit this window just made. An editor with typing not yet saved
     /// keeps it; every other editor and setting is adopted beneath, so the
     /// draft's save never writes back what another writer (`hex settings
-    /// set`, a capture's saved rule) changed meanwhile.
+    /// set`) changed meanwhile.
     fn adopt(&mut self, service: AppSettings) -> bool {
         if self.service_settings.as_ref() == Some(&service) {
             return false;
@@ -1007,10 +975,6 @@ impl Ui {
         match pane {
             Pane::History => self.history.reload(),
             Pane::HudLab => self.ask(platform::PlatformRequest::ConfigureHud(self.platform.hud)),
-            #[cfg(hex_capture)]
-            Pane::Annotate => self.ask(platform::PlatformRequest::Scrawl(
-                platform::ScrawlRequest::Refresh,
-            )),
             _ => {}
         }
     }
@@ -1216,8 +1180,6 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
         Pane::Output => (Vec::new(), output::pane(ui, p, cx.is_reduced_motion())),
         Pane::Modes => modes::pane(ui, p, &mut layer),
         Pane::History => history::pane(ui, p, &mut layer),
-        #[cfg(hex_capture)]
-        Pane::Annotate => (Vec::new(), scrawl::pane(ui, p, &mut layer)),
         Pane::VoiceFilter => (Vec::new(), fun::pane(ui, p)),
         Pane::HudLab => hud_lab::pane(ui, p),
         Pane::Activity => activity::pane(ui, p),
@@ -1274,14 +1236,6 @@ fn window_focused(ui: &mut Ui, focused: bool, tx: &mut Tx) {
     explainer::window_focused(ui, focused, tx);
     if focused {
         ui.send(Request::Desktop(DesktopAction::WindowFocused));
-    }
-    // Screen Recording is often switched on in System Settings, so the
-    // Annotate pane reads it again as soon as Hex comes back.
-    #[cfg(hex_capture)]
-    if focused && ui.pane == Pane::Annotate && ui.platform.scrawl.is_some() {
-        ui.ask(platform::PlatformRequest::Scrawl(
-            platform::ScrawlRequest::Refresh,
-        ));
     }
 }
 

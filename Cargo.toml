@@ -6,16 +6,7 @@ default-run = "hex"
 license = "MIT"
 repository = "https://github.com/anomalyco/hex"
 
-# Crates imported from Scrawl live under `crates/`. Plain `cargo build` and
-# `cargo test` still select only Hex; pass `--workspace` or `-p` for the others.
-# `crates/capture` and `crates/capture-core` are excluded so `--workspace`
-# never builds them: they compile only as the macOS and Linux dependencies
-# of the `capture` experiment, and `-p scrawl-capture` / `-p capture-core` test and lint
-# them. The root package is a member without being listed; listing "." would
-# defeat `exclude`.
 [workspace]
-members = ["crates/router"]
-exclude = ["crates/capture", "crates/capture-core"]
 
 [[test]]
 name = "keyboard_layout"
@@ -84,7 +75,6 @@ ureq = { version = "3.4.2", default-features = false, features = ["native-tls"] 
 [target.'cfg(target_os = "macos")'.dependencies]
 arboard = { version = "3.6.1", default-features = false }
 block2 = "0.6.2"
-core-graphics-types = "0.1.3"
 crossterm = "0.29.0"
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
@@ -109,13 +99,8 @@ x11-clipboard = "0.9.3"
 x11rb = { version = "0.14.0", features = ["xkb", "xtest"] }
 zbus = { version = "6.1.0", default-features = false, features = ["tokio", "proxy"] }
 
-# The desktop UI, and Annotate (Scrawl's capture engine), compiled into
-# every desktop build (`capture.enabled`).
+# The desktop UI, compiled into every desktop build.
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
-anyhow = "1.0.104"
-# The capture capsule's motion-lint trace.
-rune-motion = { git = "https://github.com/anomalyco/rune.git", rev = "14bfef586b97bf1f964a0223d4195270d246c14f" }
-scrawl-capture = { path = "crates/capture", default-features = false, features = ["screen", "helper"] }
 pollster = "1.0.1"
 # The local API's `/profile/vitals`; it reports nothing off macOS.
 procwatch = { git = "https://github.com/anomalyco/rune.git", rev = "14bfef586b97bf1f964a0223d4195270d246c14f" }

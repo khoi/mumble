@@ -133,10 +133,6 @@ fn shortcuts(settings: &AppSettings) -> (LinuxHotkey, HotkeyOptions) {
             .raw_dictation_hotkey
             .as_ref()
             .map(LinuxHotkey::from),
-        capture: settings
-            .capture
-            .enabled
-            .then(|| LinuxHotkey::from(&settings.capture.hotkey)),
         cancel: settings.active_cancel_hotkey().map(LinuxHotkey::from),
     };
     (LinuxHotkey::from(&settings.dictation_hotkey), options)
@@ -261,7 +257,6 @@ pub(crate) fn run(
     )?;
     crate::transcription::speech_detector::prewarm();
     // The engine outlives the output worker, which waits on its transcripts.
-    // Captures transcribe on it too, holding it weakly.
     let mut engine = Arc::new(TranscriptionEngine::start(transcriber)?);
     // The local API transcribes host audio on this engine's model.
     engine.share();
@@ -382,19 +377,6 @@ pub(crate) fn run(
         }
     }));
 
-    // The `capture` experiment: its host, the audio it copies from this
-    // listener's microphone, and the capsule's commands.
-    let timeline = crate::capture_host::ListenerTimeline::default();
-    let environment = crate::capture_host::Environment;
-    let mut capture_host =
-        crate::capture_host::CaptureHost::start(Some(engine.clone()), &environment);
-    let capture_controls = crate::capture_host::listen_for_controls();
-    // The microphone stays open for a capture even while released when idle.
-    let mut capture_holds_microphone = false;
-    // The draw shortcut started a recording: drawing turns on once its
-    // engine takes input.
-    let mut draw_pending = false;
-
     let mut events = EventLog::create(event_path)?;
     let mut audio_ready = input.is_open();
     // A released microphone's sample rate is unknown until it opens; the
@@ -509,77 +491,11 @@ pub(crate) fn run(
                 let old =
                     std::mem::replace(&mut engine, Arc::new(TranscriptionEngine::start(next)?));
                 engine.share();
-                crate::capture_host::use_engine(&engine);
-                // A capture still transcribing holds the old engine a moment.
+                // A host-audio request still transcribing holds the old
+                // engine a moment.
                 if let Ok(old) = Arc::try_unwrap(old) {
                     old.retire();
                 }
-            }
-        }
-        crate::capture_host::CaptureHost::reconcile(
-            &mut capture_host,
-            Some(&engine),
-            &environment,
-            &timeline,
-        );
-        if draw_pending && crate::capture_host::wants_input() {
-            draw_pending = false;
-            crate::capture_host::set_pen(true);
-        } else if draw_pending
-            && capture_host
-                .as_mut()
-                .is_none_or(|host| host.recording_since(&timeline).is_none())
-        {
-            // The recording never started.
-            draw_pending = false;
-        }
-        while let Ok(control) = capture_controls.try_recv() {
-            let reply = match (&mut capture_host, control) {
-                (Some(host), crate::capture_host::CaptureControl::Draw) => {
-                    draw_pending = host.draw_shortcut(&timeline);
-                    crate::control::ControlReply::done("drawing")
-                }
-                (Some(host), crate::capture_host::CaptureControl::Scrawl(action)) => {
-                    host.control(action, &timeline)
-                }
-                (Some(host), crate::capture_host::CaptureControl::Command(command)) => {
-                    host.command(command, &timeline)
-                }
-                (host, crate::capture_host::CaptureControl::Reply(action, answer)) => {
-                    let report = match host {
-                        Some(host) => host.control(action, &timeline),
-                        None => crate::control::ControlReply::error(
-                            "feature-off",
-                            "Annotate is off; turn it on with `hex settings set capture.enabled on`",
-                        ),
-                    };
-                    let _ = answer.send(report);
-                    continue;
-                }
-                (None, _) => crate::control::ControlReply::error("feature-off", "captures are off"),
-            };
-            if let crate::control::ControlReply::Error { message, .. } = reply {
-                tracing::warn!(message, "a capture command did nothing");
-            }
-        }
-        // A capture copies this microphone: a released one opens for it,
-        // and closes again once nothing records.
-        if release_while_idle {
-            let wants = timeline.wants_audio();
-            if wants && !input.is_active() {
-                input.request_open();
-            }
-            if wants {
-                capture_holds_microphone = true;
-            } else if capture_holds_microphone
-                && !capture.is_recording()
-                && !start_pending
-                && finishing.is_none()
-                && !service.is_active()
-            {
-                capture_holds_microphone = false;
-                input.close();
-                audio_ready = false;
             }
         }
         if let Some(hotkey) = &hotkey
@@ -615,7 +531,7 @@ pub(crate) fn run(
                 raw,
             )?;
             suppressor.restore();
-            if release_while_idle && !timeline.wants_audio() {
+            if release_while_idle {
                 input.close();
                 audio_ready = false;
             }
@@ -630,12 +546,7 @@ pub(crate) fn run(
         let now = Instant::now();
         let mut service_ended = service.expire(now);
         for control in dictations.drain() {
-            let busy = capture.is_recording()
-                || start_pending
-                || finishing.is_some()
-                || capture_host
-                    .as_mut()
-                    .is_some_and(|host| host.recording_since(&timeline).is_some());
+            let busy = capture.is_recording() || start_pending || finishing.is_some();
             match service.control(control, busy, now) {
                 Effect::None => {}
                 Effect::Start if audio_ready => {
@@ -683,7 +594,7 @@ pub(crate) fn run(
         if service_ended && !service.is_active() {
             capture.cancel();
             suppressor.restore();
-            if release_while_idle && !timeline.wants_audio() {
+            if release_while_idle {
                 input.close();
                 audio_ready = false;
             }
@@ -711,13 +622,6 @@ pub(crate) fn run(
                         print.send(PrintedTranscript::NotRecording);
                     }
                 }
-                // Annotate records the narration itself: while it records,
-                // dictation starts nothing. The desktop already took the keys,
-                // so nothing reaches the app.
-                HotkeyEvent::Start { .. }
-                    if capture_host
-                        .as_mut()
-                        .is_some_and(|host| host.recording_since(&timeline).is_some()) => {}
                 HotkeyEvent::Start { raw } if !capture.is_recording() && !start_pending => {
                     recording_raw = raw;
                     if audio_ready {
@@ -743,10 +647,8 @@ pub(crate) fn run(
                         print.send(PrintedTranscript::NoSpeech);
                     }
                     suppressor.restore();
-                    if !timeline.wants_audio() {
-                        input.close();
-                        audio_ready = false;
-                    }
+                    input.close();
+                    audio_ready = false;
                     events.dictation(
                         if action == HotkeyEvent::Cancel {
                             DictationPhase::Cancelled
@@ -765,18 +667,6 @@ pub(crate) fn run(
                         })
                     });
                 }
-                // One key: a tap starts and stops; held while recording, it
-                // draws until it comes up.
-                HotkeyEvent::Capture => {
-                    if let Some(host) = &mut capture_host {
-                        host.annotate_down(&timeline);
-                    }
-                }
-                HotkeyEvent::CaptureUp => {
-                    if let Some(host) = &mut capture_host {
-                        host.annotate_up(&timeline);
-                    }
-                }
                 HotkeyEvent::PasteLast if !capture.is_recording() => {
                     match jobs.try_send(OutputJob::PasteLast) {
                         Ok(()) | Err(TrySendError::Full(_)) => {}
@@ -790,7 +680,7 @@ pub(crate) fn run(
                     feedback::retract_start();
                     feedback::play(Tone::Cancel);
                     suppressor.restore();
-                    if release_while_idle && !timeline.wants_audio() {
+                    if release_while_idle {
                         input.close();
                         audio_ready = false;
                     }
@@ -843,7 +733,7 @@ pub(crate) fn run(
         match input.recv_timeout(
             UPDATE_INTERVAL,
             crate::audio::capture_idle(
-                capture.is_recording() || timeline.wants_audio(),
+                capture.is_recording(),
                 start_pending || service.is_starting(),
                 finishing.is_some(),
             ),
@@ -876,7 +766,6 @@ pub(crate) fn run(
                     );
                 }
                 crate::audio::input_level::record(&samples);
-                timeline.feed(&samples, input.sample_rate(), captured_through);
                 capture.ingest(&samples, captured_through);
                 if capture.is_recording() {
                     indicator.meter(&samples);
@@ -891,7 +780,6 @@ pub(crate) fn run(
             }
             RecoveringAudioInputEvent::Timeout => {}
             RecoveringAudioInputEvent::Interrupted => {
-                timeline.restart();
                 // A release still in its tail finishes with the audio it has.
                 if let Some(finish) = &mut finishing {
                     finish.release.stop_waiting();
@@ -918,7 +806,6 @@ pub(crate) fn run(
                 )?;
             }
             RecoveringAudioInputEvent::Reopened => {
-                timeline.restart();
                 audio_ready = false;
                 device_label = input.device_name().to_string();
                 // A press waiting on the released microphone is already
@@ -947,9 +834,6 @@ pub(crate) fn run(
     if capture.is_recording() {
         capture.cancel();
         events.dictation(DictationPhase::Cancelled, "")?;
-    }
-    if let Some(mut host) = capture_host.take() {
-        host.shutdown(&timeline);
     }
     indicator.update(false, pending);
     suppressor.restore();
@@ -1165,11 +1049,7 @@ mod tests {
 
     #[test]
     fn a_client_dictation_counts_at_once_and_an_abandoned_one_records_nothing() {
-        let suppressor = || {
-            crate::linux::audio_control::AudioSuppressor::new(
-                crate::app_settings::RecordingAudioBehavior::DoNothing,
-            )
-        };
+        let suppressor = crate::linux::audio_control::AudioSuppressor::for_test;
         let start = |owner: &mut ServiceDictations| {
             let (levels, _) = mpsc::sync_channel(1);
             let (reply, answer) = mpsc::sync_channel(1);

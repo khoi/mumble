@@ -1,9 +1,8 @@
 //! The playground (Labs › Playground): Rune's playground in Hex's window,
 //! opened from its sidebar item or ⇧⌘D (Ctrl+Shift+D off macOS). It swaps
 //! the window for a folded list of
-//! prototypes (the onboarding options, and on macOS the HUD and the
-//! capture capsule), then every fixture
-//! scene in [`SCENES`] under a readable name, by pane. Each opens on a fresh
+//! prototypes (the onboarding options, and on macOS the HUD), then every
+//! fixture scene in [`SCENES`] under a readable name, by pane. Each opens on a fresh
 //! fixture state; the real window's state keeps running underneath,
 //! untouched. The window always attaches it, so the toggle applies at once;
 //! off, no shortcut, menu item, sidebar item, or link opens it.
@@ -159,22 +158,6 @@ const PATHS: &[(&str, &str)] = &[
     ),
     ("history", "Window/History/History"),
     ("history-empty", "Window/History/Empty"),
-    #[cfg(hex_capture)]
-    ("mac-scrawl", "Window/Annotate/On"),
-    #[cfg(hex_capture)]
-    ("mac-scrawl-off", "Window/Annotate/Off"),
-    #[cfg(hex_capture)]
-    ("mac-scrawl-running", "Window/Annotate/Scrawl.app running"),
-    #[cfg(hex_capture)]
-    (
-        "mac-scrawl-permission",
-        "Window/Annotate/Screen Recording missing",
-    ),
-    #[cfg(hex_capture)]
-    (
-        "mac-scrawl-restart",
-        "Window/Annotate/Screen Recording needs restart",
-    ),
     ("mac-voice-filter", "Window/Voice Filter/Voice Filter"),
     ("mac-voice-filter-muted", "Window/Voice Filter/Muted"),
     (
@@ -303,8 +286,6 @@ fn playground() -> Playground<Ui> {
     let playground = super::onboarding_kit::game(playground);
     #[cfg(target_os = "macos")]
     let playground = super::hud_stories::add(playground);
-    #[cfg(all(hex_capture, target_os = "macos"))]
-    let playground = super::capture_capsule::playground::stories(playground);
     playground
 }
 
@@ -351,7 +332,6 @@ const OLD_GROUPS: &[&str] = &[
     "Modes",
     "Commands",
     "History",
-    "Scrawl",
     "Voice Filter",
     "HUD Lab",
     "Activity",
@@ -361,7 +341,7 @@ const OLD_GROUPS: &[&str] = &[
 #[cfg(any(target_os = "macos", test))]
 /// The groups of prototypes that listed at the top before they moved under
 /// [`PROTOTYPES`].
-const OLD_PROTOTYPES: &[&str] = &["Onboarding", "HUD", "Capture capsule"];
+const OLD_PROTOTYPES: &[&str] = &["Onboarding", "HUD"];
 
 #[cfg(any(target_os = "macos", test))]
 /// Today's name for a story link made before the list nested: a scene's
@@ -540,48 +520,6 @@ mod tests {
         }
     }
 
-    /// Every capture-capsule story, on every flow after a capture, opens
-    /// from its `hex://story` link.
-    #[cfg(all(hex_capture, target_os = "macos"))]
-    #[test]
-    fn every_capsule_story_and_flow_opens_from_its_link() {
-        let app = attach(App::new(spec(super::super::spec())));
-        let mut rt = app.headless_runtime(WINDOW_SIZE, rune::Env::new(false, 1.0));
-        rt.frame(0.0);
-        for story in [
-            "whole-flow",
-            "rule",
-            "suggestions",
-            "shift",
-            "sent-rule",
-            "search",
-            "picked",
-            "taken-back",
-            "recording",
-            "discard",
-            "permission",
-        ] {
-            for flow in ["tuned", "list", "toast", "menu-bar", "cursor", "notch"] {
-                open_link(
-                    &mut rt,
-                    &format!("hex://story/prototypes/capture-capsule/{story}?variant={flow}"),
-                );
-            }
-        }
-        for variant in ["Side%20by%20side", "1", "2", "3"] {
-            open_link(
-                &mut rt,
-                &format!("hex://story/prototypes/capture-capsule/notch?variant={variant}"),
-            );
-        }
-        for variant in ["braid", "bars", "line"] {
-            open_link(
-                &mut rt,
-                &format!("hex://story/prototypes/capture-capsule/family?variant={variant}"),
-            );
-        }
-    }
-
     /// Opens `link` as the URL handler does; panics when its story or
     /// variant isn't there.
     #[cfg(target_os = "macos")]
@@ -619,7 +557,6 @@ mod tests {
                 "onboarding-option-pill",
                 "prototypes-onboarding-option-pill",
             ),
-            ("capture-capsule-notch", "prototypes-capture-capsule-notch"),
         ] {
             assert_eq!(alias(old).as_deref(), Some(new), "{old}");
         }

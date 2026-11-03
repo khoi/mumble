@@ -8,7 +8,7 @@ use std::thread;
 use std::time::Instant;
 
 use color_eyre::eyre::{Result, WrapErr, eyre};
-use transcribe_cpp::{Backend, Model, ModelOptions, RunOptions, TimestampKind, Transcript};
+use transcribe_cpp::{Backend, Model, ModelOptions, RunOptions, TimestampKind};
 
 use crate::dictation::context::ContextSnapshot;
 use crate::dictation::processor::ProcessingObservation;
@@ -36,8 +36,6 @@ pub struct Parakeet {
 /// Loaded model weights, estimated from the model file size (they live in Metal buffers).
 static MODEL_WEIGHTS: procwatch::Gauge = procwatch::Gauge::new("speech.model_weights");
 static TRANSCRIBE_LOGGING: Once = Once::new();
-#[cfg(hex_capture)]
-const TRANSCRIPTION_SAMPLES_PER_MS: usize = 16;
 const MAX_PENDING_OUTPUTS: usize = 16;
 
 pub enum WorkerEvent {
@@ -612,110 +610,6 @@ fn process_job_text(
     profiles.process_cancellable(&job.text, &job.context, &job.control.cancelled)
 }
 
-/// The longest audio the capture path hands the model at once; longer
-/// captures are transcribed in consecutive chunks with their times offset.
-#[cfg(hex_capture)]
-const WORD_CHUNK_SAMPLES: usize = 30 * 16_000;
-/// How long a capture chunk waits for dictation to go idle before it is
-/// queued anyway; the engine still never runs it inside a live stream.
-#[cfg(hex_capture)]
-const WORD_DICTATION_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
-
-/// Transcribes a capture's 16 kHz audio with word timestamps on the engine's
-/// warm model (the `capture` experiment). Before each chunk it waits while
-/// dictation is busy (from the shortcut press through inference); each chunk
-/// is then a foreground request: after the dictation already sent, before
-/// background work, and never inside a dictation live stream, which finishes
-/// first. No second copy of the model is loaded, and only a weak reference
-/// to the engine is kept between chunks. Quitting stops it between chunks.
-/// Every chunk runs on `selection`.
-#[cfg(hex_capture)]
-pub fn transcribe_with_words(
-    engine: &std::sync::Weak<TranscriptionEngine>,
-    selection: &crate::transcription::models::TranscriptionSelection,
-    samples: Vec<f32>,
-) -> Result<crate::transcription::Transcript> {
-    if samples.is_empty() {
-        return Ok(crate::transcription::Transcript::default());
-    }
-    transcribe_in_chunks(samples, WORD_CHUNK_SAMPLES, |chunk| {
-        wait_for_dictation_idle()?;
-        let selection = selection.clone();
-        let (send, transcript) = mpsc::sync_channel(1);
-        let offline: crate::transcription::engine::Offline = Box::new(move |model, samples| {
-            let _busy = DictationInference::begin();
-            let transcriber = model
-                .activate(&selection)
-                .map_err(|error| format!("{error:#}"))?;
-            let result = transcriber
-                .transcribe_segments(samples)
-                .map_err(|error| format!("{error:#}"))?;
-            let text = result.text.clone();
-            let _ = send.send(result);
-            Ok(text)
-        });
-        let pending = engine
-            .upgrade()
-            .ok_or_else(|| eyre!("the transcription engine stopped"))?
-            .foreground(chunk, offline)?;
-        pending.wait().map_err(|error| eyre!(error))?;
-        transcript
-            .try_recv()
-            .map_err(|_| eyre!("the transcription returned no words"))
-    })
-}
-
-#[cfg(hex_capture)]
-fn wait_for_dictation_idle() -> Result<()> {
-    let started = Instant::now();
-    while dictation_busy()
-        && !crate::desktop::process_exit::quitting()
-        && started.elapsed() < WORD_DICTATION_WAIT
-    {
-        thread::sleep(std::time::Duration::from_millis(50));
-    }
-    if crate::desktop::process_exit::quitting() {
-        return Err(eyre!("Hex is quitting"));
-    }
-    Ok(())
-}
-
-/// Transcribes `samples` in chunks of at most `chunk_samples`, offsetting
-/// each chunk's segment and word times by where it starts.
-#[cfg(hex_capture)]
-fn transcribe_in_chunks(
-    samples: Vec<f32>,
-    chunk_samples: usize,
-    mut transcribe: impl FnMut(Vec<f32>) -> Result<crate::transcription::Transcript>,
-) -> Result<crate::transcription::Transcript> {
-    use crate::transcription::{Transcript, TranscriptSegment};
-    let shift = |spans: Vec<TranscriptSegment>, offset_ms: i64| {
-        spans.into_iter().filter_map(move |span| {
-            let text = span.text.trim();
-            let start_ms = span.start_ms.max(0);
-            (!text.is_empty()).then(|| TranscriptSegment {
-                start_ms: start_ms + offset_ms,
-                end_ms: span.end_ms.max(start_ms) + offset_ms,
-                text: text.to_string(),
-            })
-        })
-    };
-    let mut merged = Transcript::default();
-    let mut texts = Vec::new();
-    for (index, chunk) in samples.chunks(chunk_samples.max(1)).enumerate() {
-        let offset_ms = (index * chunk_samples / TRANSCRIPTION_SAMPLES_PER_MS) as i64;
-        let result = transcribe(chunk.to_vec())?;
-        let text = result.text.trim();
-        if !text.is_empty() {
-            texts.push(text.to_string());
-        }
-        merged.segments.extend(shift(result.segments, offset_ms));
-        merged.words.extend(shift(result.words, offset_ms));
-    }
-    merged.text = texts.join(" ");
-    Ok(merged)
-}
-
 /// Waits for each accepted job's transcript in submission order, then hands
 /// it to processing. The engine thread runs the inference itself.
 fn run_inference_worker(
@@ -1212,12 +1106,6 @@ impl Parakeet {
         self.session
             .transcribe_chunked(samples, &self.options, self.max_audio_samples)
     }
-
-    pub fn transcribe_segments(&mut self, samples: &[f32]) -> Result<Transcript> {
-        self.session
-            .run(samples, &self.options)
-            .wrap_err("transcription failed")
-    }
 }
 
 #[cfg(test)]
@@ -1565,111 +1453,6 @@ mod tests {
             assert_eq!(streamed.source, Source::Stream);
             assert!(differences * 20 <= reference.len().max(20));
         }
-    }
-
-    #[cfg(hex_capture)]
-    #[test]
-    fn chunked_word_transcription_keeps_word_times_across_chunks() {
-        use crate::transcription::{Transcript, TranscriptSegment};
-        let span = |start_ms, end_ms, text: &str| TranscriptSegment {
-            start_ms,
-            end_ms,
-            text: text.into(),
-        };
-        let mut calls = Vec::new();
-        let merged = transcribe_in_chunks(vec![0.0; 16_000 * 25], 16_000 * 10, |chunk| {
-            calls.push(chunk.len());
-            let chunk_index = calls.len();
-            Ok(Transcript {
-                text: format!(" part {chunk_index} "),
-                segments: vec![span(0, 900, " part ")],
-                words: vec![
-                    span(-5, 400, " part"),
-                    span(450, 300, "two"),
-                    span(500, 600, "  "),
-                ],
-            })
-        })
-        .unwrap();
-        assert_eq!(calls, [160_000, 160_000, 80_000]);
-        assert_eq!(merged.text, "part 1 part 2 part 3");
-        let words = merged
-            .words
-            .iter()
-            .map(|word| (word.start_ms, word.end_ms, word.text.as_str()))
-            .collect::<Vec<_>>();
-        assert_eq!(
-            words,
-            [
-                (0, 400, "part"),
-                (450, 450, "two"),
-                (10_000, 10_400, "part"),
-                (10_450, 10_450, "two"),
-                (20_000, 20_400, "part"),
-                (20_450, 20_450, "two"),
-            ]
-        );
-        assert_eq!(merged.segments[2].start_ms, 20_000);
-    }
-
-    #[cfg(hex_capture)]
-    #[test]
-    fn word_transcription_is_a_foreground_request_on_the_shared_engine() {
-        use crate::transcription::engine::Command as EngineCommand;
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = Arc::new(engine);
-        let weak = Arc::downgrade(&engine);
-        assert!(
-            transcribe_with_words(&weak, &Default::default(), Vec::new())
-                .unwrap()
-                .words
-                .is_empty()
-        );
-        assert!(
-            commands.try_recv().is_err(),
-            "silence never reaches the model"
-        );
-
-        // A busy dictation holds the chunk back until it is idle.
-        let busy = DictationInference::begin();
-        let request = {
-            let weak = weak.clone();
-            thread::spawn(move || {
-                transcribe_with_words(
-                    &weak,
-                    &Default::default(),
-                    vec![0.1; WORD_CHUNK_SAMPLES + 1_600],
-                )
-            })
-        };
-        assert!(
-            commands
-                .recv_timeout(std::time::Duration::from_millis(200))
-                .is_err()
-        );
-        drop(busy);
-        let command = commands
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap();
-        // A foreground request: after dictation already sent, counted as a
-        // request so background work yields to it, and never inside a stream.
-        assert!(matches!(
-            command,
-            EngineCommand::Foreground { ref clip, .. } if clip.len() == WORD_CHUNK_SAMPLES
-        ));
-        // The next chunk waits for this one, so a dictation sent meanwhile
-        // runs first.
-        assert!(
-            commands
-                .recv_timeout(std::time::Duration::from_millis(100))
-                .is_err()
-        );
-        drop(command);
-        assert!(request.join().unwrap().is_err());
-        // Only a weak reference is held: once the engine is gone, a capture
-        // fails instead of keeping it alive.
-        drop(engine);
-        assert!(transcribe_with_words(&weak, &Default::default(), vec![0.1; 16]).is_err());
     }
 
     #[test]

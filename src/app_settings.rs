@@ -15,16 +15,12 @@ use serde::{Deserialize, Serialize};
 use crate::dictation::vocabulary::{VocabularyEntry, serialize_saved};
 use crate::transcription::models::{TranscriptionModelId, TranscriptionSelection};
 
-#[cfg(hex_capture)]
-mod capture;
 mod dictation_processing;
 mod hotkeys;
 mod labs;
 mod persistence;
 mod shortcut_repair;
 
-#[cfg(hex_capture)]
-pub use capture::*;
 pub use dictation_processing::{
     DictationMode, DictationPostProcessing, DictationProcessingSettings,
 };
@@ -50,15 +46,6 @@ static HOTKEY_CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 static SETTINGS_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static TRANSCRIPTION_SELECTION: OnceLock<RwLock<RuntimeTranscriptionSelection>> = OnceLock::new();
 static MICROPHONE_SELECTION: OnceLock<RwLock<RuntimeMicrophoneSelection>> = OnceLock::new();
-#[cfg(hex_capture)]
-static CAPTURE_SETTINGS: OnceLock<RwLock<CaptureSettings>> = OnceLock::new();
-#[cfg(hex_capture)]
-static SCRAWL_APP_RUNNING: AtomicBool = AtomicBool::new(false);
-#[cfg(hex_capture)]
-static CAPTURE_ON: AtomicBool = AtomicBool::new(false);
-/// [`CaptureSettings::capsule_flow`] for the capsule, without a lock.
-#[cfg(hex_capture)]
-static CAPSULE_FLOW: AtomicU8 = AtomicU8::new(0);
 
 #[derive(Default)]
 struct RuntimeTranscriptionSelection {
@@ -272,12 +259,6 @@ pub struct AppSettings {
     )]
     pub retired_voice_action: Option<serde_json::Value>,
     pub history_retention: crate::history::HistoryRetention,
-    #[cfg(hex_capture)]
-    pub capture: CaptureSettings,
-    /// Capture settings from a build with captures, kept as they were.
-    #[cfg(not(hex_capture))]
-    #[serde(rename = "capture", skip_serializing_if = "Option::is_none")]
-    pub capture_from_other_build: Option<serde_json::Value>,
     #[serde(default)]
     pub experimental: ExperimentalSettings,
     /// The Labs features' own switches (`crate::labs`).
@@ -321,31 +302,13 @@ pub struct AppSettings {
 
 /// Moves English dictation to the streaming English model once.
 const STREAMING_ENGLISH_MIGRATION: &str = "streaming-english-model";
-/// Annotate became a default feature: on for everyone once.
-#[cfg(hex_capture)]
-const ANNOTATE_DEFAULT_MIGRATION: &str = "annotate-on-by-default";
 /// Settings saved by an `anomaly.hex` build. Up to 2.3.1 Hex was
 /// `com.kitlangton.hex2` and used the same folder, so a file without this
 /// ID may carry onboarding finished under grants macOS no longer gives the
 /// new identity; the macOS launch checks setup once
 /// (`onboarding::recheck_after_identity_change`).
 const ANOMALY_IDENTITY_MIGRATION: &str = "anomaly-hex-identity";
-#[cfg(hex_capture)]
-const MIGRATIONS: &[&str] = &[
-    STREAMING_ENGLISH_MIGRATION,
-    ANNOTATE_DEFAULT_MIGRATION,
-    ANOMALY_IDENTITY_MIGRATION,
-];
-#[cfg(not(hex_capture))]
 const MIGRATIONS: &[&str] = &[STREAMING_ENGLISH_MIGRATION, ANOMALY_IDENTITY_MIGRATION];
-/// Scrawl's settings were read into `capture` once. Left out of
-/// `MIGRATIONS` so new settings import them too.
-#[cfg(hex_capture)]
-const SCRAWL_IMPORT_MIGRATION: &str = "scrawl-capture-settings";
-/// Scrawl's router settings were read into `capture.routing` once: its own
-/// migration, as it came after the first import.
-#[cfg(hex_capture)]
-const SCRAWL_ROUTING_IMPORT_MIGRATION: &str = "scrawl-routing-settings";
 
 fn deserialize_retired_value<'de, D>(
     deserializer: D,
@@ -386,10 +349,6 @@ impl Default for AppSettings {
             dictation_processing: DictationProcessingSettings::default(),
             retired_voice_action: None,
             history_retention: crate::history::HistoryRetention::default(),
-            #[cfg(hex_capture)]
-            capture: CaptureSettings::default(),
-            #[cfg(not(hex_capture))]
-            capture_from_other_build: None,
             experimental: ExperimentalSettings::default(),
             labs: LabsSettings::default(),
             enable_on_launch: true,
@@ -523,108 +482,9 @@ impl AppSettings {
 
     pub fn load() -> Result<Self> {
         let path = path()?;
-        #[cfg_attr(not(hex_capture), allow(unused_mut))]
-        let mut settings = Self::load_from(&path)?;
-        #[cfg(hex_capture)]
-        {
-            let read = |path: PathBuf| fs::read(path).ok();
-            let engine = read(scrawl_capture::handoff::default_config_path());
-            let mut imported = false;
-            if !settings.has_migration(SCRAWL_IMPORT_MIGRATION) {
-                settings.import_scrawl_settings(
-                    engine.as_deref(),
-                    dirs::data_dir()
-                        .and_then(|data| read(data.join("scrawl/config.json")))
-                        .as_deref(),
-                );
-                settings.migrations.push(SCRAWL_IMPORT_MIGRATION.into());
-                imported = true;
-            }
-            if !settings.has_migration(SCRAWL_ROUTING_IMPORT_MIGRATION) {
-                settings.import_scrawl_routing(engine.as_deref());
-                settings
-                    .migrations
-                    .push(SCRAWL_ROUTING_IMPORT_MIGRATION.into());
-                imported = true;
-            }
-            if imported
-                && path.exists()
-                && persistence::healthy_file(&path)
-                && let Err(error) = settings.write_to(&path)
-            {
-                tracing::warn!(%error, "could not record the Scrawl settings import");
-            }
-        }
+        let settings = Self::load_from(&path)?;
         settings.apply_runtime();
         Ok(settings)
-    }
-
-    /// Reads Scrawl's settings into `capture`, never writing Scrawl's
-    /// files: `engine` is `~/.config/scrawl/config.json` (transcriber,
-    /// captures folder, retention) and `app` is the app's shortcut file.
-    /// Missing or unreadable values keep Hex's defaults.
-    #[cfg(hex_capture)]
-    fn import_scrawl_settings(&mut self, engine: Option<&[u8]>, app: Option<&[u8]>) {
-        if let Some(config) = engine.and_then(|bytes| {
-            serde_json::from_slice::<serde_json::Value>(bytes)
-                .ok()
-                .filter(serde_json::Value::is_object)
-        }) {
-            if config
-                .get("transcriber")
-                .and_then(serde_json::Value::as_str)
-                == Some("apple")
-            {
-                self.capture.transcriber = CaptureTranscriber::Apple;
-            }
-            let home = dirs::home_dir();
-            if let Some(folder) = config
-                .get("capturesDir")
-                .or_else(|| config.get("captures_dir"))
-                .and_then(serde_json::Value::as_str)
-                .map(|dir| match (dir.strip_prefix("~/"), &home) {
-                    (Some(rest), Some(home)) => home.join(rest),
-                    _ => PathBuf::from(dir),
-                })
-                .filter(|dir| dir.is_absolute())
-            {
-                self.capture.folder = Some(folder);
-            }
-            if let Some(policy) = config
-                .get("retention")
-                .and_then(|value| serde_json::from_value(value.clone()).ok())
-            {
-                self.capture.set_retention(policy);
-            }
-        }
-        if let Some(binding) = app.and_then(scrawl_shortcut)
-            && !self.hotkey_in_use(HotkeySlot::Capture, &binding)
-        {
-            self.capture.hotkey = binding;
-        }
-    }
-
-    /// Reads the router's settings from Scrawl's `config.json` (`engine`):
-    /// its rules, `autoSend`, and the `smartRouting` and `jevRouting`
-    /// experiments, leniently as Scrawl reads them, leaving out the Jev key.
-    /// A missing or unreadable file keeps the defaults.
-    #[cfg(hex_capture)]
-    fn import_scrawl_routing(&mut self, engine: Option<&[u8]>) {
-        let Some(serde_json::Value::Object(root)) =
-            engine.and_then(|bytes| serde_json::from_slice(bytes).ok())
-        else {
-            return;
-        };
-        let mut warnings = Vec::new();
-        self.capture.routing =
-            scrawl_capture::router_config_from_scrawl(&root, &mut warnings).into();
-        // A warning quotes the value it dropped, which may be the Jev key.
-        if !warnings.is_empty() {
-            tracing::info!(
-                count = warnings.len(),
-                "Scrawl routing settings were left out"
-            );
-        }
     }
 
     /// The saved `labs` switches, read without loading, normalizing, or
@@ -717,20 +577,6 @@ impl AppSettings {
             Ordering::Relaxed,
         );
         crate::labs::apply(&self.labs);
-        #[cfg(hex_capture)]
-        {
-            *CAPTURE_SETTINGS
-                .get_or_init(Default::default)
-                .write()
-                .unwrap_or_else(|error| error.into_inner()) = self.capture.clone();
-            CAPTURE_ON.store(self.capture_on(), Ordering::Release);
-            crate::capture_host::record_own_windows(self.capture.show_overlays_in_recordings);
-            let flow = CapsuleFlow::ALL
-                .iter()
-                .position(|flow| *flow == self.capture.capsule_flow)
-                .unwrap_or_default();
-            CAPSULE_FLOW.store(flow as u8, Ordering::Release);
-        }
         HEX_MICROPHONE_ENABLED.store(self.experimental.hex_microphone, Ordering::Release);
         crate::audio::hex_microphone::sync_from_settings(
             self.experimental.hex_microphone_mode,
@@ -814,11 +660,6 @@ impl AppSettings {
             self.switch_english_to_streaming_model(installed);
             self.migrations.push(STREAMING_ENGLISH_MIGRATION.into());
         }
-        #[cfg(hex_capture)]
-        if !self.has_migration(ANNOTATE_DEFAULT_MIGRATION) {
-            self.capture.enabled = true;
-            self.migrations.push(ANNOTATE_DEFAULT_MIGRATION.into());
-        }
     }
 
     fn has_migration(&self, id: &str) -> bool {
@@ -892,10 +733,6 @@ impl AppSettings {
         RuntimeHotkeys {
             dictation: self.dictation_hotkey.runtime(),
             paste_last: self.paste_last_hotkey.as_ref().map(HotkeyBinding::runtime),
-            #[cfg(hex_capture)]
-            capture: self.capture_on().then(|| self.capture.hotkey.runtime()),
-            #[cfg(not(hex_capture))]
-            capture: None,
             raw_dictation: self
                 .raw_dictation_hotkey
                 .as_ref()
@@ -924,12 +761,6 @@ impl AppSettings {
         self.second_dictation_hotkey
             .as_ref()
             .filter(|binding| !self.hotkey_in_use(HotkeySlot::SecondDictation, binding))
-    }
-
-    /// Annotate is on: the person hasn't turned it off.
-    #[cfg(hex_capture)]
-    pub fn capture_on(&self) -> bool {
-        self.capture.enabled
     }
 
     /// A shortcut saved as a bare left click swallowed every click, so its
@@ -968,11 +799,6 @@ impl AppSettings {
             tracing::warn!("cleared a left-click second dictation shortcut");
             self.second_dictation_hotkey = None;
         }
-        #[cfg(hex_capture)]
-        if self.capture.hotkey.is_bare_primary_click() {
-            tracing::warn!("replaced a left-click capture shortcut with the default");
-            self.capture.hotkey = HotkeyBinding::capture_default();
-        }
     }
 }
 
@@ -991,8 +817,6 @@ pub enum HotkeySlot {
     Dictation,
     PasteLast,
     RawDictation,
-    #[cfg(hex_capture)]
-    Capture,
     /// Labs › Second dictation shortcut (macOS).
     SecondDictation,
     /// Toggle mode's cancel shortcut.
@@ -1001,8 +825,7 @@ pub enum HotkeySlot {
 
 impl AppSettings {
     /// Whether `binding` overlaps a shortcut `slot` must not share: the other
-    /// active shortcuts. The two capture shortcuts never share a key, on or
-    /// off, since turning captures on can't pull them apart.
+    /// active shortcuts.
     pub fn hotkey_in_use(&self, slot: HotkeySlot, binding: &HotkeyBinding) -> bool {
         let mut others = Vec::new();
         if slot != HotkeySlot::Dictation {
@@ -1027,10 +850,6 @@ impl AppSettings {
             && let Some(second) = &self.second_dictation_hotkey
         {
             others.push(second.clone());
-        }
-        #[cfg(hex_capture)]
-        if slot != HotkeySlot::Capture && self.capture_on() {
-            others.push(self.capture.hotkey.clone());
         }
         hotkey_conflicts(binding, others)
     }
@@ -1140,16 +959,10 @@ pub fn hex_microphone_enabled() -> bool {
 }
 
 pub fn runtime_hotkeys() -> RuntimeHotkeys {
-    #[cfg_attr(not(hex_capture), allow(unused_mut))]
-    let mut hotkeys = *HOTKEYS
+    *HOTKEYS
         .get_or_init(Default::default)
         .read()
-        .unwrap_or_else(|error| error.into_inner());
-    #[cfg(hex_capture)]
-    if scrawl_app_running() {
-        hotkeys.capture = None;
-    }
-    hotkeys
+        .unwrap_or_else(|error| error.into_inner())
 }
 
 pub fn dictation_hotkey() -> RuntimeHotkey {
@@ -1212,8 +1025,7 @@ mod tests {
     use super::*;
 
     /// GNOME's window menu and KDE's KRunner take Alt+Space, so new setups
-    /// there dictate with Ctrl+Alt+Space; it shares no key with Paste last or
-    /// Annotate.
+    /// there dictate with Ctrl+Alt+Space; it shares no key with Paste last.
     #[cfg(target_os = "linux")]
     #[test]
     fn gnome_dictates_with_a_key_gnome_leaves_free() {
@@ -1224,35 +1036,6 @@ mod tests {
         let gnome = HotkeyBinding::linux_dictation_default(true);
         assert_eq!(gnome.keycaps(), ["Ctrl", "Alt", "Space"]);
         assert_ne!(gnome, HotkeyBinding::paste_last_default());
-        #[cfg(hex_capture)]
-        assert_ne!(gnome, HotkeyBinding::capture_default());
-    }
-
-    /// Annotate is on out of the box, so its shortcut and the rest of the
-    /// defaults share no key on any OS.
-    #[cfg(hex_capture)]
-    #[test]
-    fn annotates_default_shortcuts_share_no_key() {
-        let settings = AppSettings::default();
-        assert!(settings.capture.enabled);
-        assert!(!settings.hotkey_in_use(HotkeySlot::Capture, &settings.capture.hotkey));
-    }
-
-    /// A settings file from before Annotate was on by default turns it on
-    /// once.
-    #[cfg(hex_capture)]
-    #[test]
-    fn annotate_turns_on_once_for_older_settings() {
-        let mut settings = AppSettings {
-            migrations: vec![STREAMING_ENGLISH_MIGRATION.into()],
-            ..AppSettings::default()
-        };
-        settings.capture.enabled = false;
-        settings.apply_one_time_migrations_with(|_| true);
-        assert!(settings.capture.enabled);
-        settings.capture.enabled = false;
-        settings.apply_one_time_migrations_with(|_| true);
-        assert!(!settings.capture.enabled, "only once");
     }
 
     #[test]
@@ -2548,50 +2331,5 @@ mod tests {
                 ..Default::default()
             }
         );
-    }
-
-    #[cfg(hex_capture)]
-    #[test]
-    fn scrawls_routing_imports_without_its_jev_key() {
-        let engine = br#"{
-            "autoSend": false,
-            "jevApiKey": "not-a-real-key",
-            "experiments": { "smartRouting": true, "jevRouting": "on" },
-            "routing": {
-                "sites": { "http://localhost:5173": "~/code/site" },
-                "undoWindowSec": 120
-            }
-        }"#;
-        let mut settings = AppSettings::default();
-        settings.import_scrawl_routing(Some(engine));
-        let config = settings.capture.routing.config();
-        assert!(!config.send_captures);
-        assert!(config.smart_routing && config.jev_routing);
-        assert_eq!(config.undo_window_sec, Some(120));
-        assert_eq!(
-            config
-                .sites
-                .get("http://localhost:5173")
-                .map(String::as_str),
-            Some("~/code/site")
-        );
-        assert_eq!(config.jev_api_key, None);
-
-        let saved = serde_json::to_string(&settings).unwrap();
-        assert!(!saved.contains("not-a-real-key"));
-        let read: AppSettings = serde_json::from_str(&saved).unwrap();
-        assert_eq!(read.capture.routing, settings.capture.routing);
-
-        // A key typed into settings.json is dropped on read.
-        let typed = saved.replace("\"jevApiKey\":null", "\"jevApiKey\":\"x\"");
-        assert_ne!(typed, saved);
-        let read: AppSettings = serde_json::from_str(&typed).unwrap();
-        assert_eq!(read.capture.routing.config().jev_api_key, None);
-
-        // Nothing to read keeps the defaults.
-        let mut settings = AppSettings::default();
-        settings.import_scrawl_routing(None);
-        settings.import_scrawl_routing(Some(b"not json"));
-        assert_eq!(settings.capture.routing, CaptureRouting::default());
     }
 }

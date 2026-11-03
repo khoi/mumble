@@ -2,7 +2,7 @@
 //!
 //! The running process binds `service.sock` next to its `service.lock`. A
 //! later `hex` forwards `Activate` (with the launcher's activation token) and
-//! exits; Annotate's recording commands and `Status` ride the same socket.
+//! exits; `Status` rides the same socket.
 //! The `hex` control commands (`crate::control`) reach Hex through its local
 //! API instead, answered by `linux_app`'s control host; dictation commands go
 //! from there straight to the listener's command queue, never through the
@@ -34,8 +34,6 @@ const VERSION: u32 = 2;
 const MAX_FRAME: usize = 128 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const CLIENTS: usize = 8;
-/// A send waits for the router's answer (it waits 8 s itself).
-const SEND_WAIT: Duration = Duration::from_secs(10);
 const UNIT: &str = "hex.service";
 /// How long a launch waits for a started unit's socket. `Type=notify`
 /// units are ready when `systemctl start` returns; units an older installer
@@ -51,24 +49,6 @@ pub(crate) enum Request {
         show: bool,
         session: Session,
     },
-    /// `hex annotate start|stop|cancel`.
-    Capture(crate::control::ScrawlCaptureAction),
-    /// `hex annotate send`: the listener's router sends it and says how.
-    CaptureSend {
-        capture: String,
-        to: Option<String>,
-        always: bool,
-    },
-    /// `hex annotate undo`: takes the newest send back.
-    CaptureUndo,
-    /// `hex annotate draw`: the pen on or off, as the capsule's pen.
-    CaptureDraw,
-    /// `hex annotate start --area`: records that area (X11).
-    CaptureArea {
-        rect: [f64; 4],
-    },
-    /// `hex annotate status`: what the listener's capture host reports.
-    CaptureStatus,
     Status,
 }
 
@@ -290,9 +270,6 @@ struct Reply {
     #[serde(default)]
     status: Option<Status>,
     error: Option<String>,
-    /// What an Annotate command did, for the CLI to print.
-    #[serde(default)]
-    control: Option<crate::control::ControlReply>,
 }
 
 fn socket_path() -> Result<PathBuf> {
@@ -343,11 +320,7 @@ fn read_exact(stream: &mut UnixStream, mut bytes: &mut [u8], deadline: Instant) 
 }
 
 fn read_frame<T: DeserializeOwned>(stream: &mut UnixStream) -> Result<T> {
-    read_frame_within(stream, IO_TIMEOUT)
-}
-
-fn read_frame_within<T: DeserializeOwned>(stream: &mut UnixStream, wait: Duration) -> Result<T> {
-    let deadline = Instant::now() + wait;
+    let deadline = Instant::now() + IO_TIMEOUT;
     let mut header = [0; 4];
     read_exact(stream, &mut header, deadline)?;
     let length = u32::from_be_bytes(header) as usize;
@@ -428,74 +401,6 @@ fn connect() -> std::result::Result<UnixStream, RequestError> {
     Ok(stream)
 }
 
-/// `hex capture`'s recording commands, handed to the running listener.
-pub(crate) fn capture(action: crate::control::ScrawlCaptureAction) -> crate::control::ControlReply {
-    use crate::control::{ControlReply, ScrawlCaptureAction};
-    if action == ScrawlCaptureAction::Status {
-        return match exchange(Request::CaptureStatus, SEND_WAIT) {
-            Ok(reply) => reply
-                .control
-                .unwrap_or_else(|| ControlReply::error("failed", "Hex did not say how it went")),
-            Err(RequestError::NotRunning) => crate::control::cli::not_running(),
-            Err(error) => ControlReply::error("failed", format!("{error}")),
-        };
-    }
-    match request(Request::Capture(action)) {
-        Ok(_) => ControlReply::done("Sent to Hex"),
-        Err(error) => ControlReply::error("failed", format!("{error}")),
-    }
-}
-
-/// `hex annotate send`, carried out by the running Hex's router.
-pub(crate) fn capture_send(
-    capture: String,
-    to: Option<String>,
-    always: bool,
-) -> crate::control::ControlReply {
-    use crate::control::ControlReply;
-    let sent = exchange(
-        Request::CaptureSend {
-            capture,
-            to,
-            always,
-        },
-        SEND_WAIT,
-    );
-    match sent {
-        Ok(reply) => reply
-            .control
-            .unwrap_or_else(|| ControlReply::error("failed", "Hex did not say how it went")),
-        Err(error) => ControlReply::error("failed", format!("{error}")),
-    }
-}
-
-/// `hex annotate start --area`: the running Hex records that area.
-pub(crate) fn capture_area(rect: [f64; 4]) -> crate::control::ControlReply {
-    use crate::control::ControlReply;
-    match request(Request::CaptureArea { rect }) {
-        Ok(_) => ControlReply::done("Sent to Hex"),
-        Err(error) => ControlReply::error("failed", format!("{error}")),
-    }
-}
-
-/// `hex annotate draw`: drawing on or off in the running Hex.
-pub(crate) fn capture_draw() -> crate::control::ControlReply {
-    use crate::control::ControlReply;
-    match request(Request::CaptureDraw) {
-        Ok(_) => ControlReply::done("Drawing on or off; it starts a recording when none records"),
-        Err(error) => ControlReply::error("failed", format!("{error}")),
-    }
-}
-
-/// `hex annotate undo`: the running Hex takes its newest send back.
-pub(crate) fn capture_undo() -> crate::control::ControlReply {
-    use crate::control::ControlReply;
-    match request(Request::CaptureUndo) {
-        Ok(_) => ControlReply::done("Asked Hex to take the newest send back"),
-        Err(error) => ControlReply::error("failed", format!("{error}")),
-    }
-}
-
 /// Before `hex restart`: the unit restarts into this desktop's session
 /// (without a desktop, over SSH, the one Hex last ran in).
 pub(crate) fn prepare_restart() -> Result<()> {
@@ -503,23 +408,6 @@ pub(crate) fn prepare_restart() -> Result<()> {
         write_session_environment()?;
     }
     Ok(())
-}
-
-/// `hex annotate status`, asked of the listener's capture host.
-pub(crate) fn capture_status() -> crate::control::ControlReply {
-    use crate::control::ControlReply;
-    let (sender, receiver) = mpsc::sync_channel(1);
-    if let Err(error) =
-        crate::capture_host::send_to_listener(crate::capture_host::CaptureControl::Reply(
-            crate::control::ScrawlCaptureAction::Status,
-            sender,
-        ))
-    {
-        return ControlReply::error("not-ready", format!("{error:#}"));
-    }
-    receiver
-        .recv_timeout(SEND_WAIT / 2)
-        .unwrap_or_else(|_| ControlReply::error("unavailable", "the listener didn't answer"))
 }
 
 /// Whether a Hex instance answers on the single-instance socket, whatever
@@ -540,14 +428,6 @@ pub(crate) fn instance_answers() -> bool {
 
 /// Sends one request to the running instance. Never starts one.
 pub(crate) fn request(request: Request) -> std::result::Result<Status, RequestError> {
-    let reply = exchange(request, IO_TIMEOUT)?;
-    reply
-        .status
-        .ok_or_else(|| RequestError::Failed(eyre!("Invalid Hex reply")))
-}
-
-/// One request and its reply, which may take up to `wait`.
-fn exchange(request: Request, wait: Duration) -> std::result::Result<Reply, RequestError> {
     let mut stream = connect()?;
     write_frame(
         &mut stream,
@@ -557,14 +437,16 @@ fn exchange(request: Request, wait: Duration) -> std::result::Result<Reply, Requ
         },
     )
     .map_err(RequestError::Failed)?;
-    let reply: Reply = read_frame_within(&mut stream, wait).map_err(RequestError::Failed)?;
+    let reply: Reply = read_frame(&mut stream).map_err(RequestError::Failed)?;
     if reply.version != VERSION {
         return Err(RequestError::Outdated);
     }
     if let Some(error) = &reply.error {
         return Err(RequestError::Failed(eyre!(error.clone())));
     }
-    Ok(reply)
+    reply
+        .status
+        .ok_or_else(|| RequestError::Failed(eyre!("Invalid Hex reply")))
 }
 
 pub(crate) struct Server {
@@ -676,12 +558,10 @@ fn serve_client(
                     version: VERSION,
                     status: None,
                     error: Some("Unsupported Hex request; restart Hex".into()),
-                    control: None,
                 },
             );
             break;
         };
-        let mut answer = None;
         let result = match message.request {
             Request::Activate {
                 activation,
@@ -697,39 +577,6 @@ fn serve_client(
                     Ok(())
                 }
             }
-            Request::Capture(action) => crate::capture_host::send_to_listener(
-                crate::capture_host::CaptureControl::Scrawl(action),
-            ),
-            Request::CaptureSend {
-                capture,
-                to,
-                always,
-            } => {
-                answer = Some(
-                    crate::capture_host::send_capture(&capture, to, always)
-                        .unwrap_or_else(crate::control::ControlReply::from),
-                );
-                Ok(())
-            }
-            Request::CaptureDraw => {
-                crate::capture_host::send_to_listener(crate::capture_host::CaptureControl::Draw)
-            }
-            Request::CaptureArea { rect } => {
-                crate::capture_host::send_to_listener(crate::capture_host::CaptureControl::Command(
-                    crate::capture_host::CaptureCommand::Start(
-                        crate::capture_host::CaptureTarget::Area { rect },
-                    ),
-                ))
-            }
-            Request::CaptureUndo => {
-                crate::capture_host::send_to_listener(crate::capture_host::CaptureControl::Command(
-                    crate::capture_host::CaptureCommand::Undo,
-                ))
-            }
-            Request::CaptureStatus => {
-                answer = Some(capture_status());
-                Ok(())
-            }
             Request::Status => Ok(()),
         };
         let status = published.status.lock().unwrap().clone();
@@ -744,7 +591,6 @@ fn serve_client(
                 version: VERSION,
                 status,
                 error,
-                control: answer,
             },
         )
         .is_err()

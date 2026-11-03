@@ -656,7 +656,7 @@ fn a_draft_saves_over_what_another_writer_changed_meanwhile() {
         .push(TextEdit::new("OpenCode"), TextEdit::default());
     let start = std::time::Instant::now();
     assert!(!ui.save_drafts(start), "waits for a pause");
-    // `hex settings set` (or a capture's saved rule) saves while it waits.
+    // `hex settings set` saves while it waits.
     let mut elsewhere = service;
     elsewhere.enable_on_launch = !elsewhere.enable_on_launch;
     ui.adopt(elsewhere.clone());
@@ -2287,28 +2287,6 @@ fn a_passed_over_bluetooth_default_names_the_input_in_use() {
     rt.invalidate();
     settle(&mut rt);
     assert!(!texts(&rt).contains(&note.to_owned()));
-}
-
-/// `HEX_ANNOTATE_SNAPS=<folder>` writes the Annotate pane, light and dark,
-/// tall enough to show How it works.
-#[cfg(hex_capture)]
-#[test]
-fn annotate_pane_snapshots() {
-    let Some(folder) = std::env::var_os("HEX_ANNOTATE_SNAPS") else {
-        return;
-    };
-    let folder = std::path::PathBuf::from(folder);
-    std::fs::create_dir_all(&folder).unwrap();
-    for dark in [false, true] {
-        let Some((width, height, pixels)) = render("mac-scrawl", dark, (PANE_SIZE.0, 1500.0))
-        else {
-            eprintln!("skipping Annotate snapshots: no GPU adapter");
-            return;
-        };
-        let theme = if dark { "dark" } else { "light" };
-        let path = folder.join(format!("annotate-pane-{theme}.png"));
-        rune::render::write_png(&path, width, height, &pixels).unwrap();
-    }
 }
 
 // ---------------------------------------------------------------------------

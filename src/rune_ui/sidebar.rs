@@ -38,12 +38,6 @@ pub(super) static VOICE_FILTER_ICON: Icon = Icon {
     view: 24.0,
     body: include_str!("../../assets/icons/voice-filter.svg"),
 };
-#[cfg(hex_capture)]
-pub(super) static SCRAWL_ICON: Icon = Icon {
-    name: "hex-scrawl",
-    view: 24.0,
-    body: include_str!("../../assets/icons/scrawl.svg"),
-};
 
 /// Every pane, in navigation order. Which ones show depends on the OS's
 /// [`platform::Capabilities`] and opt-ins ([`Pane::shown`]).
@@ -58,11 +52,6 @@ pub(super) enum Pane {
     /// The old per-app editor, kept for its scenes until it is removed.
     Modes,
     History,
-    /// Annotate (Scrawl's captures inside Hex): the switch, shortcuts,
-    /// permission, transcriber, folder, retention, and Scrawl's own app.
-    /// Dev builds, macOS and Linux only.
-    #[cfg(hex_capture)]
-    Annotate,
     /// The Hex Microphone's driver, tuning, and try-it demo (macOS, while
     /// its Labs toggle is on).
     VoiceFilter,
@@ -79,8 +68,6 @@ impl Pane {
         Pane::Output,
         Pane::Modes,
         Pane::History,
-        #[cfg(hex_capture)]
-        Pane::Annotate,
         Pane::VoiceFilter,
         Pane::HudLab,
         Pane::Activity,
@@ -92,8 +79,6 @@ impl Pane {
             Pane::Modes | Pane::HudLab | Pane::Activity => false,
             // On from Labs, or kept by a driver apps already use.
             Pane::VoiceFilter => caps.fun && fun::running(ui),
-            #[cfg(hex_capture)]
-            Pane::Annotate => ui.platform.scrawl.is_some(),
             _ => true,
         }
     }
@@ -104,8 +89,6 @@ impl Pane {
             Pane::Output => tr("Output"),
             Pane::Modes => tr("Modes"),
             Pane::History => tr("History"),
-            #[cfg(hex_capture)]
-            Pane::Annotate => tr("Annotate"),
             Pane::VoiceFilter => tr("Voice Filter"),
             Pane::HudLab => "HUD Lab",
             Pane::Activity => tr("Activity"),
@@ -118,8 +101,6 @@ impl Pane {
             Pane::Output => "nav-output",
             Pane::Modes => "nav-modes",
             Pane::History => "nav-history",
-            #[cfg(hex_capture)]
-            Pane::Annotate => "nav-annotate",
             Pane::VoiceFilter => "nav-voice-filter",
             Pane::HudLab => "nav-hud-lab",
             Pane::Activity => "nav-activity",
@@ -132,8 +113,6 @@ impl Pane {
             Pane::Output => &OUTPUT_ICON,
             Pane::Modes => &MODES_ICON,
             Pane::History => &HISTORY_ICON,
-            #[cfg(hex_capture)]
-            Pane::Annotate => &SCRAWL_ICON,
             Pane::VoiceFilter => &VOICE_FILTER_ICON,
             Pane::HudLab => &HUD_LAB_ICON,
             Pane::Activity => &ACTIVITY_ICON,

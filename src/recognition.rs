@@ -52,18 +52,6 @@ pub enum RecognitionControl {
     },
     /// What is recording, for `hex status`.
     CaptureStatus { reply: SyncSender<CaptureSnapshot> },
-    /// `hex capture` (the `capture` experiment; see `capture_host`).
-    #[cfg(hex_capture)]
-    ScrawlCapture {
-        action: crate::control::ScrawlCaptureAction,
-        reply: SyncSender<ControlReply>,
-    },
-    /// The capture capsule's switch chips and picker (`capture_host`).
-    #[cfg(hex_capture)]
-    CaptureCommand {
-        command: crate::capture_host::CaptureCommand,
-        reply: SyncSender<ControlReply>,
-    },
     /// `/dictations`, which a local API client owns.
     Dictation(DictationControl),
 }
@@ -338,8 +326,6 @@ pub fn listen(
     };
     hotkeys.configure(CaptureInstant::now());
     let recording_environment = RecordingEnvironmentController::start();
-    #[cfg(hex_capture)]
-    let capture_environment = recording_environment.clone();
     let (mut microphone_revision, microphone) = crate::app_settings::microphone_selection();
     let dictation_worker = DictationWorker::start(
         input_monitor.activity.clone(),
@@ -355,11 +341,6 @@ pub fn listen(
         microphone_policy.release_while_idle,
         dictation_worker.engine(),
     )?;
-    #[cfg(hex_capture)]
-    let mut capture_host =
-        crate::capture_host::CaptureHost::start(dictation_worker.engine(), &capture_environment);
-    #[cfg(hex_capture)]
-    let mut capture_shortcut = crate::capture_host::CaptureShortcut::default();
     let (mut transcription_revision, _) = crate::app_settings::transcription_selection();
     let mut personal_host_enabled = crate::app_settings::custom_transformations_enabled();
     let mut personal_commands = personal_host_enabled
@@ -396,13 +377,6 @@ pub fn listen(
     tracing::info!(device = %input.device_name(), "dictation listener started");
 
     while !shutdown.load(Ordering::Relaxed) {
-        #[cfg(hex_capture)]
-        crate::capture_host::CaptureHost::reconcile(
-            &mut capture_host,
-            dictation_worker.engine().as_ref(),
-            &capture_environment,
-            &input,
-        );
         if let Some(controls) = &controls {
             while let Ok(control) = controls.try_recv() {
                 match control {
@@ -419,26 +393,6 @@ pub fn listen(
                         if let Some(reply) = reply {
                             let _ = reply.send(answer);
                         }
-                    }
-                    #[cfg(hex_capture)]
-                    RecognitionControl::ScrawlCapture { action, reply } => {
-                        let answer = match capture_host.as_mut() {
-                            Some(host) => host.control(action, &input),
-                            None => ControlReply::error(
-                                "feature-off",
-                                "Annotate is off; turn it on in Settings › Annotate or \
-                                 run `hex settings set capture.enabled true`",
-                            ),
-                        };
-                        let _ = reply.send(answer);
-                    }
-                    #[cfg(hex_capture)]
-                    RecognitionControl::CaptureCommand { command, reply } => {
-                        let answer = match capture_host.as_mut() {
-                            Some(host) => host.command(command, &input),
-                            None => ControlReply::error("feature-off", "captures are off"),
-                        };
-                        let _ = reply.send(answer);
                     }
                     RecognitionControl::CaptureStatus { reply } => {
                         let recording = if programmatic.is_some() {
@@ -837,10 +791,6 @@ pub fn listen(
         }
         // The capture shortcut ignores keys while shortcuts are suspended or
         // a programmatic dictation holds them, so their releases go unseen.
-        #[cfg(hex_capture)]
-        if hotkey_capture_suspended || programmatic.is_some() {
-            capture_shortcut.reset();
-        }
         while let Ok(observed) = input_monitor.events.try_recv() {
             let _acknowledge = input_monitor.acknowledge_after(observed);
             let input_event = observed.event;
@@ -854,46 +804,8 @@ pub fn listen(
             if hotkey_capture_suspended {
                 continue;
             }
-            #[cfg(hex_capture)]
-            if let Some(host) = capture_host.as_mut() {
-                // Escape while drawing stops drawing, never the recording.
-                if input_event.is_escape_down() && crate::capture_host::exit_drawing() {
-                    continue;
-                }
-                let activity = host.shortcut_activity(capture_at, &input);
-                let action = capture_shortcut.input(
-                    input_event,
-                    crate::app_settings::runtime_hotkeys(),
-                    activity,
-                );
-                if action == crate::capture_host::ShortcutAction::Cancel {
-                    // Escape before the shortcut's keys came up: nothing else
-                    // hears it.
-                    continue;
-                }
-                host.shortcut(action, &input);
-            }
-            // Escape closes the capsule's picker or open list (never an
-            // Undo: that is a click). It never ends a dictation or a
-            // recording capture: it may be meant for the app in front (#786).
-            #[cfg(hex_capture)]
-            if input_event.is_escape_down()
-                && crate::capture_host::capsule_key(crate::capture_host::CapsuleKey::Escape)
-            {
-                continue;
-            }
-            // Annotate records the narration itself: while it records, the
-            // dictation shortcut starts nothing. The tap still swallows its
-            // chord, so it never reaches the app.
-            #[cfg(hex_capture)]
-            if !hotkeys.any_recording()
-                && capture_host
-                    .as_mut()
-                    .is_some_and(|host| host.recording_since(&input).is_some())
-            {
-                hotkeys.track_key_state(input_event, capture_at);
-                continue;
-            }
+            // Escape never ends a dictation: it may be meant for the app in
+            // front (#786).
             for (shortcut, action) in hotkeys.process(input_event, capture_at) {
                 if action == HotkeyAction::Start {
                     hotkeys.raw_capture = shortcut == Shortcut::Raw;
@@ -999,14 +911,6 @@ pub fn listen(
                 event => handle_dictation_event(event, &mut events, indicator.as_ref())?,
             }
         }
-        // A recording capture takes Escape only while it draws (Escape stops
-        // drawing); otherwise only the capture shortcut's press before it
-        // starts, and the capsule's picker.
-        #[cfg(hex_capture)]
-        let capture_escape = capture_host.is_some() && capture_shortcut.takes_escape();
-        #[cfg(not(hex_capture))]
-        let capture_escape = false;
-        input_monitor.set_takes_escape(claims_escape(programmatic.is_some(), capture_escape));
         // Toggle's cancel key is Hex's only while one of its shortcuts'
         // recordings runs; the listener ignores keys during a programmatic one.
         input_monitor.set_takes_cancel(programmatic.is_none() && hotkeys.any_recording());
@@ -1127,10 +1031,6 @@ pub fn listen(
         }
     }
 
-    #[cfg(hex_capture)]
-    if let Some(host) = &mut capture_host {
-        host.shutdown(&input);
-    }
     drop(personal_commands);
     events.emit(&VoiceEvent::State {
         timestamp_ms: now_ms(),
@@ -1355,14 +1255,6 @@ fn finish_hotkey_dictation(
     }
     emit_engine_state(events, false, worker, device)?;
     Ok(finished)
-}
-
-/// Whether Hex takes Escape from the app in front: only for a capture
-/// (drawing, its press, the capsule's picker), never for dictation, and never
-/// while a programmatic dictation records: the listener ignores every key
-/// then, so Escape stays with its owner app rather than being swallowed.
-fn claims_escape(programmatic: bool, capture_escape: bool) -> bool {
-    !programmatic && capture_escape
 }
 
 /// Why a control can't start a capture now, if it can't.
@@ -1895,16 +1787,6 @@ mod tests {
         let busy = |reply: Option<ControlReply>| matches!(reply, Some(ControlReply::Error { code, .. }) if code == "busy");
         assert!(busy(paste_last_refusal(true)));
         assert!(paste_last_refusal(false).is_none());
-    }
-
-    #[test]
-    fn only_a_capture_claims_escape() {
-        // The capture picker would otherwise claim Escape that the listener
-        // then ignores during a programmatic dictation.
-        assert!(!claims_escape(true, true));
-        assert!(claims_escape(false, true));
-        // Dictation never takes Escape from the app (#786).
-        assert!(!claims_escape(false, false));
     }
 
     #[test]

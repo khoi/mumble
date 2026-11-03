@@ -100,18 +100,17 @@ impl Effect {
     }
 }
 
-/// What one session asks for: dictation prevents idle sleep and applies
-/// "While dictating"; a capture applies "While dictating" only.
+/// What one dictation session asks for: idle-sleep prevention and "While
+/// dictating".
 #[derive(Clone, Copy, Debug)]
 struct Hold {
-    dictation: bool,
     audio: RecordingAudioBehavior,
 }
 
 impl Hold {
     fn wants(self, effect: Effect) -> bool {
         match effect {
-            Effect::Sleep => self.dictation,
+            Effect::Sleep => true,
             Effect::Mute => self.audio == RecordingAudioBehavior::Mute,
             Effect::Duck => self.audio == RecordingAudioBehavior::Duck,
             Effect::Pause => self.audio == RecordingAudioBehavior::PauseMedia,
@@ -254,26 +253,12 @@ impl RecordingEnvironmentController {
     /// dictating" until the session ends.
     pub fn begin(&self) -> RecordingEnvironmentSession {
         self.begin_as(Hold {
-            dictation: true,
             audio: app_settings::recording_audio_behavior(),
         })
     }
 
-    /// A capture session: applies `audio` ("While dictating") until the
-    /// session ends. It is not a dictation, so it neither prevents sleep
-    /// nor holds back background transcription.
-    #[cfg(any(hex_capture, test))]
-    pub fn begin_capture(&self, audio: RecordingAudioBehavior) -> RecordingEnvironmentSession {
-        self.begin_as(Hold {
-            dictation: false,
-            audio,
-        })
-    }
-
     fn begin_as(&self, hold: Hold) -> RecordingEnvironmentSession {
-        if hold.dictation {
-            INTENTIONAL_RECORDINGS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        }
+        INTENTIONAL_RECORDINGS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         let _ = self.commands.send(EnvironmentCommand::Start(hold));
         RecordingEnvironmentSession {
             commands: self.commands.clone(),
@@ -300,9 +285,7 @@ impl RecordingEnvironmentSession {
 
 impl Drop for RecordingEnvironmentSession {
     fn drop(&mut self) {
-        if self.hold.dictation {
-            INTENTIONAL_RECORDINGS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        }
+        INTENTIONAL_RECORDINGS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         let command = EnvironmentCommand::Stop(self.hold, self.then.take());
         if let Err(mpsc::SendError(EnvironmentCommand::Stop(_, Some(then)))) =
             self.commands.send(command)
@@ -574,10 +557,10 @@ fn pause_media_script(players: &HashSet<MediaPlayer>) -> String {
     script
 }
 
-/// A controller whose effects are only recorded, for tests here and in
-/// the capture host. Nothing touches output, media, or sleep.
+/// A controller whose effects are only recorded, for tests. Nothing touches
+/// output, media, or sleep.
 #[cfg(test)]
-pub(crate) mod observed {
+mod observed {
     use super::*;
     use std::sync::mpsc::Receiver;
 
@@ -665,10 +648,7 @@ mod tests {
         controller: &RecordingEnvironmentController,
         audio: RecordingAudioBehavior,
     ) -> RecordingEnvironmentSession {
-        controller.begin_as(Hold {
-            dictation: true,
-            audio,
-        })
+        controller.begin_as(Hold { audio })
     }
 
     #[test]
@@ -684,12 +664,12 @@ mod tests {
         let controller = RecordingEnvironmentController::restoring(move |effect| {
             SlowRestore(events.clone(), effect)
         });
-        let session = controller.begin_capture(MuteOutput);
+        let session = dictation(&controller, MuteOutput);
         // The listener stopping drops both.
         drop(controller);
         drop(session);
         assert!(wait_until_restored(Duration::from_secs(2)));
-        assert_eq!(restored.try_recv(), Ok(Mute));
+        assert_eq!(restored.try_iter().collect::<Vec<_>>(), [Sleep, Mute]);
     }
 
     #[test]
@@ -697,7 +677,7 @@ mod tests {
         let (commands, receiver) = mpsc::channel();
         drop(receiver);
         let controller = RecordingEnvironmentController { commands };
-        drop(controller.begin_capture(MuteOutput));
+        drop(dictation(&controller, MuteOutput));
         let (ran, called) = mpsc::channel();
         dictation(&controller, MuteOutput).end_then(move || ran.send(()).unwrap());
         assert_eq!(called.try_recv(), Ok(()), "the callback still runs");
@@ -738,73 +718,21 @@ mod tests {
     }
 
     #[test]
-    fn a_dictation_inside_a_capture_leaves_the_capture_quiet() {
-        let (controller, events) = observed_controller();
-        let capture = controller.begin_capture(MuteOutput);
-        assert_eq!(settled(&controller, &events), [Held(Mute)]);
-
-        let (then, ran) = mpsc::channel();
-        let dictating = dictation(&controller, MuteOutput);
-        assert_eq!(settled(&controller, &events), [Held(Sleep)]);
-        // The stop tone waits for no unmute: the capture keeps output muted.
-        dictating.end_then(move || then.send(Then).unwrap());
-        assert_eq!(settled(&controller, &events), [Restored(Sleep)]);
-        assert_eq!(ran.try_recv(), Ok(Then));
-
-        drop(capture);
-        assert_eq!(settled(&controller, &events), [Restored(Mute)]);
-    }
-
-    #[test]
-    fn a_capture_inside_a_dictation_outlives_it() {
-        let (controller, events) = observed_controller();
-        let dictating = dictation(&controller, MuteOutput);
-        assert_eq!(settled(&controller, &events), [Held(Sleep), Held(Mute)]);
-
-        let capture = controller.begin_capture(MuteOutput);
-        assert_eq!(settled(&controller, &events), []);
-
-        drop(dictating);
-        assert_eq!(settled(&controller, &events), [Restored(Sleep)]);
-
-        drop(capture);
-        assert_eq!(settled(&controller, &events), [Restored(Mute)]);
-    }
-
-    #[test]
-    fn a_capture_that_ends_first_leaves_the_dictation_quiet() {
-        let (controller, events) = observed_controller();
-        let dictating = dictation(&controller, MuteOutput);
-        let capture = controller.begin_capture(MuteOutput);
-        assert_eq!(settled(&controller, &events), [Held(Sleep), Held(Mute)]);
-
-        drop(capture);
-        assert_eq!(settled(&controller, &events), []);
-
-        drop(dictating);
-        assert_eq!(
-            settled(&controller, &events),
-            [Restored(Sleep), Restored(Mute)]
-        );
-    }
-
-    #[test]
     fn different_policies_compose_and_each_restores_its_own() {
         let (controller, events) = observed_controller();
-        let capture = controller.begin_capture(PauseMedia);
-        assert_eq!(settled(&controller, &events), [Held(Pause)]);
+        let pausing = dictation(&controller, PauseMedia);
+        assert_eq!(settled(&controller, &events), [Held(Sleep), Held(Pause)]);
 
-        let dictating = dictation(&controller, MuteOutput);
-        assert_eq!(settled(&controller, &events), [Held(Sleep), Held(Mute)]);
-        // The capture keeps media paused.
-        drop(dictating);
+        let muting = dictation(&controller, MuteOutput);
+        assert_eq!(settled(&controller, &events), [Held(Mute)]);
+        drop(muting);
+        assert_eq!(settled(&controller, &events), [Restored(Mute)]);
+
+        drop(pausing);
         assert_eq!(
             settled(&controller, &events),
-            [Restored(Sleep), Restored(Mute)]
+            [Restored(Sleep), Restored(Pause)]
         );
-
-        drop(capture);
-        assert_eq!(settled(&controller, &events), [Restored(Pause)]);
     }
 
     #[test]

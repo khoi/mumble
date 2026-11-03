@@ -161,7 +161,6 @@ impl Backend {
         let requested = [
             Some((Shortcut::Dictation, binding)),
             options.paste_last.map(|key| (Shortcut::PasteLast, key)),
-            options.capture.map(|key| (Shortcut::Capture, key)),
             options
                 .raw_dictation
                 .map(|key| (Shortcut::RawDictation, key)),
@@ -221,14 +220,9 @@ impl Backend {
                     Event::KeyPress(event) if event.detail == grabs.escape => {
                         escape_down = true;
                         let mask = u16::from(event.state) & 0xff & !lock_bits;
-                        // Drawing takes Escape first; it stops only that.
-                        inputs.push(
-                            if !annotate_drawing() && grabs.cancel_matches(event.detail, mask) {
-                                Input::Cancel
-                            } else {
-                                Input::Escape
-                            },
-                        );
+                        if grabs.cancel_matches(event.detail, mask) {
+                            inputs.push(Input::Cancel);
+                        }
                     }
                     Event::KeyRelease(event) if event.detail == grabs.escape => {
                         escape_down = false;
@@ -310,13 +304,12 @@ impl Backend {
                 dispatcher.input(input);
             }
             dispatcher.commands();
-            // Escape is Hex's only while Annotate draws or, as Toggle's
-            // cancel key, while a recording runs, and until its release so
-            // the release never reaches the app. Grabbing before the flush
-            // holds the key before dictation hears that recording started.
+            // Escape is Hex's only as Toggle's cancel key, while a recording
+            // runs, and until its release so the release never reaches the
+            // app. Grabbing before the flush holds the key before dictation
+            // hears that recording started.
             let wants_cancel = dispatcher.state.wants_cancel();
-            let wants_escape =
-                annotate_drawing() || escape_down || (wants_cancel && cancel_on_escape);
+            let wants_escape = escape_down || (wants_cancel && cancel_on_escape);
             if wants_escape && grabs.escape_grabbed.is_empty() {
                 let available = grabs.grab_escape()?;
                 if !available && !escape_taken {

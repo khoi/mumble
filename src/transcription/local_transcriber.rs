@@ -12,9 +12,6 @@ use crate::transcription::models::{
     TranscriptionSelection, download_with_progress, model_path, validate,
 };
 
-/// A word or segment's start and end (ms from the clip's start) and text.
-pub type TimedSpan = (i64, i64, String);
-
 pub struct LocalTranscriber {
     session: OfflineGgufSession,
     selection: TranscriptionSelection,
@@ -22,8 +19,6 @@ pub struct LocalTranscriber {
     device_label: String,
     max_audio_samples: Option<usize>,
     stream: Option<transcribe_cpp::StreamOptions>,
-    /// The finest timestamps the model gives, for a capture's word times.
-    finest_timestamps: TimestampKind,
     /// The GPU it runs on; `None` on the CPU.
     gpu: Option<transcribe_cpp::Device>,
     /// The device setting it loaded for.
@@ -353,10 +348,6 @@ impl LocalTranscriber {
                 capabilities.max_audio_ms,
             ),
             stream: None,
-            finest_timestamps: match capabilities.max_timestamp_kind {
-                TimestampKind::Word | TimestampKind::Token => TimestampKind::Word,
-                kind => kind,
-            },
             gpu: matches!(
                 device.device_type,
                 transcribe_cpp::DeviceType::Gpu | transcribe_cpp::DeviceType::Igpu
@@ -443,34 +434,6 @@ impl LocalTranscriber {
         &self.device_label
     }
 
-    /// Text and word times (ms from the clip's start) for a capture, in
-    /// chunks the model takes whole. A model without word times gives its
-    /// segments instead.
-    pub fn transcribe_words(&mut self, samples: &[f32]) -> Result<(String, Vec<TimedSpan>)> {
-        let transcript = self.timed(samples)?;
-        let spans = if transcript.words.is_empty() {
-            transcript.segments
-        } else {
-            transcript.words
-        };
-        let words = spans
-            .into_iter()
-            .map(|word| (word.start_ms, word.end_ms, word.text))
-            .collect();
-        Ok((transcript.text, words))
-    }
-
-    /// Text, segments, and words, in chunks the model takes whole.
-    fn timed(&mut self, samples: &[f32]) -> Result<crate::transcription::transcript::Transcript> {
-        match self.timed_here(samples) {
-            Err(error) if self.gpu_failed(&error) => {
-                self.recover_on_cpu(&error)?;
-                self.timed_here(samples)
-            }
-            result => result,
-        }
-    }
-
     /// Whether this model runs on an integrated GPU slow enough that the
     /// CPU may be faster.
     fn slow_igpu(&self) -> bool {
@@ -536,54 +499,6 @@ impl LocalTranscriber {
         gpu_health::set_auto_on_cpu(self.preference == TranscriptionDevice::Auto);
         *self = cpu;
         Ok(())
-    }
-
-    fn timed_here(
-        &mut self,
-        samples: &[f32],
-    ) -> Result<crate::transcription::transcript::Transcript> {
-        use crate::transcription::transcript::TranscriptSegment;
-        const CHUNK: usize = 30 * 16_000;
-        let chunk = self.max_audio_samples.map_or(CHUNK, |max| max.min(CHUNK));
-        let options = RunOptions {
-            timestamps: self.finest_timestamps,
-            ..self.options.clone()
-        };
-        let span = |offset: i64, t0: i64, t1: i64, text: String| {
-            let text = text.trim().to_owned();
-            (!text.is_empty()).then(|| TranscriptSegment {
-                start_ms: t0.max(0) + offset,
-                end_ms: t1.max(t0) + offset,
-                text,
-            })
-        };
-        let mut timed = crate::transcription::transcript::Transcript::default();
-        let mut texts = Vec::new();
-        for (index, part) in samples.chunks(chunk.max(1)).enumerate() {
-            let offset = (index * chunk / 16) as i64;
-            let transcript = self
-                .session
-                .run(part, &options)
-                .wrap_err("transcription failed")?;
-            let text = transcript.text.trim();
-            if !text.is_empty() {
-                texts.push(text.to_owned());
-            }
-            timed.segments.extend(
-                transcript
-                    .segments
-                    .into_iter()
-                    .filter_map(|s| span(offset, s.t0_ms, s.t1_ms, s.text)),
-            );
-            timed.words.extend(
-                transcript
-                    .words
-                    .into_iter()
-                    .filter_map(|w| span(offset, w.t0_ms, w.t1_ms, w.text)),
-            );
-        }
-        timed.text = texts.join(" ");
-        Ok(timed)
     }
 
     pub fn transcribe(&mut self, samples: &[f32]) -> Result<String> {

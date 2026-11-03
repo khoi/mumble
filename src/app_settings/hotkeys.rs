@@ -673,31 +673,6 @@ impl HotkeyBinding {
         binding
     }
 
-    /// Option-Shift-S, Scrawl's capture shortcut; F9 on Linux. Annotate's
-    /// one key is held to draw while the other hand moves the mouse, so on
-    /// Linux it's a single key one hand holds easily: F9 is free in Hex's
-    /// defaults (Alt+Space, Ctrl+Alt+V) and in the common desktops', where
-    /// F10 opens GTK's menu bar, F11 is full screen and F12 is often a
-    /// dropdown terminal.
-    #[cfg(hex_capture)]
-    pub fn capture_default() -> Self {
-        #[cfg(target_os = "macos")]
-        let binding = Self {
-            modifiers: HotkeyModifiers {
-                option: Some(ModifierSide::Either),
-                shift: Some(ModifierSide::Either),
-                ..Default::default()
-            },
-            key: Some(HotkeyKey {
-                code: layout_key_code('s').unwrap_or(1),
-                label: "S".into(),
-            }),
-        };
-        #[cfg(not(target_os = "macos"))]
-        let binding = Self::chord(HotkeyModifiers::default(), "f9");
-        binding
-    }
-
     /// Escape, with no modifier.
     pub fn cancel_default() -> Self {
         #[cfg(target_os = "macos")]
@@ -713,43 +688,6 @@ impl HotkeyBinding {
         let binding = Self::chord(HotkeyModifiers::default(), "escape");
         binding
     }
-}
-
-/// Scrawl's record shortcut from its app's `{key_code, carbon_modifiers,
-/// label}` file; a shortcut without a modifier is not Scrawl's.
-#[cfg(hex_capture)]
-pub(super) fn scrawl_shortcut(bytes: &[u8]) -> Option<HotkeyBinding> {
-    #[derive(Deserialize)]
-    struct Shortcut {
-        key_code: u16,
-        carbon_modifiers: u32,
-        label: String,
-    }
-    const COMMAND: u32 = 1 << 8;
-    const SHIFT: u32 = 1 << 9;
-    const OPTION: u32 = 1 << 11;
-    const CONTROL: u32 = 1 << 12;
-    let shortcut: Shortcut = serde_json::from_slice(bytes).ok()?;
-    let held = |mask: u32| (shortcut.carbon_modifiers & mask != 0).then_some(ModifierSide::Either);
-    let modifiers = HotkeyModifiers {
-        control: held(CONTROL),
-        option: held(OPTION),
-        shift: held(SHIFT),
-        command: held(COMMAND),
-        function: false,
-    };
-    let label: String = shortcut
-        .label
-        .chars()
-        .filter(|c| !matches!(c, '⌃' | '⌥' | '⇧' | '⌘'))
-        .collect();
-    (!modifiers.is_empty() && !label.is_empty()).then_some(HotkeyBinding {
-        modifiers,
-        key: Some(HotkeyKey {
-            code: shortcut.key_code,
-            label,
-        }),
-    })
 }
 
 #[cfg(target_os = "macos")]
@@ -996,8 +934,6 @@ pub(super) fn side_from_flags(
 pub struct RuntimeHotkeys {
     pub dictation: RuntimeHotkey,
     pub paste_last: Option<RuntimeHotkey>,
-    /// The capture shortcut, while captures are on (`cfg(hex_capture)`).
-    pub capture: Option<RuntimeHotkey>,
     /// Dictate without processing, while it is bound.
     pub raw_dictation: Option<RuntimeHotkey>,
     /// Labs › Second dictation shortcut (macOS), while it is on and bound.
@@ -1009,11 +945,10 @@ pub struct RuntimeHotkeys {
 
 impl RuntimeHotkeys {
     /// Every shortcut Hex matches, for suppression and chord evidence.
-    pub fn all(self) -> [Option<RuntimeHotkey>; 5] {
+    pub fn all(self) -> [Option<RuntimeHotkey>; 4] {
         [
             Some(self.dictation),
             self.paste_last,
-            self.capture,
             self.raw_dictation,
             self.second_dictation,
         ]
@@ -1025,7 +960,6 @@ impl Default for RuntimeHotkeys {
         Self {
             dictation: HotkeyBinding::default().runtime(),
             paste_last: Some(HotkeyBinding::paste_last_default().runtime()),
-            capture: None,
             raw_dictation: None,
             second_dictation: None,
             cancel: None,

@@ -512,72 +512,6 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Turn a feature on and it joins the sidebar.", ["Włącz funkcję, a pojawi się na pasku bocznym.", "开启功能后，它会出现在侧边栏中。", "機能をオンにすると、サイドバーに加わります。", "Schalte eine Funktion ein, dann erscheint sie in der Seitenleiste.", "Activa una función y aparecerá en la barra lateral.", "Увімкніть функцію, і вона з’явиться на бічній панелі."]),
     ("Clear history", ["Wyczyść historię", "清除历史记录", "履歴を消去", "Verlauf löschen", "Borrar historial", "Очистити історію"]),
     ("Keep for", ["Przechowuj przez", "保留时长", "保存期間", "Behalten für", "Conservar durante", "Зберігати"]),
-    ("Annotate", ["Adnotacje", "Annotate", "Annotate", "Annotate", "Annotate", "Annotate"]),
-    ("Tap to start and stop; hold while recording to draw", ["Stuknij, aby zacząć i zakończyć; podczas nagrywania przytrzymaj, aby rysować", "轻按开始和停止；录制时按住即可绘制", "タップで開始と停止、録画中は押したままで描画", "Tippen zum Starten und Stoppen; während der Aufnahme halten zum Zeichnen", "Toca para empezar y parar; mantén pulsado mientras graba para dibujar", "Торкніться, щоб почати й зупинити; під час запису утримуйте, щоб малювати"]),
-    ("Tap the shortcut to start recording; talk as you go", ["Stuknij skrót, aby zacząć nagrywać; mów na bieżąco", "轻按快捷键开始录制，边做边说", "ショートカットをタップすると録画が始まります。話しながら進めてください", "Tippe auf das Kürzel, um die Aufnahme zu starten; sprich dabei", "Toca el atajo para empezar a grabar; habla mientras tanto", "Торкніться сполучення клавіш, щоб почати запис; говоріть по ходу"]),
-    ("While it records, hold the shortcut and move the pointer; no click needed", ["Podczas nagrywania przytrzymaj skrót i poruszaj wskaźnikiem; bez klikania", "录制时按住快捷键并移动指针，无需点击", "録画中にショートカットを押したままポインタを動かします。クリックは不要です", "Halte während der Aufnahme das Kürzel und bewege den Zeiger; ohne Klicken", "Mientras graba, mantén el atajo y mueve el puntero; sin hacer clic", "Під час запису утримуйте сполучення клавіш і рухайте вказівником; клацати не треба"]),
-    ("While it records, hold the shortcut and move the pointer; no click needed. Shift draws too", ["Podczas nagrywania przytrzymaj skrót i poruszaj wskaźnikiem; bez klikania. Shift też rysuje", "录制时按住快捷键并移动指针，无需点击。按住 Shift 也能绘制", "録画中にショートカットを押したままポインタを動かします。クリックは不要です。Shift でも描けます", "Halte während der Aufnahme das Kürzel und bewege den Zeiger; ohne Klicken. Umschalt zeichnet auch", "Mientras graba, mantén el atajo y mueve el puntero; sin hacer clic. Mayús también dibuja", "Під час запису утримуйте сполучення клавіш і рухайте вказівником; клацати не треба. Shift теж малює"]),
-    ("Pen", ["Pióro", "画笔", "ペン", "Stift", "Lápiz", "Перо"]),
-    ("Or click the pen on the bar, then drag to draw; click it again or press Esc to stop", ["Albo kliknij pióro na pasku i przeciągnij, aby rysować; kliknij je ponownie lub naciśnij Esc, aby zakończyć", "或点击栏上的画笔，然后拖动绘制；再次点击或按 Esc 停止", "またはバーのペンをクリックし、ドラッグして描きます。もう一度クリックするか Esc で終了します", "Oder klicke auf den Stift in der Leiste und ziehe zum Zeichnen; klicke erneut oder drücke Esc zum Beenden", "O haz clic en el lápiz de la barra y arrastra para dibujar; haz clic de nuevo o pulsa Esc para parar", "Або натисніть перо на панелі й перетягуйте, щоб малювати; натисніть його знову або Esc, щоб зупинити"]),
-    ("Tap the shortcut again: the annotation is copied, ready to paste", ["Stuknij skrót ponownie: adnotacja zostaje skopiowana i jest gotowa do wklejenia", "再次轻按快捷键：批注已复制，可直接粘贴", "もう一度ショートカットをタップすると、注釈がコピーされ、貼り付けられる状態になります", "Tippe erneut auf das Kürzel: Die Annotation wird kopiert und ist bereit zum Einfügen", "Vuelve a tocar el atajo: la anotación se copia, lista para pegar", "Торкніться сполучення клавіш ще раз: анотацію скопійовано, її можна вставити"]),
-    ("Draw", ["Rysuj", "绘制", "描く", "Zeichnen", "Dibujar", "Малювати"]),
-    ("Paste it anywhere, or click Send to… on the capsule to pick a session", ["Wklej ją w dowolnym miejscu albo kliknij Wyślij do… na kapsule, aby wybrać sesję", "可粘贴到任意位置，或点击胶囊上的“发送到…”选择会话", "どこにでも貼り付けるか、カプセルの「送信先…」をクリックしてセッションを選びます", "Füge sie überall ein oder klicke auf der Kapsel auf „Senden an…“, um eine Sitzung zu wählen", "Pégala donde quieras o haz clic en Enviar a… en la cápsula para elegir una sesión", "Вставте її будь-де або натисніть «Надіслати до…» на капсулі, щоб вибрати сесію"]),
-    #[cfg(hex_capture)]
-    ("Record your screen, draw on it, and talk over it with the shortcut below", ["Nagrywaj ekran, rysuj na nim i komentuj głosem za pomocą skrótu poniżej", "用下方快捷键录制屏幕、在上面绘制并配上讲解", "下のショートカットで画面を録画し、描き込み、話しながら説明できます", "Mit dem Kürzel unten den Bildschirm aufnehmen, darauf zeichnen und dazu sprechen", "Graba tu pantalla, dibuja sobre ella y coméntala con el atajo de abajo", "Записуйте екран, малюйте на ньому й коментуйте голосом за допомогою комбінації нижче"]),
-    #[cfg(hex_capture)]
-    ("Off. Hex records nothing and keeps no shortcut until you turn this on.", ["Wyłączone. Hex niczego nie nagrywa i nie zajmuje skrótu, dopóki tego nie włączysz.", "已关闭。打开之前，Hex 不录制任何内容，也不占用快捷键。", "オフです。オンにするまで、Hex は何も録画せず、ショートカットも使いません。", "Aus. Hex nimmt nichts auf und belegt kein Kürzel, bis du es einschaltest.", "Desactivado. Hex no graba nada ni ocupa ningún atajo hasta que lo actives.", "Вимкнено. Hex нічого не записує й не займає комбінацію клавіш, доки ви це не ввімкнете."]),
-    #[cfg(hex_capture)]
-    ("The capture shortcut is already in use. Change it below before turning captures on.", ["Skrót nagrywania jest już używany. Zmień go poniżej, zanim włączysz nagrywanie.", "捕获快捷键已被占用。请先在下方更改，再开启捕获。", "キャプチャのショートカットはすでに使われています。オンにする前に下で変更してください。", "Das Aufnahmekürzel wird bereits verwendet. Ändere es unten, bevor du Aufnahmen einschaltest.", "El atajo de captura ya está en uso. Cámbialo abajo antes de activar las capturas.", "Сполучення клавіш для записів уже використовується. Змініть його нижче, перш ніж вмикати записи."]),
-    #[cfg(hex_capture)]
-    ("Could not update Annotate:", ["Nie udało się zaktualizować Adnotacji:", "无法更新 Annotate：", "Annotate を更新できませんでした:", "Annotate konnte nicht aktualisiert werden:", "No se pudo actualizar Annotate:", "Не вдалося оновити Annotate:"]),
-    #[cfg(hex_capture)]
-    ("The model Hex dictates with, with a time for every word", ["Model, którym Hex dyktuje, z czasem każdego słowa", "Hex 听写所用的模型，并标注每个词的时间", "Hex が音声入力に使うモデル。単語ごとの時刻付き", "Das Modell, mit dem Hex diktiert, mit einer Zeit für jedes Wort", "El modelo con el que Hex dicta, con el tiempo de cada palabra", "Модель, якою диктує Hex, з часом для кожного слова"]),
-    #[cfg(hex_capture)]
-    ("Apple's speech recognizer, as Scrawl uses", ["Rozpoznawanie mowy Apple, jak w Scrawl", "Apple 语音识别，与 Scrawl 相同", "Scrawl と同じ Apple の音声認識", "Apples Spracherkennung, wie Scrawl sie nutzt", "El reconocimiento de voz de Apple, como en Scrawl", "Розпізнавання мовлення Apple, як у Scrawl"]),
-    #[cfg(hex_capture)]
-    ("Video for 7 days", ["Wideo przez 7 dni", "视频保留 7 天", "ビデオは 7 日間", "Video 7 Tage", "Vídeo durante 7 días", "Відео 7 днів"]),
-    #[cfg(hex_capture)]
-    ("Video for 30 days", ["Wideo przez 30 dni", "视频保留 30 天", "ビデオは 30 日間", "Video 30 Tage", "Vídeo durante 30 días", "Відео 30 днів"]),
-    #[cfg(hex_capture)]
-    ("Video for {} days", ["Wideo przez {} dni", "视频保留 {} 天", "ビデオは {} 日間", "Video {} Tage", "Vídeo durante {} días", "Відео {} дн."]),
-    #[cfg(hex_capture)]
-    ("Video and audio go first; annotations are removed after {} days", ["Najpierw znika wideo i dźwięk; adnotacje są usuwane po {} dniach", "先删除视频和音频；批注会在 {} 天后删除", "先に動画と音声が消え、注釈は {} 日後に削除されます", "Video und Audio gehen zuerst; Annotationen werden nach {} Tagen entfernt", "Primero se van el vídeo y el audio; las anotaciones se eliminan a los {} días", "Спершу зникають відео й аудіо; анотації видаляються через {} днів"]),
-    #[cfg(hex_capture)]
-    ("Video and audio go first; annotations stay until you remove them", ["Najpierw znika wideo i dźwięk; adnotacje zostają, dopóki ich nie usuniesz", "先删除视频和音频；批注会保留到你删除为止", "先に動画と音声が消えます。注釈は削除するまで残ります", "Video und Audio gehen zuerst; Annotationen bleiben, bis du sie entfernst", "Primero se van el vídeo y el audio; las anotaciones se quedan hasta que las elimines", "Спершу зникають відео й аудіо; анотації лишаються, доки ви їх не видалите"]),
-    #[cfg(hex_capture)]
-    ("Annotations stay until you remove them", ["Adnotacje zostają, dopóki ich nie usuniesz", "批注会保留到你删除为止", "注釈は削除するまで残ります", "Annotationen bleiben, bis du sie entfernst", "Las anotaciones se quedan hasta que las elimines", "Анотації лишаються, доки ви їх не видалите"]),
-    #[cfg(hex_capture)]
-    ("Hex leaves the Annotate shortcut to Scrawl until you switch", ["Hex zostawia skrót Adnotacji aplikacji Scrawl, dopóki nie przełączysz", "在你切换之前，Hex 会把 Annotate 快捷键留给 Scrawl", "切り替えるまで、Hex は Annotate のショートカットを Scrawl に任せます", "Hex überlässt Scrawl das Annotate-Kürzel, bis du wechselst", "Hex deja el atajo de Annotate a Scrawl hasta que cambies", "Hex залишає комбінацію Annotate для Scrawl, доки ви не перемкнетеся"]),
-    #[cfg(hex_capture)]
-    ("Waiting for Scrawl to quit…", ["Czekam na zamknięcie Scrawl…", "正在等待 Scrawl 退出…", "Scrawl の終了を待っています…", "Warten, bis Scrawl beendet ist…", "Esperando a que Scrawl se cierre…", "Очікування завершення Scrawl…"]),
-    #[cfg(hex_capture)]
-    ("Scrawl is running", ["Scrawl jest uruchomiony", "Scrawl 正在运行", "Scrawl が実行中です", "Scrawl läuft", "Scrawl está abierto", "Scrawl запущено"]),
-    #[cfg(hex_capture)]
-    ("Use Hex for annotations", ["Używaj Hex do adnotacji", "用 Hex 批注", "注釈に Hex を使う", "Hex für Annotationen verwenden", "Usar Hex para anotar", "Використовувати Hex для анотацій"]),
-    #[cfg(hex_capture)]
-    #[cfg(hex_capture)]
-    #[cfg(hex_capture)]
-    #[cfg(hex_capture)]
-    ("Saved for when Annotate is on", ["Zapisany na czas, gdy Adnotacje są włączone", "Annotate 打开后生效", "Annotate がオンのときに使われます", "Gespeichert für, wenn Annotate an ist", "Guardado para cuando Annotate esté activado", "Збережено на час, коли Annotate увімкнено"]),
-    ("Screen Recording", ["Nagrywanie ekranu", "屏幕录制", "画面収録", "Bildschirmaufnahme", "Grabación de pantalla", "Запис екрана"]),
-    ("Lets Annotate record your screen", ["Pozwala Adnotacjom nagrywać ekran", "允许 Annotate 录制你的屏幕", "Annotate に画面の録画を許可します", "Erlaubt Annotate, deinen Bildschirm aufzunehmen", "Permite que Annotate grabe tu pantalla", "Дозволяє Annotate записувати ваш екран"]),
-    #[cfg(hex_capture)]
-    ("Required to record your screen. macOS asks the first time you annotate, or allow it here.", ["Wymagane do nagrywania ekranu. macOS zapyta przy pierwszej adnotacji albo zezwól tutaj.", "录制屏幕需要此权限。macOS 会在你第一次批注时询问，你也可以在这里允许。", "画面の録画に必要です。初めて注釈するときに macOS が尋ねます。ここで許可することもできます。", "Zum Aufnehmen des Bildschirms nötig. macOS fragt beim ersten Annotieren, oder erlaube es hier.", "Necesario para grabar tu pantalla. macOS lo pide la primera vez que anotas, o permítelo aquí.", "Потрібно для запису екрана. macOS запитає під час першої анотації, або дозвольте тут."]),
-    #[cfg(hex_capture)]
-    ("Show in screen recordings", ["Pokazuj w nagraniach ekranu", "在屏幕录制中显示", "画面収録に表示", "In Bildschirmaufnahmen zeigen", "Mostrar en grabaciones de pantalla", "Показувати в записах екрана"]),
-    #[cfg(hex_capture)]
-    ("Lets recordings, annotations included, show Hex's capsule, ink, and HUD, for demos", ["Pozwala nagraniom, także adnotacjom, pokazywać kapsułę, atrament i HUD Hex, do prezentacji", "让录屏（包括批注）显示 Hex 的胶囊、墨迹和 HUD，用于演示", "録画（注釈を含む）に Hex のカプセル、インク、HUD を映します。デモ用です", "Lässt Aufnahmen, auch Annotationen, Hex' Kapsel, Tinte und HUD zeigen, für Demos", "Permite que las grabaciones, anotaciones incluidas, muestren la cápsula, la tinta y el HUD de Hex, para demos", "Дозволяє записам, зокрема анотаціям, показувати капсулу, чорнило й HUD Hex, для демонстрацій"]),
-    #[cfg(hex_capture)]
-    ("Transcriber", ["Transkrypcja", "转写引擎", "文字起こし", "Transkription", "Transcriptor", "Транскрибатор"]),
-    #[cfg(hex_capture)]
-    ("Transcription", ["Transkrypcja", "转写", "文字起こし", "Transkription", "Transcripción", "Транскрипція"]),
-    #[cfg(hex_capture)]
-    ("Storage", ["Przechowywanie", "存储", "保存", "Speicher", "Almacenamiento", "Сховище"]),
-    ("Annotations folder", ["Folder adnotacji", "批注文件夹", "注釈フォルダ", "Annotationsordner", "Carpeta de anotaciones", "Папка анотацій"]),
-    #[cfg(hex_capture)]
-    ("Shared with Scrawl, so both list the same annotations", ["Wspólny ze Scrawl, więc obie aplikacje widzą te same adnotacje", "与 Scrawl 共用，两者列出相同的批注", "Scrawl と共有するので、どちらにも同じ注釈が並びます", "Mit Scrawl geteilt, beide zeigen dieselben Annotationen", "Compartida con Scrawl, así ambos muestran las mismas anotaciones", "Спільна зі Scrawl, тож обидва показують ті самі анотації"]),
-    #[cfg(hex_capture)]
-    ("Keep", ["Przechowuj", "保留", "保持期間", "Behalten", "Conservar", "Зберігати"]),
     ("Add application", ["Dodaj aplikację", "添加应用", "アプリを追加", "App hinzufügen", "Añadir aplicación", "Додати програму"]),
     ("Add transformation", ["Dodaj transformację", "添加转换", "変換を追加", "Transformation hinzufügen", "Añadir transformación", "Додати перетворення"]),
     ("Close", ["Zamknij", "关闭", "閉じる", "Schließen", "Cerrar", "Закрити"]),
@@ -590,12 +524,11 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Desktop shortcuts", ["Skróty pulpitu", "桌面快捷键", "デスクトップのショートカット", "Desktop-Tastenkürzel", "Atajos del escritorio", "Системні комбінації клавіш"]),
     ("Change the keys your desktop gave Hex", ["Zmień klawisze, które pulpit przydzielił Hex", "更改桌面分配给 Hex 的按键", "デスクトップが Hex に割り当てたキーを変更", "Tasten ändern, die der Desktop Hex zugewiesen hat", "Cambia las teclas que el escritorio asignó a Hex", "Змінити клавіші, які система призначила Hex"]),
     ("Granted by your desktop", ["Przyznany przez pulpit", "由桌面授予", "デスクトップが割り当て", "Vom Desktop vergeben", "Concedido por tu escritorio", "Надано системою"]),
-    ("Shortcuts", ["Skróty", "快捷键", "ショートカット", "Tastenkürzel", "Atajos", "Комбінації клавіш"]),
     ("Your desktop granted {}", ["Pulpit przyznał {}", "桌面已授予 {}", "デスクトップが {} を割り当て", "Vom Desktop vergeben: {}", "Tu escritorio concedió {}", "Система надала {}"]),
     ("Your desktop did not grant this shortcut", ["Pulpit nie przyznał tego skrótu", "桌面未授予此快捷键", "デスクトップはこのショートカットを割り当てませんでした", "Der Desktop hat dieses Tastenkürzel nicht vergeben", "Tu escritorio no concedió este atajo", "Система не надала цю комбінацію клавіш"]),
     ("GNOME keyboard shortcuts", ["Skróty klawiszowe GNOME", "GNOME 键盘快捷键", "GNOME のキーボードショートカット", "GNOME-Tastaturkürzel", "Atajos de teclado de GNOME", "Комбінації клавіш GNOME"]),
     ("Add GNOME keyboard shortcuts", ["Dodaj skróty klawiszowe GNOME", "添加 GNOME 键盘快捷键", "GNOME のキーボードショートカットを追加", "GNOME-Tastaturkürzel hinzufügen", "Añadir atajos de teclado de GNOME", "Додати комбінації клавіш GNOME"]),
-    ("Adds dictation, paste last and Annotate to GNOME Settings › Keyboard › Custom Shortcuts with your shortcuts. GNOME runs them on the key press, so dictation toggles.", ["Dodaje dyktowanie, wklejanie ostatniego i Adnotacje do Ustawień GNOME › Klawiatura › Własne skróty z Twoimi skrótami. GNOME uruchamia je przy naciśnięciu klawisza, więc dyktowanie się przełącza.", "将听写、粘贴上次和批注以你的快捷键添加到 GNOME 设置 › 键盘 › 自定义快捷键。GNOME 在按下按键时运行它们，因此听写为切换方式。", "音声入力、前回を貼り付け、注釈をあなたのショートカットで GNOME 設定 › キーボード › カスタムショートカットに追加します。GNOME はキーを押したときに実行するため、音声入力は切り替え式になります。", "Fügt Diktat, Letztes einfügen und Annotieren mit deinen Tastenkürzeln zu GNOME-Einstellungen › Tastatur › Eigene Tastenkürzel hinzu. GNOME führt sie beim Tastendruck aus, daher schaltet das Diktat um.", "Añade dictado, pegar el último y Anotar a Configuración de GNOME › Teclado › Atajos personalizados con tus atajos. GNOME los ejecuta al pulsar la tecla, así que el dictado se alterna.", "Додає диктування, вставлення останнього та Анотації до Налаштувань GNOME › Клавіатура › Власні комбінації з вашими комбінаціями. GNOME запускає їх під час натискання клавіші, тож диктування перемикається."]),
+    ("Adds dictation and paste last to GNOME Settings › Keyboard › Custom Shortcuts with your shortcuts. GNOME runs them on the key press, so dictation toggles.", ["Dodaje dyktowanie i wklejanie ostatniego do Ustawień GNOME › Klawiatura › Własne skróty z Twoimi skrótami. GNOME uruchamia je przy naciśnięciu klawisza, więc dyktowanie się przełącza.", "将听写和粘贴上次以你的快捷键添加到 GNOME 设置 › 键盘 › 自定义快捷键。GNOME 在按下按键时运行它们，因此听写为切换方式。", "音声入力と前回を貼り付けをあなたのショートカットで GNOME 設定 › キーボード › カスタムショートカットに追加します。GNOME はキーを押したときに実行するため、音声入力は切り替え式になります。", "Fügt Diktat und Letztes einfügen mit deinen Tastenkürzeln zu GNOME-Einstellungen › Tastatur › Eigene Tastenkürzel hinzu. GNOME führt sie beim Tastendruck aus, daher schaltet das Diktat um.", "Añade dictado y pegar el último a Configuración de GNOME › Teclado › Atajos personalizados con tus atajos. GNOME los ejecuta al pulsar la tecla, así que el dictado se alterna.", "Додає диктування та вставлення останнього до Налаштувань GNOME › Клавіатура › Власні комбінації з вашими комбінаціями. GNOME запускає їх під час натискання клавіші, тож диктування перемикається."]),
     ("Added to GNOME Settings › Keyboard › Custom Shortcuts while Hex is enabled. GNOME runs them on the key press, so your dictation shortcut toggles dictation. Change the keys there.", ["Dodane do Ustawień GNOME › Klawiatura › Własne skróty, gdy Hex jest włączony. GNOME uruchamia je przy naciśnięciu klawisza, więc skrót dyktowania je przełącza. Klawisze zmienisz tam.", "Hex 启用时已添加到 GNOME 设置 › 键盘 › 自定义快捷键。GNOME 在按下按键时运行它们，因此听写快捷键会切换听写。可在那里更改按键。", "Hex が有効な間、GNOME 設定 › キーボード › カスタムショートカットに追加されます。GNOME はキーを押したときに実行するため、音声入力のショートカットは切り替え式です。キーはそこで変更できます。", "Zu GNOME-Einstellungen › Tastatur › Eigene Tastenkürzel hinzugefügt, solange Hex aktiv ist. GNOME führt sie beim Tastendruck aus, daher schaltet dein Diktat-Kürzel das Diktat um. Ändere die Tasten dort.", "Añadidos a Configuración de GNOME › Teclado › Atajos personalizados mientras Hex está activado. GNOME los ejecuta al pulsar la tecla, así que tu atajo de dictado lo alterna. Cambia las teclas allí.", "Додано до Налаштувань GNOME › Клавіатура › Власні комбінації, поки Hex увімкнено. GNOME запускає їх під час натискання клавіші, тож ваша комбінація диктування перемикає його. Змініть клавіші там."]),
     ("GNOME uses {} itself, so it never reaches Hex. Record another shortcut, or change it in GNOME Settings › Keyboard › Keyboard Shortcuts.", ["GNOME używa {} do własnych celów, więc nie dociera on do Hex. Nagraj inny skrót albo zmień go w Ustawieniach GNOME › Klawiatura › Skróty klawiszowe.", "GNOME 自己使用 {}，所以它不会传到 Hex。请录制其他快捷键，或在 GNOME 设置 › 键盘 › 键盘快捷键中更改。", "GNOME が {} を使用しているため、Hex に届きません。別のショートカットを記録するか、GNOME 設定 › キーボード › キーボードショートカットで変更してください。", "GNOME verwendet {} selbst, daher erreicht es Hex nie. Nimm ein anderes Tastenkürzel auf oder ändere es in den GNOME-Einstellungen › Tastatur › Tastaturkürzel.", "GNOME usa {} para sí mismo, así que nunca llega a Hex. Graba otro atajo o cámbialo en Configuración de GNOME › Teclado › Atajos de teclado.", "GNOME використовує {} сам, тому вона не доходить до Hex. Запишіть іншу комбінацію або змініть її в Налаштуваннях GNOME › Клавіатура › Комбінації клавіш."]),
     ("Your desktop kept a shortcut for itself. Record another one, or free it in your desktop's keyboard settings (on niri, remove its bind from config.kdl).", ["Pulpit zachował skrót dla siebie. Nagraj inny albo zwolnij go w ustawieniach klawiatury pulpitu (w niri usuń jego przypisanie z config.kdl).", "桌面保留了某个快捷键。请录制其他快捷键，或在桌面的键盘设置中释放它（在 niri 中，从 config.kdl 删除其绑定）。", "デスクトップがショートカットを使用中です。別のショートカットを記録するか、デスクトップのキーボード設定で空けてください（niri では config.kdl からその割り当てを削除）。", "Der Desktop behält ein Tastenkürzel für sich. Nimm ein anderes auf oder gib es in den Tastatureinstellungen des Desktops frei (unter niri die Belegung aus config.kdl entfernen).", "Tu escritorio se reservó un atajo. Graba otro o libéralo en los ajustes de teclado del escritorio (en niri, quita su asignación de config.kdl).", "Система залишила комбінацію клавіш за собою. Запишіть іншу або звільніть її в налаштуваннях клавіатури системи (у niri видаліть її призначення з config.kdl)."]),
@@ -726,7 +659,6 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Microphone", ["Mikrofon", "麦克风", "マイク", "Mikrofon", "Micrófono", "Мікрофон"]),
     ("Dictation shortcut", ["Skrót dyktowania", "听写快捷键", "音声入力ショートカット", "Diktat-Tastenkürzel", "Atajo de dictado", "Комбінація клавіш для диктування"]),
     ("Paste last dictation", ["Wklej ostatnie dyktowanie", "粘贴上次听写", "前回の音声入力を貼り付け", "Letztes Diktat einfügen", "Pegar último dictado", "Вставити останнє диктування"]),
-    ("Capture", ["Nagrywanie", "采集", "キャプチャ", "Aufnahme", "Captura", "Запис"]),
     ("Processing", ["Przetwarzanie", "处理", "処理", "Verarbeitung", "Procesamiento", "Обробка"]),
     ("Shortcut", ["Skrót", "快捷键", "ショートカット", "Kürzel", "Atajo", "Комбінація клавіш"]),
     ("OpenCode", ["OpenCode", "OpenCode", "OpenCode", "OpenCode", "OpenCode", "OpenCode"]),
@@ -902,7 +834,6 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Tap to talk hands-free, tap again to paste", ["Stuknij, aby mówić bez trzymania, stuknij ponownie, aby wkleić", "单击免按住说话，再按一次粘贴", "タップして押さずに話し、もう一度タップで貼り付けます", "Tippen, um freihändig zu sprechen, erneut tippen zum Einfügen", "Pulsa para hablar sin mantener, pulsa otra vez para pegar", "Натисніть, щоб говорити без рук, натисніть знову, щоб вставити"]),
     ("Double-tap to talk hands-free, tap again to paste", ["Stuknij dwa razy, aby mówić bez trzymania, stuknij ponownie, aby wkleić", "双击免按住说话，再按一次粘贴", "ダブルタップして押さずに話し、もう一度タップで貼り付けます", "Zweimal tippen, um freihändig zu sprechen, erneut tippen zum Einfügen", "Pulsa dos veces para hablar sin mantener, pulsa otra vez para pegar", "Натисніть двічі, щоб говорити без рук, натисніть знову, щоб вставити"]),
     ("Needs a shortcut with a key, like {}", ["Wymaga skrótu z klawiszem, np. {}", "需要带按键的快捷键，例如 {}", "キーを含むショートカットが必要です（例: {}）", "Braucht ein Kürzel mit einer Taste, etwa {}", "Necesita un atajo con una tecla, como {}", "Потрібна комбінація з клавішею, наприклад {}"]),
-    ("How it works", ["Jak to działa", "工作原理", "仕組み", "So funktioniert es", "Cómo funciona", "Як це працює"]),
     ("Transformations", ["Transformacje", "转换", "変換", "Transformationen", "Transformaciones", "Перетворення"]),
     ("Turn Hex on in every app whenever it opens", ["Włączaj Hex we wszystkich aplikacjach przy każdym uruchomieniu", "每次打开时在所有应用中启用 Hex", "起動するたびに、すべてのアプリで Hex をオンにする", "Hex bei jedem Start in allen Apps einschalten", "Activar Hex en todas las apps cada vez que se abra", "Вмикати Hex в усіх програмах під час кожного запуску"]),
     ("Up to date", ["Aktualne", "已是最新", "最新です", "Aktuell", "Actualizado", "Актуальна версія"]),
@@ -939,11 +870,8 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Open websites", ["Otwieranie stron", "打开网站", "ウェブサイトを開く", "Websites öffnen", "Abrir sitios web", "Відкриття вебсайтів"]),
     ("Voice control", ["Sterowanie głosem", "语音控制", "音声操作", "Sprachsteuerung", "Control por voz", "Голосове керування"]),
     ("Screen & System Audio Recording", ["Nagrywanie ekranu i dźwięku systemu", "屏幕与系统音频录制", "画面とシステムオーディオの収録", "Bildschirm- und Systemaudioaufnahme", "Grabación de pantalla y audio del sistema", "Записування системного звуку й екрана"]),
-    ("Reveal", ["Pokaż", "显示", "表示", "Anzeigen", "Mostrar", "Показати"]),
     ("Use Folder", ["Użyj folderu", "使用此文件夹", "このフォルダーを使用", "Ordner verwenden", "Usar carpeta", "Використати папку"]),
     ("Starting…", ["Uruchamianie…", "正在启动…", "開始中…", "Wird gestartet…", "Iniciando…", "Запуск…"]),
-    ("Record", ["Nagrywaj", "录制", "録音", "Aufnehmen", "Grabar", "Записати"]),
-    ("Keep recording", ["Nagrywaj dalej", "继续录制", "録音を続ける", "Weiter aufnehmen", "Seguir grabando", "Продовжити запис"]),
     ("Open", ["Otwórz", "打开", "開く", "Öffnen", "Abrir", "Відкрити"]),
     ("Failed", ["Niepowodzenie", "失败", "失敗", "Fehlgeschlagen", "Fallido", "Не вдалося"]),
     ("Rename", ["Zmień nazwę", "重命名", "名前を変更", "Umbenennen", "Cambiar nombre", "Перейменувати"]),
@@ -1392,8 +1320,6 @@ mod tests {
         include_str!("../rune_ui/picker/facts.rs"),
         include_str!("../rune_ui/picker/list.rs"),
         include_str!("../rune_ui/platform_settings.rs"),
-        #[cfg(hex_capture)]
-        include_str!("../rune_ui/scrawl.rs"),
         include_str!("../rune_ui/settings.rs"),
         include_str!("../rune_ui/shortcut_mode.rs"),
         include_str!("../rune_ui/sound_sets.rs"),
