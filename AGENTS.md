@@ -133,12 +133,15 @@ substitute for source inspection or a second roadmap.
   `transcription/local_transcriber`; it recreates the native session around each run (and
   each live stream) so inference scratch stays bounded, and owns chunked
   long-audio transcription.
-- `transcription/cloud`: Labs › Cloud transcription. A dictation's
-  whole clip goes to Claude (Claude Code's sign-in from its token variable,
+- `transcription/cloud`: Labs › Cloud transcription. A hotkey dictation
+  streams while it records (`cloud/stream`, its own thread behind
+  `LiveStream`) to Claude (Claude Code's sign-in from its token variable,
   the Keychain through `security`, or `.credentials.json`; its
-  `voice_stream` WebSocket) or Codex (its `auth.json`; ChatGPT's transcribe
-  endpoint) before the engine's model, which takes over on any failure.
-  Hex never refreshes or writes either app's sign-in.
+  `voice_stream` WebSocket) or Codex (its `auth.json`; ChatGPT's dictation
+  WebSocket, a new session before each 300 s one ends); any other dictation
+  sends its whole clip (Codex: ChatGPT's transcribe endpoint). The engine's
+  model takes over on any failure. Hex never refreshes or writes either
+  app's sign-in.
 - `transcription/speech_detector`: the optional Silero voice activity detector, loaded once on
   the CPU and downloaded in the background, that keeps speechless dictation
   captures and meeting chunks away from the transcription models.
@@ -732,9 +735,13 @@ CoreAudio formats, AppleScript details, or event serialization.
 - Model inference, optional post-processing, and paste must
   never block authoritative audio capture. Their queues remain bounded.
 - Dictation audio leaves the computer only through Labs › Cloud
-  transcription (off by default), read as each run starts and only for
-  dictations (shortcut, `hex dictation`, `/dictations`); meetings, captures,
-  host-audio transcription, and Transcribe again stay local. Any cloud failure transcribes the same clip on Hex's model.
+  transcription (off by default) and only for dictations (shortcut,
+  `hex dictation`, `/dictations`); meetings, captures, host-audio
+  transcription, and Transcribe again stay local. A hotkey dictation
+  streams from the hold threshold (Toggle on Linux and Windows: the press),
+  so short taps and chords send nothing, but a dictation discarded later
+  has already sent what it recorded. Nothing pastes before the final text,
+  and a stream or clip without text is transcribed on Hex's model.
 - CoreAudio capture timestamps and annotated-session CGEvent shortcut timestamps
   share the macOS boot-time nanosecond clock. Do not apply the Mach timebase to
   annotated-session timestamps. Physical HID-tap timestamps arrived as raw Mach
@@ -772,7 +779,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   pasted, copied, or kept in History or Paste Last. One engine thread runs every inference because a live
   stream holds the model's compute lease. Streams run only on GPU devices
   (Metal, Vulkan); models that cannot stream transcribe the whole clip after
-  release. Dictation is never cut at pauses; meetings are.
+  release. Labs › Cloud transcription's streams go to Claude or Codex
+  instead, on any device. Dictation is never cut at pauses; meetings are.
 - Starting a new capture never cancels accepted dictation work. Pending jobs
   preserve submission-order output while capture remains immediately available.
 - Completing or pasting an older job must not reconcile or finish a newer

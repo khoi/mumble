@@ -353,6 +353,7 @@ pub(super) fn drive_stream(
                 clip,
                 offline,
                 job,
+                ..
             } if s == id => {
                 let started = Instant::now();
                 stalled.store(false, Ordering::Release);

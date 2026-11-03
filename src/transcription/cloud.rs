@@ -10,6 +10,12 @@
 
 mod claude;
 mod codex;
+mod socket;
+mod stream;
+
+#[cfg(test)]
+pub(crate) use stream::fake;
+pub(crate) use stream::{CloudStream, Fallback};
 
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};

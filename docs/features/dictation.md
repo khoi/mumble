@@ -711,8 +711,9 @@ Model advertises streaming, GPU device             // dictate.streaming
   Load or switch model -> Probe a one-second silent stream (also prewarms the stream graph)
        ├── Succeeds -> Stream shortcut captures
        └── Fails, CPU device, Apple Speech, or HEX_STREAMING=0 -> Whole-clip path only
-  Labs › Cloud transcription on -> No stream opens; the whole clip goes to Claude or Codex
-       first, then Hex's model on any failure (Cloud transcription in labs.md)
+  Labs › Cloud transcription on -> The stream goes to Claude or Codex instead of the model,
+       on any device; on release only its last words are left, and a stream without text
+       leaves the whole clip to Hex's model (Cloud transcription in labs.md)
   Shortcut capture passes the hold threshold (Toggle on Windows and Linux: on press)
     -> Open one live stream; feed the 16 kHz backlog, then every 160 ms
        // same audio as the final clip, pre-roll included; never blocks capture
