@@ -1,6 +1,7 @@
 //! Labs › Cloud transcription: a dictation transcribed by Claude or Codex
-//! through the sign-in their own apps already hold, with Hex's local model
-//! as the fallback whenever the service can't answer.
+//! through the sign-in their own apps already hold, before the engine
+//! touches its model, which transcribes the clip whenever the service
+//! can't answer.
 //!
 //! Hex never refreshes or writes either sign-in: Claude Code and Codex own
 //! their tokens, so an expired one reads as signed out until its app renews
@@ -10,11 +11,14 @@
 mod claude;
 mod codex;
 
-use std::time::Instant;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use transcribe_cpp::CancelToken;
 
-use super::engine::Offline;
+/// How often the engine looks at its job while the service works.
+const WAIT_POLL: Duration = Duration::from_millis(50);
 
 /// The service a cloud dictation goes to.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -78,55 +82,111 @@ impl CloudError {
     }
 }
 
-/// `local`, after the provider Labs › Cloud transcription names as the run
-/// starts; whenever that gives no text, the clip is transcribed here.
-pub(crate) fn cloud_first(local: Offline) -> Offline {
-    Box::new(
-        move |model, clip| match crate::labs::cloud_transcription() {
-            Some(provider) => {
-                let language = crate::app_settings::transcription_selection().1.language;
-                let started = Instant::now();
-                let attempt = transcribe(provider, &clip, &language);
-                tracing::info!(
-                    provider = provider.name(),
-                    ok = attempt.is_ok(),
-                    elapsed_ms = started.elapsed().as_millis() as u64,
-                    "cloud transcription"
-                );
-                or_local(provider, attempt, || local(model, clip))
-            }
-            None => local(model, clip),
+/// A finished dictation's text from Labs › Cloud transcription's service,
+/// or `None` when the feature is off or the service gave no text, and the
+/// engine's model should transcribe the clip.
+pub(crate) fn dictation(clip: &[f32], cancel: &CancelToken) -> Option<String> {
+    dictation_with(
+        crate::labs::cloud_transcription(),
+        clip,
+        cancel,
+        |provider, clip, deadline| {
+            let language = crate::app_settings::transcription_selection().1.language;
+            transcribe(provider, &clip, &language, deadline)
         },
     )
 }
 
-fn or_local(
-    provider: CloudProvider,
-    attempt: Result<String, CloudError>,
-    local: impl FnOnce() -> Result<String, String>,
-) -> Result<String, String> {
-    attempt.or_else(|error| {
-        tracing::warn!(
-            provider = provider.name(),
-            reason = %error.reason(provider),
-            "cloud transcription failed; transcribing on this computer"
-        );
-        local()
-    })
+fn dictation_with(
+    provider: Option<CloudProvider>,
+    clip: &[f32],
+    cancel: &CancelToken,
+    attempt: impl FnOnce(CloudProvider, Vec<f32>, Instant) -> Result<String, CloudError>
+    + Send
+    + 'static,
+) -> Option<String> {
+    let provider = provider?;
+    let started = Instant::now();
+    let deadline = started + budget(clip.len());
+    let clip = clip.to_vec();
+    let result = within(deadline, cancel, move || attempt(provider, clip, deadline));
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    match result {
+        Ok(text) => {
+            tracing::info!(
+                provider = provider.name(),
+                elapsed_ms,
+                "cloud transcription"
+            );
+            Some(text)
+        }
+        Err(error) => {
+            tracing::warn!(
+                provider = provider.name(),
+                elapsed_ms,
+                reason = %error.reason(provider),
+                "cloud transcription failed; transcribing on this computer"
+            );
+            None
+        }
+    }
+}
+
+/// How long a cloud attempt may take, connecting and sending included:
+/// half a minute plus the clip's length, well inside the engine's job
+/// deadline, so the model keeps its time when the service fails.
+fn budget(samples: usize) -> Duration {
+    Duration::from_secs(30) + Duration::from_secs_f64(samples as f64 / 16_000.0)
+}
+
+/// `attempt`'s answer, waited for off its own thread, so a cancelled job
+/// or a stopping engine stops waiting at once; the attempt itself ends by
+/// `deadline`.
+fn within(
+    deadline: Instant,
+    cancel: &CancelToken,
+    attempt: impl FnOnce() -> Result<String, CloudError> + Send + 'static,
+) -> Result<String, CloudError> {
+    let (sender, answer) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("cloud-transcription".into())
+        .spawn(move || {
+            let _ = sender.send(attempt());
+        })
+        .map_err(|error| CloudError::Failed(format!("couldn't start: {error}")))?;
+    loop {
+        match answer.recv_timeout(WAIT_POLL) {
+            Ok(result) => return result,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(CloudError::Failed("the attempt stopped".into()));
+            }
+            Err(RecvTimeoutError::Timeout) if cancel.is_cancelled() => {
+                return Err(CloudError::Failed("the dictation was cancelled".into()));
+            }
+            Err(RecvTimeoutError::Timeout) if Instant::now() >= deadline => {
+                return Err(CloudError::Failed("no answer in time".into()));
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    }
 }
 
 /// A 16 kHz mono clip's text from `provider`, in `language` (a code, or
-/// `auto`).
-pub fn transcribe(
+/// `auto`), by `deadline`.
+fn transcribe(
     provider: CloudProvider,
     clip: &[f32],
     language: &str,
+    deadline: Instant,
 ) -> Result<String, CloudError> {
     let text = match provider {
-        CloudProvider::Claude => {
-            claude::transcribe(clip, language, &crate::dictation::vocabulary::terms())?
-        }
-        CloudProvider::Codex => codex::transcribe(clip, language)?,
+        CloudProvider::Claude => claude::transcribe(
+            clip,
+            language,
+            &crate::dictation::vocabulary::terms(),
+            deadline,
+        )?,
+        CloudProvider::Codex => codex::transcribe(clip, language, deadline)?,
     };
     match text.trim() {
         "" => Err(CloudError::NoSpeech),
@@ -150,19 +210,42 @@ fn now_ms() -> f64 {
 mod tests {
     use super::*;
 
+    use std::sync::{Arc, Mutex};
+
     #[test]
-    fn a_cloud_answer_is_used_without_the_local_model() {
-        let mut ran_local = false;
-        let text = or_local(CloudProvider::Claude, Ok("hello there".into()), || {
-            ran_local = true;
-            Ok("local".into())
+    fn nothing_leaves_the_computer_while_the_feature_is_off() {
+        let called = Arc::new(Mutex::new(false));
+        let seen = called.clone();
+        let text = dictation_with(None, &[0.1; 4], &CancelToken::new(), move |_, _, _| {
+            *seen.lock().unwrap() = true;
+            Ok("sent".into())
         });
-        assert_eq!(text, Ok("hello there".into()));
-        assert!(!ran_local);
+        assert_eq!(text, None);
+        assert!(!*called.lock().unwrap());
     }
 
     #[test]
-    fn any_cloud_failure_transcribes_on_this_computer() {
+    fn the_chosen_service_hears_the_whole_clip_and_its_text_is_used() {
+        let heard = Arc::new(Mutex::new(None));
+        let seen = heard.clone();
+        let text = dictation_with(
+            Some(CloudProvider::Codex),
+            &[0.1, 0.2, 0.3],
+            &CancelToken::new(),
+            move |provider, clip, _| {
+                *seen.lock().unwrap() = Some((provider, clip));
+                Ok("hello there".into())
+            },
+        );
+        assert_eq!(text.as_deref(), Some("hello there"));
+        assert_eq!(
+            heard.lock().unwrap().take(),
+            Some((CloudProvider::Codex, vec![0.1, 0.2, 0.3]))
+        );
+    }
+
+    #[test]
+    fn a_failed_attempt_leaves_the_clip_to_the_model() {
         for error in [
             CloudError::SignedOut,
             CloudError::Language("vi".into()),
@@ -171,9 +254,53 @@ mod tests {
             CloudError::NoSpeech,
             CloudError::Failed("Couldn't reach chatgpt.com".into()),
         ] {
-            let text = or_local(CloudProvider::Codex, Err(error), || Ok("local".into()));
-            assert_eq!(text, Ok("local".into()));
+            let text = dictation_with(
+                Some(CloudProvider::Claude),
+                &[0.1; 4],
+                &CancelToken::new(),
+                move |_, _, _| Err(error),
+            );
+            assert_eq!(text, None);
         }
+    }
+
+    #[test]
+    fn a_cancelled_job_stops_waiting_for_the_service() {
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        let started = Instant::now();
+        let text = dictation_with(
+            Some(CloudProvider::Claude),
+            &[0.1; 4],
+            &cancel,
+            |_, _, _| {
+                std::thread::sleep(Duration::from_secs(10));
+                Ok("late".into())
+            },
+        );
+        assert_eq!(text, None);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn the_wait_ends_at_the_deadline() {
+        let started = Instant::now();
+        let result = within(
+            started + Duration::from_millis(100),
+            &CancelToken::new(),
+            || {
+                std::thread::sleep(Duration::from_secs(10));
+                Ok("late".into())
+            },
+        );
+        assert!(matches!(result, Err(CloudError::Failed(_))));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn the_budget_leaves_the_model_its_time() {
+        assert_eq!(budget(0), Duration::from_secs(30));
+        assert_eq!(budget(16_000 * 60), Duration::from_secs(90));
     }
 
     #[test]

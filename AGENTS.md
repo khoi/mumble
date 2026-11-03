@@ -366,7 +366,8 @@ substitute for source inspection or a second roadmap.
 - `linux/login_item`: Launch at login on Linux, the managed XDG autostart
   entry the installer also writes; the file is the only state.
 - `net`: Hex's own HTTPS (model downloads, update checks, transformation
-  `fetch`): ureq over the platform's TLS and trusted roots, the proxy the
+  `fetch`, cloud transcription): ureq over the platform's TLS and trusted
+  roots (`net::tunnel` for a WebSocket's TCP through the same proxy), the proxy the
   computer uses (environment variables everywhere, then Windows' WinHTTP
   settings with PAC/WPAD or macOS' CFNetwork settings), bounded resumable
   ranged downloads, and failures named for a person (`docs/downloads.md`).

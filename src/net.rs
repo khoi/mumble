@@ -9,9 +9,11 @@
 //!   `ALL_PROXY`, and `NO_PROXY` on every OS, then Windows' proxy settings
 //!   (including a PAC file or WPAD) and macOS' network proxy settings.
 //! - Failures named for a person: "Couldn't reach huggingface.co: …".
+//! - A plain TCP tunnel through the same proxy for WebSocket ([`tunnel`]).
 
 mod download;
 mod proxy;
+mod tunnel;
 
 use std::time::Duration;
 
@@ -19,6 +21,7 @@ use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
 pub use download::{Download, download};
 pub use proxy::proxy_for;
+pub use tunnel::tunnel;
 
 /// What a caller adds to [`agent`]'s settings.
 pub type Config = ureq::config::ConfigBuilder<ureq::typestate::AgentScope>;

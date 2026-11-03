@@ -200,6 +200,7 @@ const PATHS: &[(&str, &str)] = &[
     ("mac-hud-lab", "Window/HUD Lab/HUD Lab"),
     ("mac-labs", "Window/General/Labs"),
     ("mac-labs-link", "Window/General/Labs link"),
+    ("mac-labs-cloud", "Window/General/Labs cloud transcription"),
     ("mac-production", "Window/General/Production build"),
     ("mac-activity", "Window/Activity/Activity"),
     ("mac-onboarding", "Window/Onboarding/Setting up Hex"),

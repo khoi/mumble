@@ -146,19 +146,25 @@ that service before Hex's own model. The
 audio leaves the computer, which is why it is off by default.
 
 ```ts
-Dictation finished                        // engine::finish_with -> cloud::cloud_first
+Dictation finished                        // engine worker run_dictation -> cloud::dictation
 ├── Labs › Cloud transcription off -> Hex's model, as always
-└── On, read as the run starts (no live stream opens while it is on)
+└── On, read as the run starts (no live stream opens while it is on); before the
+    engine touches its model, so an unloaded model (Unload model when idle) stays unloaded
     ├── Claude -> Claude Code's sign-in: CLAUDE_CODE_OAUTH_TOKEN, then the macOS Keychain item
     │   "Claude Code-credentials" through /usr/bin/security (no prompt), then ~/.claude/.credentials.json;
     │   the clip streams as 16 kHz PCM over wss://api.anthropic.com/api/ws/speech_to_text/voice_stream
     │   with Claude Code's identity and the vocabulary as keyterms; text arrives once the service closes
     ├── Codex -> Codex's ChatGPT sign-in in $CODEX_HOME/auth.json (~/.codex); the clip is posted as a
     │   WAV to https://chatgpt.com/backend-api/transcribe with Codex Desktop's identity
-    ├── Text -> pasted like any dictation (Output's modes still run)
+    ├── Text -> pasted like any dictation (Output's modes still run); process.log's
+    │   "transcribed dictation" says source=cloud
+    ├── One budget for connecting, sending, and the answer: 30 s plus the clip's length,
+    │   well inside the engine's job deadline; the attempt runs on its own thread, so a
+    │   cancelled job or quitting Hex stops the wait at once
     └── No sign-in, an expired one, a language the service lacks (Claude: 20; Auto -> English),
-        a refusal, rate limit, timeout, or empty text -> Hex's model transcribes the same clip;
-        process.log names the reason ("cloud transcription failed; transcribing on this computer")
+        a refusal, rate limit, the budget running out, or empty text -> Hex's model
+        transcribes the same clip; process.log names the reason
+        ("cloud transcription failed; transcribing on this computer")
 ```
 
 Hex never refreshes or writes either sign-in: Claude Code and Codex renew
@@ -166,12 +172,21 @@ their own tokens (Claude's last about eight hours, Codex's about ten days),
 so an expired one falls back until its app runs again. Both endpoints are
 the apps' private ones, reached with their identities, and may change or
 refuse without notice. Meetings, captures, host-audio transcription
-(`/transcriptions`, `/streams`), and Transcribe again stay on Hex's model. The WebSocket connects directly, without the
-computer's proxy. Checks: `cloud::tests` (fallback),
-`cloud::claude::tests` (frames, sign-in, keyterms, request),
-`cloud::codex::tests` (sign-in, form, answers),
-`cloud_transcription_carries_its_provider` in [labs.rs](../../src/labs.rs);
-the live services have no automated check.
+(`/transcriptions`, `/streams`), and Transcribe again stay on Hex's model.
+Both go through the computer's proxy: Codex through `net`'s agent, Claude's
+WebSocket through `net::tunnel` (an HTTP proxy's CONNECT). Tungstenite logs
+nothing below warnings whatever `RUST_LOG` asks, since its handshake trace
+carries the authorization header. Checks: `cloud::tests` (off sends nothing,
+the chosen service hears the whole clip, any failure leaves it to the model,
+cancel and deadline end the wait), `cloud::claude::tests` (frames, sign-in,
+keyterms, request, the deadline-bounded socket), `cloud::codex::tests`
+(sign-in, form, answers), `net::tunnel::tests` (CONNECT and refusals),
+`the_log_never_carries_the_websocket_handshake` in
+[app_paths.rs](../../src/app_paths.rs),
+`cloud_transcription_carries_its_provider` in [labs.rs](../../src/labs.rs),
+and the `mac-labs-cloud` golden (Linux). The engine's call into it has no
+test of its own (the worker needs a real model), and the live services have
+no automated check.
 
 Restore shortcut default (`restore-shortcut-default`, issue 613): while on,
 General › Advanced › Paste last dictation shows a Restore default shortcut

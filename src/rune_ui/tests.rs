@@ -2507,6 +2507,9 @@ fn goldens() {
             check_golden(scene, dark, PANE_SIZE);
         }
     }
+    for dark in [true, false] {
+        check_golden("mac-labs-cloud", dark, GOLDEN_SIZE);
+    }
     check_golden("commands", true, GOLDEN_SIZE);
     check_golden("menus", false, GOLDEN_SIZE);
     // A list longer than the window fades at its scrolling edge (#840).

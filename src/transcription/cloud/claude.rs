@@ -3,8 +3,8 @@
 //! then `.credentials.json`), and its speech-to-text WebSocket with Claude
 //! Code's own identity.
 
-use std::io::ErrorKind;
-use std::net::{TcpStream, ToSocketAddrs};
+use std::io::{ErrorKind, Read, Write};
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -26,9 +26,6 @@ const CLOSE_STREAM: &str = r#"{"type":"CloseStream"}"#;
 const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const POLL: Duration = Duration::from_millis(250);
-/// After CloseStream the service needs about the clip's length, never
-/// less than this.
-const MIN_FINISH: Duration = Duration::from_secs(15);
 const MAX_KEYTERMS: usize = 50;
 const MAX_KEYTERM_CHARS: usize = 1_024;
 const LANGUAGES: [&str; 20] = [
@@ -36,16 +33,19 @@ const LANGUAGES: [&str; 20] = [
     "cs", "da", "sv", "no",
 ];
 
-type Socket = tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<TcpStream>>;
+type Socket = tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<Bounded>>;
 
+/// The clip's text, or why there is none, by `deadline`: connecting,
+/// sending, and waiting for the service all count against it.
 pub(super) fn transcribe(
     clip: &[f32],
     language: &str,
     keyterms: &[String],
+    deadline: Instant,
 ) -> Result<String, CloudError> {
     let language = spoken_language(language)?;
     let request = request(&token()?, language, keyterms)?;
-    let mut socket = connect(request)?;
+    let mut socket = connect(request, deadline)?;
     let failed = |error: tungstenite::Error| CloudError::Failed(format!("Claude: {error}"));
     socket.send(Message::text(KEEP_ALIVE)).map_err(failed)?;
     let pcm: Vec<u8> = super::pcm16(clip).flat_map(i16::to_le_bytes).collect();
@@ -55,8 +55,6 @@ pub(super) fn transcribe(
             .map_err(failed)?;
     }
     socket.send(Message::text(CLOSE_STREAM)).map_err(failed)?;
-    let audio = Duration::from_secs_f64(clip.len() as f64 / 16_000.0);
-    let deadline = Instant::now() + audio.max(MIN_FINISH);
     let mut keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
     let mut transcript = Transcript::default();
     loop {
@@ -215,28 +213,26 @@ fn keyterms_header(terms: &[String]) -> String {
     kept.join(",")
 }
 
-fn connect(request: tungstenite::handshake::client::Request) -> Result<Socket, CloudError> {
+fn connect(
+    request: tungstenite::handshake::client::Request,
+    deadline: Instant,
+) -> Result<Socket, CloudError> {
     let unreachable =
         |detail: String| CloudError::Failed(format!("Couldn't reach {HOST}: {detail}"));
-    let addresses = (HOST, 443)
-        .to_socket_addrs()
-        .map_err(|_| unreachable("the name couldn't be looked up (DNS)".into()))?;
-    let stream = addresses
-        .into_iter()
-        .find_map(|address| TcpStream::connect_timeout(&address, CONNECT_TIMEOUT).ok())
-        .ok_or_else(|| unreachable("the connection failed".into()))?;
-    // A clone shares the socket, so its timeouts apply under TLS too.
-    let control = stream
-        .try_clone()
-        .map_err(|error| unreachable(error.to_string()))?;
+    let step = CONNECT_TIMEOUT.min(deadline.saturating_duration_since(Instant::now()));
+    let stream = crate::net::tunnel(HOST, 443, step.max(POLL)).map_err(CloudError::Failed)?;
     let timeouts = |read| {
-        control
+        stream
             .set_read_timeout(Some(read))
-            .and_then(|()| control.set_write_timeout(Some(CONNECT_TIMEOUT)))
+            .and_then(|()| stream.set_write_timeout(Some(CONNECT_TIMEOUT)))
             .map_err(|error| unreachable(error.to_string()))
     };
     timeouts(CONNECT_TIMEOUT)?;
-    let socket = match tungstenite::client_tls(request, stream) {
+    // A clone shares the socket, so its timeouts still apply under TLS.
+    let control = stream
+        .try_clone()
+        .map_err(|error| unreachable(error.to_string()))?;
+    let socket = match tungstenite::client_tls(request, Bounded { stream, deadline }) {
         Ok((socket, _)) => socket,
         Err(HandshakeError::Failure(tungstenite::Error::Http(response))) => {
             return Err(refusal(
@@ -249,8 +245,48 @@ fn connect(request: tungstenite::handshake::client::Request) -> Result<Socket, C
             return Err(unreachable("the connection timed out".into()));
         }
     };
-    timeouts(POLL)?;
+    control
+        .set_read_timeout(Some(POLL))
+        .map_err(|error| unreachable(error.to_string()))?;
     Ok(socket)
+}
+
+/// The socket, refusing every read and write once `deadline` passes, so a
+/// service that trickles bytes can't hold a read open past it.
+struct Bounded {
+    stream: TcpStream,
+    deadline: Instant,
+}
+
+impl Bounded {
+    fn check(&self) -> std::io::Result<()> {
+        if Instant::now() < self.deadline {
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                ErrorKind::TimedOut,
+                "Claude didn't finish in time",
+            ))
+        }
+    }
+}
+
+impl Read for Bounded {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.check()?;
+        self.stream.read(buffer)
+    }
+}
+
+impl Write for Bounded {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.check()?;
+        self.stream.write(buffer)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.flush()
+    }
 }
 
 /// Why the service refused the WebSocket. A 403 can mean the account has no
@@ -456,6 +492,24 @@ mod tests {
                 None
             ),
             Ok("ok".into())
+        );
+    }
+
+    #[test]
+    fn a_passed_deadline_refuses_reads_and_writes() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let mut bounded = Bounded {
+            stream,
+            deadline: Instant::now(),
+        };
+        assert_eq!(
+            bounded.read(&mut [0; 4]).unwrap_err().kind(),
+            ErrorKind::TimedOut
+        );
+        assert_eq!(
+            bounded.write(b"late").unwrap_err().kind(),
+            ErrorKind::TimedOut
         );
     }
 

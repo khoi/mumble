@@ -5,7 +5,7 @@
 
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::Instant;
 
 use serde::Deserialize;
 
@@ -13,12 +13,16 @@ use super::CloudError;
 
 const URL: &str = "https://chatgpt.com/backend-api/transcribe";
 const DESKTOP_VERSION: &str = "26.1021.31345";
-const TIMEOUT: Duration = Duration::from_secs(120);
 /// A token this close to expiring reads as expired.
 const EXPIRY_MARGIN_MS: f64 = 60_000.0;
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
 
-pub(super) fn transcribe(clip: &[f32], language: &str) -> Result<String, CloudError> {
+/// The clip's text, or why there is none, by `deadline`.
+pub(super) fn transcribe(
+    clip: &[f32],
+    language: &str,
+    deadline: Instant,
+) -> Result<String, CloudError> {
     let auth = codex_home()
         .and_then(|home| std::fs::read_to_string(home.join("auth.json")).ok())
         .ok_or(CloudError::SignedOut)?;
@@ -28,7 +32,7 @@ pub(super) fn transcribe(clip: &[f32], language: &str) -> Result<String, CloudEr
     let agent = crate::net::agent(URL, |config| {
         config
             .http_status_as_error(false)
-            .timeout_global(Some(TIMEOUT))
+            .timeout_global(Some(deadline.saturating_duration_since(Instant::now())))
     });
     let mut response = agent
         .post(URL)
