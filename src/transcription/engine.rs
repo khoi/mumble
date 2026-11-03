@@ -602,9 +602,10 @@ impl TranscriptionEngine {
         self
     }
 
-    /// Opens a live stream when the loaded model can stream on this device.
+    /// Opens a live stream when the loaded model can stream on this device,
+    /// unless Labs › Cloud transcription sends the whole clip away instead.
     pub fn begin(&self) -> Option<LiveStream> {
-        if !self.streams.load(Ordering::Acquire) {
+        if !self.streams.load(Ordering::Acquire) || crate::labs::cloud_transcription().is_some() {
             return None;
         }
         let id = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
@@ -677,7 +678,8 @@ impl TranscriptionEngine {
         )
     }
 
-    /// Like `finish`, with the caller's offline transcription of the clip.
+    /// Like `finish`, with the caller's offline transcription of the clip,
+    /// which Labs › Cloud transcription's provider tries first.
     pub fn finish_with(
         &self,
         stream: Option<LiveStream>,
@@ -691,6 +693,7 @@ impl TranscriptionEngine {
             }
             None => (None, None),
         };
+        let offline = crate::transcription::cloud::cloud_first(offline);
         self.request(clip.len(), stream_cancel, |job| Command::Finish {
             stream,
             clip,

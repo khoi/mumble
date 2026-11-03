@@ -100,10 +100,11 @@ pub enum Feature {
     MovableMeetingCapsules,
     MeetingSummaryModel,
     GnomeClipboardRestore,
+    CloudTranscription,
 }
 
 impl Feature {
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 42] = [
         Self::Meetings,
         Self::VoiceFilter,
         Self::Playground,
@@ -145,6 +146,7 @@ impl Feature {
         Self::MovableMeetingCapsules,
         Self::MeetingSummaryModel,
         Self::GnomeClipboardRestore,
+        Self::CloudTranscription,
     ];
 
     /// The features this OS and build have.
@@ -208,7 +210,8 @@ impl Feature {
             | Self::HideMenuBarIcon
             | Self::MovableMeetingCapsules
             | Self::MeetingSummaryModel
-            | Self::GnomeClipboardRestore => Audience::Everyone,
+            | Self::GnomeClipboardRestore
+            | Self::CloudTranscription => Audience::Everyone,
         }
     }
 
@@ -223,11 +226,13 @@ impl Feature {
             )
     }
 
-    /// The feature `hex settings` key `key` switches (its toggle, or
-    /// Unload when idle's minutes).
+    /// The feature `hex settings` key `key` switches (its toggle, Unload
+    /// when idle's minutes, or Cloud transcription's provider).
     pub fn for_settings_key(key: &str) -> Option<Self> {
-        if key == "labs.unload_idle_minutes" {
-            return Some(Self::UnloadIdle);
+        match key {
+            "labs.unload_idle_minutes" => return Some(Self::UnloadIdle),
+            "labs.cloud_transcription_provider" => return Some(Self::CloudTranscription),
+            _ => {}
         }
         Self::ALL
             .into_iter()
@@ -275,6 +280,7 @@ impl Feature {
             | Self::ModelInPlace
             | Self::PickerDownloaded
             | Self::KeepRecordings
+            | Self::CloudTranscription
             | Self::FillerWords => true,
         }
     }
@@ -323,6 +329,7 @@ impl Feature {
             Self::MovableMeetingCapsules => "movable-meeting-capsules",
             Self::MeetingSummaryModel => "meeting-summary-model",
             Self::GnomeClipboardRestore => "gnome-clipboard-restore",
+            Self::CloudTranscription => "cloud-transcription",
         }
     }
 
@@ -370,6 +377,7 @@ impl Feature {
             Self::MovableMeetingCapsules => "labs.movable_meeting_capsules",
             Self::MeetingSummaryModel => "labs.meeting_summary_model",
             Self::GnomeClipboardRestore => "labs.gnome_clipboard_restore",
+            Self::CloudTranscription => "labs.cloud_transcription",
         }
     }
 
@@ -481,6 +489,9 @@ impl Feature {
             Self::GnomeClipboardRestore => {
                 "Put the previous clipboard back after a paste on GNOME Wayland, through the XWayland clipboard while XWayland is running"
             }
+            Self::CloudTranscription => {
+                "Transcribe dictations with Claude or Codex through the app you're signed in to (labs.cloud_transcription_provider); the audio leaves this computer, and Hex's own model takes over when the service can't answer"
+            }
         }
     }
 
@@ -532,6 +543,7 @@ impl Feature {
             Self::MovableMeetingCapsules => settings.labs.movable_meeting_capsules,
             Self::MeetingSummaryModel => settings.labs.meeting_summary_model,
             Self::GnomeClipboardRestore => settings.labs.gnome_clipboard_restore,
+            Self::CloudTranscription => settings.labs.cloud_transcription,
         }
     }
 
@@ -581,6 +593,7 @@ impl Feature {
             &mut labs.movable_meeting_capsules,
             &mut labs.meeting_summary_model,
             &mut labs.gnome_clipboard_restore,
+            &mut labs.cloud_transcription,
         ]
     }
 
@@ -630,6 +643,7 @@ impl Feature {
             Self::MovableMeetingCapsules => settings.labs.movable_meeting_capsules = on,
             Self::MeetingSummaryModel => settings.labs.meeting_summary_model = on,
             Self::GnomeClipboardRestore => settings.labs.gnome_clipboard_restore = on,
+            Self::CloudTranscription => settings.labs.cloud_transcription = on,
             // Off, no shortcut keeps a key only the feature allows.
             Self::StandaloneSpecialKeys => {
                 settings.labs.standalone_special_keys = on;
@@ -670,6 +684,9 @@ const HIDE_MENU_BAR_ICON: u64 = 1 << 22;
 const MOVABLE_MEETING_CAPSULES: u64 = 1 << 23;
 const MEETING_SUMMARY_MODEL: u64 = 1 << 24;
 const GNOME_CLIPBOARD_RESTORE: u64 = 1 << 25;
+const CLOUD_TRANSCRIPTION: u64 = 1 << 26;
+/// Cloud transcription's provider is Codex rather than Claude.
+const CLOUD_CODEX: u64 = 1 << 27;
 /// Unload-idle minutes (at most 1,440, 11 bits) sit above the switches.
 const MINUTES_SHIFT: u64 = 32;
 
@@ -848,6 +865,18 @@ pub fn gnome_clipboard_restore() -> bool {
     on(GNOME_CLIPBOARD_RESTORE) && Feature::GnomeClipboardRestore.on_this_os()
 }
 
+/// The service a dictation goes to first, while Labs › Cloud transcription
+/// is on (read as each dictation's run starts).
+pub fn cloud_transcription() -> Option<crate::transcription::cloud::CloudProvider> {
+    use crate::transcription::cloud::CloudProvider;
+    let state = state();
+    (state & CLOUD_TRANSCRIPTION != 0).then_some(if state & CLOUD_CODEX != 0 {
+        CloudProvider::Codex
+    } else {
+        CloudProvider::Claude
+    })
+}
+
 /// How long the speech model may sit unused before the engine unloads it,
 /// while Labs › Unload model when idle is on.
 pub fn unload_idle() -> Option<std::time::Duration> {
@@ -872,6 +901,10 @@ fn encode(settings: &LabsSettings) -> u64 {
 /// rest read off while their saved setting stays as it is.
 fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u64 {
     let minutes = u64::from(settings.unload_idle_minutes.clamp(1, 24 * 60)) << MINUTES_SHIFT;
+    let codex = match settings.cloud_transcription_provider {
+        crate::transcription::cloud::CloudProvider::Claude => 0,
+        crate::transcription::cloud::CloudProvider::Codex => CLOUD_CODEX,
+    };
     [
         (Feature::LiveText, settings.live_text, LIVE_TEXT),
         (Feature::LiveChapters, settings.live_chapters, LIVE_CHAPTERS),
@@ -958,10 +991,15 @@ fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u
             settings.gnome_clipboard_restore,
             GNOME_CLIPBOARD_RESTORE,
         ),
+        (
+            Feature::CloudTranscription,
+            settings.cloud_transcription,
+            CLOUD_TRANSCRIPTION,
+        ),
     ]
     .into_iter()
     .filter(|(feature, on, _)| *on && reaches(*feature))
-    .fold(KNOWN | minutes, |state, (_, _, bit)| state | bit)
+    .fold(KNOWN | minutes | codex, |state, (_, _, bit)| state | bit)
 }
 
 /// The names of the features on, for `hex status`.
@@ -1209,6 +1247,10 @@ mod tests {
             Feature::for_settings_key("labs.unload_idle_minutes"),
             Some(Feature::UnloadIdle)
         );
+        assert_eq!(
+            Feature::for_settings_key("labs.cloud_transcription_provider"),
+            Some(Feature::CloudTranscription)
+        );
         assert_eq!(Feature::for_settings_key("dictation_hotkey"), None);
     }
 
@@ -1404,6 +1446,25 @@ mod tests {
         assert_ne!(state & GNOME_CLIPBOARD_RESTORE, 0);
         assert_eq!(state & MEETING_SUMMARY_MODEL, 0);
         assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
+    }
+
+    #[test]
+    fn cloud_transcription_carries_its_provider() {
+        use crate::transcription::cloud::CloudProvider;
+        let mut labs = LabsSettings {
+            cloud_transcription_provider: CloudProvider::Codex,
+            ..LabsSettings::default()
+        };
+        let state = encode_where(&labs, |_| true);
+        assert_eq!(state & CLOUD_TRANSCRIPTION, 0);
+        labs.cloud_transcription = true;
+        let state = encode_where(&labs, |_| true);
+        assert_ne!(state & CLOUD_TRANSCRIPTION, 0);
+        assert_ne!(state & CLOUD_CODEX, 0);
+        assert_eq!(state & GNOME_CLIPBOARD_RESTORE, 0);
+        labs.cloud_transcription_provider = CloudProvider::Claude;
+        assert_eq!(encode_where(&labs, |_| true) & CLOUD_CODEX, 0);
+        assert_eq!(encode_where(&labs, |_| false) & CLOUD_TRANSCRIPTION, 0);
     }
 
     #[test]

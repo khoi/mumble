@@ -69,6 +69,9 @@ pub struct LabsSettings {
     pub meeting_summary_model: bool,
     /// A paste restores the clipboard through a running XWayland on Wayland desktops without data-control, such as GNOME (Linux, issue 1111).
     pub gnome_clipboard_restore: bool,
+    /// Dictations go to `cloud_transcription_provider` first, through the sign-in its own app holds.
+    pub cloud_transcription: bool,
+    pub cloud_transcription_provider: crate::transcription::cloud::CloudProvider,
 }
 
 /// The idle times Labs › Unload model when idle offers, in minutes.
@@ -113,6 +116,8 @@ impl Default for LabsSettings {
             movable_meeting_capsules: false,
             meeting_summary_model: false,
             gnome_clipboard_restore: false,
+            cloud_transcription: false,
+            cloud_transcription_provider: Default::default(),
         }
     }
 }
