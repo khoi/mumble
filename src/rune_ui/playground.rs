@@ -1,8 +1,8 @@
 //! The playground (Labs › Playground): Rune's playground in Hex's window,
 //! opened from its sidebar item or ⇧⌘D (Ctrl+Shift+D off macOS). It swaps
 //! the window for a folded list of
-//! prototypes (the onboarding options, live meeting notes, and on macOS
-//! the HUD and the capture capsule), then every fixture
+//! prototypes (the onboarding options, and on macOS the HUD and the
+//! capture capsule), then every fixture
 //! scene in [`SCENES`] under a readable name, by pane. Each opens on a fresh
 //! fixture state; the real window's state keeps running underneath,
 //! untouched. The window always attaches it, so the toggle applies at once;
@@ -157,22 +157,6 @@ const PATHS: &[(&str, &str)] = &[
         "mac-input-source-models",
         "Window/General/Input source models",
     ),
-    ("meetings", "Window/Meetings/Meetings"),
-    ("meetings-recording", "Window/Meetings/Recording"),
-    ("meetings-chapters", "Window/Meetings/Chapters"),
-    ("meetings-actions", "Window/Meetings/Actions menu"),
-    ("meetings-rename", "Window/Meetings/Rename"),
-    ("meetings-delete", "Window/Meetings/Delete"),
-    ("meetings-failed", "Window/Meetings/Failed"),
-    ("meetings-empty", "Window/Meetings/Empty"),
-    ("meetings-off", "Window/Meetings/Off"),
-    ("meetings-settings", "Window/Meetings/Settings"),
-    ("meetings-allow", "Window/Meetings/Allow system audio"),
-    ("meetings-calendar", "Window/Meetings/Calendar"),
-    (
-        "meetings-calendar-denied",
-        "Window/Meetings/Calendar denied",
-    ),
     ("history", "Window/History/History"),
     ("history-empty", "Window/History/Empty"),
     #[cfg(hex_capture)]
@@ -201,7 +185,6 @@ const PATHS: &[(&str, &str)] = &[
     ("mac-labs", "Window/General/Labs"),
     ("mac-labs-link", "Window/General/Labs link"),
     ("mac-labs-cloud", "Window/General/Labs cloud transcription"),
-    ("mac-production", "Window/General/Production build"),
     ("mac-activity", "Window/Activity/Activity"),
     ("mac-onboarding", "Window/Onboarding/Setting up Hex"),
     (
@@ -318,7 +301,6 @@ fn playground() -> Playground<Ui> {
         .start_folded(true);
     let playground = super::onboarding_kit::stories(playground);
     let playground = super::onboarding_kit::game(playground);
-    let playground = super::live_notes::add(playground);
     #[cfg(target_os = "macos")]
     let playground = super::hud_stories::add(playground);
     #[cfg(all(hex_capture, target_os = "macos"))]
@@ -368,7 +350,6 @@ const OLD_GROUPS: &[&str] = &[
     "Shortcut explainer",
     "Modes",
     "Commands",
-    "Meetings",
     "History",
     "Scrawl",
     "Voice Filter",
@@ -620,7 +601,7 @@ mod tests {
             ("mac-settings", "Window/General/Settings"),
             ("General/mac-settings", "Window/General/Settings"),
             ("general-mac-settings", "Window/General/Settings"),
-            ("Meetings/meetings-calendar", "Window/Meetings/Calendar"),
+            ("History/history-empty", "Window/History/Empty"),
             (
                 "onboarding-onboarding-demo",
                 "Linux & Windows/Onboarding · demo",

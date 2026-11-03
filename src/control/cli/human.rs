@@ -155,7 +155,7 @@ pub(super) fn human_capture_detail(detail: &crate::control::ScrawlCaptureDetail)
 
 /// `2026-10-26 14:02` in local time where Hex knows it.
 pub(super) fn local_minute(ms: u64) -> String {
-    let iso = crate::meeting::query::iso_local(ms);
+    let iso = crate::history::time::iso_local(ms);
     iso.get(..16)
         .map_or(iso.clone(), |minute| minute.replace('T', " "))
 }
@@ -257,19 +257,6 @@ pub(super) fn human_vocabulary(entries: &[VocabularyEntry]) -> String {
         .collect()
 }
 
-pub(super) fn duration(seconds: u64) -> String {
-    if seconds >= 3600 {
-        format!(
-            "{}:{:02}:{:02}",
-            seconds / 3600,
-            seconds / 60 % 60,
-            seconds % 60
-        )
-    } else {
-        format!("{}:{:02}", seconds / 60, seconds % 60)
-    }
-}
-
 pub(super) fn on(enabled: bool) -> &'static str {
     if enabled { "on" } else { "off" }
 }
@@ -295,17 +282,6 @@ pub(super) fn human_status(report: &StatusReport) -> String {
     let pending = match report.capture.pending_jobs {
         0 => String::new(),
         jobs => format!(" ({jobs} pending)"),
-    };
-    let meeting = match (&report.meeting.title, report.meeting.elapsed_seconds) {
-        (Some(title), Some(elapsed)) => {
-            format!(
-                "{} “{title}” for {}",
-                report.meeting.state,
-                duration(elapsed)
-            )
-        }
-        _ if report.features.meetings => report.meeting.state.clone(),
-        _ => "off".into(),
     };
     let model = &report.model;
     let mut model_line = format!(
@@ -352,9 +328,8 @@ pub(super) fn human_status(report: &StatusReport) -> String {
         "Hex {} (pid {}{memory})\n\
          Listener     {}\n\
          Capture      {capture}{pending}\n\
-         Meeting      {meeting}\n\
          Model        {model_line}\n\
-         Features     meetings {}, release mic while idle {}, history {}\n\
+         Features     release mic while idle {}, history {}\n\
          Permissions  {permission_line}\n\
          Window       {window}\n\
          Update       {}\n\
@@ -366,7 +341,6 @@ pub(super) fn human_status(report: &StatusReport) -> String {
         } else {
             format!("waiting: {}", report.listener.status)
         },
-        on(features.meetings),
         on(features.release_microphone_while_idle),
         features.history_retention,
         report.update,

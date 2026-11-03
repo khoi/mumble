@@ -8,14 +8,10 @@ mod app_paths;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 mod app_settings;
 #[cfg(target_os = "macos")]
-mod apple_intelligence;
-#[cfg(target_os = "macos")]
 mod apple_speech;
 mod application_catalog;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 mod audio;
-#[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
-mod calendar;
 #[cfg(hex_capture)]
 mod capture_host;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
@@ -40,9 +36,7 @@ mod linux;
 mod local_api;
 #[cfg(target_os = "macos")]
 mod macos_rune;
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-mod meeting;
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(target_os = "macos")]
 mod microphone_activity;
 mod net;
 #[cfg(target_os = "macos")]
@@ -81,7 +75,7 @@ use color_eyre::eyre::eyre;
     version = crate::VERSION,
     about = "Local, observable voice control",
     long_about = "Local, observable voice control.\n\n\
-        Control commands (status, dictation, meetings record, settings, model, window, …) drive \
+        Control commands (status, dictation, settings, model, window, …) drive \
         the one running Hex over its owner-only local API and never launch it, except `start` \
         and `restart`. Every one takes --json for a versioned reply (docs/cli.md). Exit codes: \
         0 done or nothing to change, 1 refused or failed, 2 usage, 3 Hex isn't running.",
@@ -98,6 +92,7 @@ struct Cli {
 static ALLOC: procwatch::alloc::Counting = procwatch::alloc::Counting::system();
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
 pub(crate) const DEVELOPER_FEATURES_ENABLED: bool = cfg!(debug_assertions);
 
 #[cfg(target_os = "macos")]
@@ -140,12 +135,6 @@ enum Command {
         /// Rune's flags, such as `--snap out.png --scene rule`.
         #[arg(last = true)]
         rune_args: Vec<String>,
-    },
-    #[cfg(debug_assertions)]
-    /// Record, transcribe, and browse local meetings.
-    Meeting {
-        #[command(subcommand)]
-        command: MeetingCommand,
     },
     /// Measure the local transcription runtime against a fixed WAV corpus.
     #[command(hide = true)]
@@ -235,54 +224,10 @@ enum VoiceFilterCommand {
     },
 }
 
-#[cfg(debug_assertions)]
-#[cfg(target_os = "macos")]
-#[derive(Subcommand)]
-enum MeetingCommand {
-    /// Record microphone and system audio until Ctrl-C.
-    Record {
-        /// Human-readable meeting title.
-        #[arg(long)]
-        title: Option<String>,
-    },
-    /// List recorded meetings.
-    List,
-    /// Print one meeting transcript.
-    Show { id: String },
-    /// Print applications currently using microphone input.
-    Probe,
-    /// Transcribe a meeting's recorded WAV tracks and publish its transcript.
-    Transcribe { id: String },
-    /// Write an Apple Intelligence title and summary for a meeting id, or
-    /// time the provisional title and the final title and summary for a
-    /// transcript Markdown file without saving them.
-    Summarize {
-        target: String,
-        /// Override the excerpt character budget (file targets only).
-        #[arg(long)]
-        excerpt_chars: Option<usize>,
-    },
-    /// Run live chapter passes and the boundary pass over a transcript
-    /// Markdown file as a recording would, with timings, without saving.
-    Chapters { path: PathBuf },
-    /// Replay a meeting folder's tracks and report which microphone lines
-    /// echo suppression keeps.
-    Echo {
-        directory: PathBuf,
-        /// Microphone start after the system track, when the manifest has
-        /// no arrival times.
-        #[arg(long)]
-        microphone_offset_ms: Option<u64>,
-        /// Also transcribe both tracks with the selected model.
-        #[arg(long)]
-        transcribe: bool,
-    },
-}
-
 #[cfg(target_os = "macos")]
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let cli = Cli::parse_from(mcp_alias_arguments(std::env::args_os().collect()));
+    let cli = Cli::parse();
     let executable_name = std::env::current_exe()
         .ok()
         .and_then(|path| path.file_stem().map(ToOwned::to_owned));
@@ -301,41 +246,13 @@ fn main() -> Result<()> {
         rune_ui::capture_capsule::playground::run(rune_args.clone());
         return Ok(());
     }
-    // Control and read commands (status, settings, history, meetings, mcp,
-    // labs, …) talk to the running Hex or read files: no data folder, log,
+    // Control and read commands (status, settings, history, labs, …) talk to the running Hex or read files: no data folder, log,
     // lock, GUI, or permission setup of their own, so an agent may run them
     // over SSH while the app is running.
     let cli = match cli.command {
         Some(Command::Control(command)) => control::cli::finish(control::cli::run(command)),
         command => Cli { command },
     };
-    #[cfg(debug_assertions)]
-    match &cli.command {
-        Some(Command::Meeting {
-            command: MeetingCommand::List,
-        }) => {
-            return control::transcript_cli::meetings(
-                &control::transcript_cli::MeetingsCommand::List(Default::default()),
-            );
-        }
-        Some(Command::Meeting {
-            command: MeetingCommand::Show { id },
-        }) => {
-            return control::transcript_cli::meetings(
-                &control::transcript_cli::MeetingsCommand::Show {
-                    id: id.clone(),
-                    md: true,
-                    json: false,
-                    srt: false,
-                    vtt: false,
-                    from: None,
-                    to: None,
-                    chapter: None,
-                },
-            );
-        }
-        _ => {}
-    }
     if let Some(Command::Dev {
         command:
             DevCommand::VoiceFilter {
@@ -445,111 +362,6 @@ fn main() -> Result<()> {
                 }
             }
         }
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command: MeetingCommand::Record { title },
-        } => {
-            app_settings::AppSettings::load()?;
-            meeting::record(
-                meeting::MeetingStart {
-                    title,
-                    ..Default::default()
-                },
-                &SHUTDOWN,
-                None,
-            )
-            .map(|_| ())
-        }
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command: MeetingCommand::List,
-        } => {
-            for meeting in meeting::list()? {
-                println!(
-                    "{}\t{:?}\t{}ms\t{}",
-                    meeting.id,
-                    meeting.status,
-                    meeting.duration_ms.unwrap_or_default(),
-                    meeting.title
-                );
-            }
-            Ok(())
-        }
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command: MeetingCommand::Show { id },
-        } => {
-            print!("{}", meeting::show(&id)?);
-            Ok(())
-        }
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command: MeetingCommand::Probe,
-        } => meeting::watcher::probe(),
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command: MeetingCommand::Transcribe { id },
-        } => {
-            app_settings::AppSettings::load()?;
-            let manifest = meeting::transcribe_meeting(&id)?;
-            println!("{}", meeting::display_title(&manifest));
-            if let Some(path) = manifest.export_path {
-                println!("{}", path.display());
-            }
-            if let Some(error) = manifest.export_error {
-                println!("{error}");
-            }
-            Ok(())
-        }
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command:
-                MeetingCommand::Summarize {
-                    target,
-                    excerpt_chars,
-                },
-        } => {
-            let path = PathBuf::from(&target);
-            if path.is_file() {
-                print!("{}", meeting::summarize_file(&path, excerpt_chars)?);
-            } else {
-                app_settings::AppSettings::load()?;
-                let manifest = meeting::summarize(&target)?;
-                println!("{}", meeting::display_title(&manifest));
-                if let Some(path) = manifest.export_path {
-                    println!("{}", path.display());
-                }
-                if let Some(error) = manifest.notes_error {
-                    println!("{error}");
-                }
-            }
-            Ok(())
-        }
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command: MeetingCommand::Chapters { path },
-        } => {
-            print!("{}", meeting::chapters_file(&path)?);
-            Ok(())
-        }
-        #[cfg(debug_assertions)]
-        Command::Meeting {
-            command:
-                MeetingCommand::Echo {
-                    directory,
-                    microphone_offset_ms,
-                    transcribe,
-                },
-        } => {
-            if transcribe {
-                app_settings::AppSettings::load()?;
-            }
-            print!(
-                "{}",
-                meeting::echo_report(&directory, microphone_offset_ms, transcribe)?
-            );
-            Ok(())
-        }
         Command::BenchmarkTranscription {
             manifest,
             backend,
@@ -578,24 +390,7 @@ fn open_app(event_path: PathBuf, device: Option<String>) -> Result<()> {
     let _instance = desktop::instance::acquire("listener")?;
     labs::log_launch();
     audio::hex_microphone::host_service();
-    macos_rune::run(
-        &SHUTDOWN,
-        meeting::watcher::ListenerConfig { event_path, device },
-    )
-}
-
-/// A copy installed as `hex-meetings-mcp` only serves meetings: its
-/// arguments are those of `hex mcp`, and it never falls back to listening.
-#[cfg(target_os = "macos")]
-fn mcp_alias_arguments(mut arguments: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
-    let alias = arguments
-        .first()
-        .and_then(|program| std::path::Path::new(program).file_stem())
-        .is_some_and(|stem| stem == "hex-meetings-mcp");
-    if alias && arguments.get(1).is_none_or(|argument| argument != "mcp") {
-        arguments.insert(1, "mcp".into());
-    }
-    arguments
+    macos_rune::run(&SHUTDOWN, macos_rune::ListenerConfig { event_path, device })
 }
 
 #[cfg(target_os = "macos")]
@@ -619,32 +414,9 @@ fn opens_app(command: Option<&Command>, bundled_watcher: bool) -> bool {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{Cli, Command, is_bundled_app_executable, mcp_alias_arguments, opens_app};
+    use super::{Cli, Command, is_bundled_app_executable, opens_app};
     use crate::control::cli::ControlCli;
     use clap::Parser;
-
-    #[test]
-    fn the_meetings_mcp_alias_always_serves_meetings() {
-        let parse = |arguments: &[&str]| {
-            Cli::parse_from(mcp_alias_arguments(
-                arguments.iter().map(Into::into).collect(),
-            ))
-            .command
-        };
-        assert!(matches!(
-            parse(&["/Users/kit/.local/bin/hex-meetings-mcp"]),
-            Some(Command::Control(ControlCli::Mcp { meetings_dir: None }))
-        ));
-        assert!(matches!(
-            parse(&["hex-meetings-mcp", "--meetings-dir", "/tmp/mirror"]),
-            Some(Command::Control(ControlCli::Mcp { meetings_dir: Some(directory) })) if directory.ends_with("mirror")
-        ));
-        assert!(matches!(
-            parse(&["hex-meetings-mcp", "mcp"]),
-            Some(Command::Control(ControlCli::Mcp { .. }))
-        ));
-        assert!(parse(&["hex"]).is_none());
-    }
 
     #[cfg(debug_assertions)]
     #[test]
@@ -746,18 +518,11 @@ mod tests {
         ));
         assert!(parse(&["hex", "history", "--limit", "5", "clear", "--yes"]).is_err());
         assert!(matches!(
-            parse(&["hex", "meetings", "record", "--title", "Design sync"]),
-            Ok(Some(Command::Control(ControlCli::Meetings {
-                command: transcript_cli::MeetingsCommand::Record { title: Some(_), .. }
-            })))
-        ));
-        assert!(matches!(
             parse(&["hex", "commands", "check"]),
             Ok(Some(Command::Control(ControlCli::Commands {
                 command: CommandsCommand::Check
             })))
         ));
-        assert!(parse(&["hex", "meetings", "cancel"]).is_err());
         assert!(matches!(
             parse(&[
                 "hex",
@@ -821,9 +586,7 @@ mod tests {
     #[test]
     fn only_app_launches_prewarm_the_gpu() {
         let opens = |arguments: &[&str]| {
-            let arguments = mcp_alias_arguments(arguments.iter().map(Into::into).collect());
-            let bundled =
-                is_bundled_app_executable(std::path::Path::new(&arguments[0]).file_stem());
+            let bundled = is_bundled_app_executable(std::path::Path::new(arguments[0]).file_stem());
             opens_app(Cli::parse_from(arguments).command.as_ref(), bundled)
         };
         assert!(opens(&["hex"]));
@@ -832,14 +595,11 @@ mod tests {
         assert!(opens(&["hex", "app", "--device", "MacBook Pro Microphone"]));
         assert!(!opens(&["hex", "app", "--", "--snap", "/tmp/a.png"]));
         assert!(!opens(&["hex-service"]));
-        assert!(!opens(&["hex-meetings-mcp"]));
         for command in [
             &["status"][..],
             &["quit"],
-            &["mcp"],
             &["history"],
             &["listen"],
-            &["meetings", "list"],
             &["settings", "list"],
             &["capture", "status"],
             &["dev", "dashboard"],

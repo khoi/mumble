@@ -1,6 +1,5 @@
 //! The macOS host of `hex` control commands ([`crate::control`]). The main
-//! thread answers what it owns (the window, the menu bar's meeting state,
-//! settings saves) and hands commands that wait on the listener or the
+//! thread answers what it owns (the window and settings saves) and hands commands that wait on the listener or the
 //! window to a short-lived thread, so a slow answer never stalls the run loop.
 
 use std::sync::mpsc::{self, SyncSender};
@@ -10,13 +9,11 @@ use std::time::{Duration, Instant};
 use crate::app_settings::AppSettings;
 use crate::control::{
     self, CaptureReport, CaptureSnapshot, CaptureState, ControlCall, ControlCommand, ControlError,
-    ControlReply, ControlResponse, FeatureReport, ListenerReport, MeetingReport, ModelReport, Pane,
+    ControlReply, ControlResponse, FeatureReport, ListenerReport, ModelReport, Pane,
     PermissionReport, StatusReport, WindowReport, settings,
 };
 use crate::desktop::host::{DesktopAction, DesktopUpdateStatus};
 use crate::desktop::onboarding::PermissionState;
-use crate::meeting::MeetingRequest;
-use crate::meeting::watcher::{ControllerEvent, MeetingMenuState};
 use crate::recognition::RecognitionControl;
 use crate::rune_ui::story_link::{self, StoryLink};
 use crate::rune_ui::{Destination, Ui};
@@ -26,18 +23,11 @@ use super::{Pump, Request, RuntimeHandle, bring_window_forward, show, window_vis
 /// How long a command waits for the listener's answer.
 const LISTENER_TIMEOUT: Duration = Duration::from_secs(3);
 const WINDOW_TIMEOUT: Duration = Duration::from_secs(1);
-/// How long `meetings record|stop` and `model use` wait to confirm, inside
+/// How long `model use` waits to confirm, inside
 /// the local API's own control deadline.
 const CONFIRM_WAIT: Duration = Duration::from_secs(8);
 /// Lets the local API write the reply before Hex quits.
 const QUIT_GRACE: Duration = Duration::from_millis(250);
-
-/// A `meetings record|stop` waiting for the controller to confirm.
-pub(super) struct MeetingWaiter {
-    stop: bool,
-    reply: SyncSender<ControlResponse>,
-    deadline: Instant,
-}
 
 impl Pump {
     pub(super) fn control(&mut self, call: ControlCall) {
@@ -60,18 +50,16 @@ impl Pump {
         let runtime = self.runtime.clone();
         match command {
             ControlCommand::Status => {
-                let meeting = meeting_report(&self.meeting_state);
                 let window = self.window.clone();
-                background(reply, move || status(&runtime, &window, meeting));
+                background(reply, move || status(&runtime, &window));
                 None
             }
             ControlCommand::Quit { force } | ControlCommand::Restart { force } => {
                 let restart = matches!(command, ControlCommand::Restart { .. });
-                let meeting = meeting_report(&self.meeting_state);
                 let reply = reply.clone();
                 spawn(move || {
                     let capture = capture_snapshot(&runtime);
-                    let answer = control::check_quit(&meeting, capture, force).and_then(|()| {
+                    let answer = control::check_quit(capture, force).and_then(|()| {
                         if restart && !crate::desktop::onboarding::spawn_relaunch() {
                             return Err(ControlError::new(
                                 "unsupported",
@@ -206,19 +194,6 @@ impl Pump {
                 });
                 None
             }
-            ControlCommand::MeetingRecord { title } => self.meeting(false, title, reply),
-            ControlCommand::MeetingStop => self.meeting(true, None, reply),
-            ControlCommand::MeetingCopyLast => Some(
-                crate::meeting::latest_transcript_markdown()
-                    .and_then(|markdown| {
-                        arboard::Clipboard::new()?.set_text(markdown)?;
-                        Ok(())
-                    })
-                    .map(|()| ControlReply::done("Copied the last meeting transcript"))
-                    .unwrap_or_else(|error| {
-                        ControlReply::error("failed", format!("couldn't copy it: {error:#}"))
-                    }),
-            ),
             ControlCommand::SettingsGet { key } => Some(reply_with(load().and_then(|settings| {
                 Ok(ControlReply::Settings {
                     settings: match key {
@@ -362,90 +337,6 @@ impl Pump {
         Ok(reply)
     }
 
-    fn meeting(
-        &mut self,
-        stop: bool,
-        title: Option<String>,
-        reply: &SyncSender<ControlResponse>,
-    ) -> Option<ControlReply> {
-        if !crate::app_settings::meetings_enabled() {
-            return Some(ControlReply::error(
-                "feature-off",
-                crate::app_settings::meetings_off_reason(),
-            ));
-        }
-        let request = match (&self.meeting_state, stop) {
-            (MeetingMenuState::Recording { title, .. }, false) => {
-                return Some(ControlReply::unchanged(format!(
-                    "Already recording “{title}”"
-                )));
-            }
-            (MeetingMenuState::Starting, false) => {
-                return Some(ControlReply::unchanged(
-                    "A meeting recording is already starting",
-                ));
-            }
-            (MeetingMenuState::Transcribing, false) => {
-                return Some(ControlReply::error(
-                    "busy",
-                    "the last meeting is still transcribing; try again when it finishes",
-                ));
-            }
-            (MeetingMenuState::Idle, false) => MeetingRequest::Start {
-                title: title.filter(|title| !title.trim().is_empty()),
-            },
-            (MeetingMenuState::Idle, true) => {
-                return Some(ControlReply::unchanged("No meeting is recording"));
-            }
-            (MeetingMenuState::Transcribing, true) => {
-                return Some(ControlReply::unchanged(
-                    "The meeting is already transcribing",
-                ));
-            }
-            (MeetingMenuState::Starting | MeetingMenuState::Recording { .. }, true) => {
-                MeetingRequest::Stop
-            }
-        };
-        if let Err(error) = self.runtime.meeting(request) {
-            return Some(ControlReply::error("unavailable", error));
-        }
-        self.meeting_waiters.push(MeetingWaiter {
-            stop,
-            reply: reply.clone(),
-            deadline: Instant::now() + CONFIRM_WAIT,
-        });
-        None
-    }
-
-    /// Confirms waiting `meetings record|stop` commands from the
-    /// controller's events, or once they wait too long.
-    pub(super) fn settle_meeting_waiters(&mut self, event: Option<&ControllerEvent>) {
-        let now = Instant::now();
-        self.meeting_waiters.retain(|waiter| {
-            let answer = match (event, waiter.stop) {
-                (Some(ControllerEvent::RecordingStarted { title, .. }), false) => {
-                    ControlReply::done(format!(
-                        "Recording “{title}”; `hex meetings stop` stops and transcribes it"
-                    ))
-                }
-                (Some(ControllerEvent::Transcribing | ControllerEvent::Finished(_)), true) => {
-                    ControlReply::done("Stopped recording; transcribing the meeting")
-                }
-                (Some(ControllerEvent::Failed { title, error }), _) => {
-                    ControlReply::error("failed", format!("{title}: {error}"))
-                }
-                _ if now >= waiter.deadline => ControlReply::done(if waiter.stop {
-                    "Asked the meeting to stop; `hex status` shows when it's transcribing"
-                } else {
-                    "Hex is starting the recording; `hex status` shows when it's recording"
-                }),
-                _ => return true,
-            };
-            let _ = waiter.reply.send(answer.into());
-            false
-        });
-    }
-
     /// Saves one setting as the window would, then lets the runtime, the
     /// listener, and an open window adopt it.
     fn set_setting(&mut self, key: &str, value: &str) -> Result<ControlReply, ControlError> {
@@ -516,8 +407,6 @@ impl Pump {
             Some(Pane::Models) => Destination::Models,
             Some(Pane::Modes) => Destination::Modes,
             Some(Pane::History) => Destination::History,
-            // While Meetings is off the pane shows its opt-in.
-            Some(Pane::Meetings) => Destination::Meetings(None),
         };
         show(&self.window, destination);
         Ok(ControlReply::done("Opened the window"))
@@ -757,28 +646,6 @@ fn wait_for_model(
     )))
 }
 
-fn meeting_report(state: &MeetingMenuState) -> MeetingReport {
-    match state {
-        MeetingMenuState::Idle => MeetingReport {
-            state: "idle".into(),
-            ..Default::default()
-        },
-        MeetingMenuState::Starting => MeetingReport {
-            state: "starting".into(),
-            ..Default::default()
-        },
-        MeetingMenuState::Recording { started, title, .. } => MeetingReport {
-            state: "recording".into(),
-            title: Some(title.clone()),
-            elapsed_seconds: Some(started.elapsed().as_secs()),
-        },
-        MeetingMenuState::Transcribing => MeetingReport {
-            state: "transcribing".into(),
-            ..Default::default()
-        },
-    }
-}
-
 /// The pane the window shows, asked on the UI thread.
 fn current_pane(window: &rune::AppHandle<Ui>) -> Option<String> {
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -816,7 +683,6 @@ fn permission(state: PermissionState) -> String {
 fn status(
     runtime: &RuntimeHandle,
     window: &rune::AppHandle<Ui>,
-    meeting: MeetingReport,
 ) -> Result<ControlReply, ControlError> {
     let published = runtime
         .published()
@@ -855,7 +721,6 @@ fn status(
             shortcuts: Vec::new(),
         },
         capture,
-        meeting,
         model: ModelReport {
             id: selection.model.as_str().into(),
             name: definition.name.into(),
@@ -869,7 +734,6 @@ fn status(
             error: published.preparation.error.clone(),
         },
         features: FeatureReport {
-            meetings: crate::app_settings::meetings_enabled(),
             release_microphone_while_idle: settings.release_microphone_while_idle,
             history_retention: serde_json::to_value(settings.history_retention)
                 .ok()

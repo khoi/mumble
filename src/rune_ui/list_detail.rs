@@ -1,4 +1,4 @@
-//! The list-and-detail layout Commands, Meetings, and History share: the
+//! The list-and-detail layout Commands and History share: the
 //! list on the pane title's edge with no rule beside it, and the selected
 //! item in a raised card. A hovered row takes a hover fill and its action
 //! (Copy) takes the time's place. Detail actions are ghost icons in the
@@ -19,7 +19,6 @@ const LIST_FADE: (f32, f32) = (18.0, 28.0);
 
 pub(super) static COPY_ICON: &Icon = &rune_theme_opencode::icons::OUTLINE_COPY;
 pub(super) static TRASH_ICON: &Icon = &rune_theme_opencode::icons::TRASH;
-pub(super) static EDIT_ICON: &Icon = &rune_theme_opencode::icons::EDIT;
 pub(super) static HISTORY_ICON: &Icon = &rune_theme_opencode::icons::STATUS;
 pub(super) static SEARCH_ICON: &Icon = &rune_theme_opencode::icons::MAGNIFYING_GLASS;
 
@@ -65,17 +64,6 @@ pub(super) fn notices(children: Vec<El>) -> El {
         .pb(16.0)
         .gap(8.0)
         .children(children)
-}
-
-/// A group heading inside a list (a task, a day), on the rows' text edge.
-pub(super) fn group(p: Paint, key: &str, label: &str, first: bool) -> El {
-    text(label)
-        .key(key)
-        .font(p.k.ty.small_medium)
-        .color(p.faint())
-        .px(METRICS.row_px)
-        .pt(if first { 0.0 } else { 18.0 })
-        .pb(6.0)
 }
 
 /// One list row's words: the title over its meta line, and the time (or

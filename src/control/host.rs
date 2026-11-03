@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use super::{
     CaptureAction, CaptureReport, CaptureSnapshot, CaptureState, ControlCommand, ControlError,
-    ControlReply, ControlRequest, ControlResponse, FeatureReport, ListenerReport, MeetingReport,
-    ModelReport, Pane, PermissionReport, PrintReply, StatusReport, WindowReport, settings,
+    ControlReply, ControlRequest, ControlResponse, FeatureReport, ListenerReport, ModelReport,
+    Pane, PermissionReport, PrintReply, StatusReport, WindowReport, settings,
 };
 use crate::app_settings::AppSettings;
 use crate::desktop::host::{
@@ -117,7 +117,7 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
         ControlCommand::Quit { force } | ControlCommand::Restart { force } => {
             let restart = matches!(command, ControlCommand::Restart { .. });
             reply(
-                super::check_quit(&meeting_report(), capture(host), force)
+                super::check_quit(capture(host), force)
                     .and_then(|()| host.quit(restart))
                     .map(|()| {
                         ControlReply::done(if restart {
@@ -147,12 +147,6 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
             host.paste_last()
                 .map(|()| ControlReply::done("Pasting the last dictation")),
         ),
-        ControlCommand::MeetingRecord { title } => meeting(false, title),
-        ControlCommand::MeetingStop => meeting(true, None),
-        ControlCommand::MeetingCopyLast => match crate::meeting::runtime::copy_last_transcript() {
-            Ok(()) => ControlReply::done("Copied the last meeting transcript"),
-            Err(error) => ControlReply::error("failed", format!("couldn't copy it: {error}")),
-        },
         ControlCommand::SettingsGet { key } => reply(load().and_then(|settings| {
             Ok(ControlReply::Settings {
                 settings: match key {
@@ -249,84 +243,6 @@ fn dictation_message(action: CaptureAction) -> &'static str {
         CaptureAction::Toggle => "Toggling dictation",
         CaptureAction::Cancel => "Cancelling dictation",
     }
-}
-
-/// What the meeting recorder is doing (`meeting_runtime`).
-fn meeting_report() -> MeetingReport {
-    use crate::meeting::watcher::MeetingMenuState;
-    let state = |state: &str| MeetingReport {
-        state: state.into(),
-        ..Default::default()
-    };
-    match crate::meeting::runtime::state() {
-        MeetingMenuState::Idle => state("idle"),
-        MeetingMenuState::Starting => state("starting"),
-        MeetingMenuState::Recording { started, title, .. } => MeetingReport {
-            state: "recording".into(),
-            title: Some(title),
-            elapsed_seconds: Some(started.elapsed().as_secs()),
-        },
-        MeetingMenuState::Transcribing => state("transcribing"),
-    }
-}
-
-/// `hex meetings record|stop`, as the tray's items do; waits a moment for
-/// the recorder to confirm.
-fn meeting(stop: bool, title: Option<String>) -> ControlReply {
-    use crate::meeting::MeetingRequest;
-    use crate::meeting::watcher::MeetingMenuState;
-    if !crate::app_settings::meetings_enabled() {
-        return ControlReply::error("feature-off", crate::app_settings::meetings_off_reason());
-    }
-    let request = match (crate::meeting::runtime::state(), stop) {
-        (MeetingMenuState::Recording { title, .. }, false) => {
-            return ControlReply::unchanged(format!("Already recording “{title}”"));
-        }
-        (MeetingMenuState::Starting, false) => {
-            return ControlReply::unchanged("A meeting recording is already starting");
-        }
-        (MeetingMenuState::Transcribing, false) => {
-            return ControlReply::error(
-                "busy",
-                "the last meeting is still transcribing; try again when it finishes",
-            );
-        }
-        (MeetingMenuState::Idle, false) => MeetingRequest::Start {
-            title: title.filter(|title| !title.trim().is_empty()),
-        },
-        (MeetingMenuState::Idle, true) => {
-            return ControlReply::unchanged("No meeting is recording");
-        }
-        (MeetingMenuState::Transcribing, true) => {
-            return ControlReply::unchanged("The meeting is already transcribing");
-        }
-        (MeetingMenuState::Starting | MeetingMenuState::Recording { .. }, true) => {
-            MeetingRequest::Stop
-        }
-    };
-    if let Err(error) = crate::meeting::runtime::request(request) {
-        return ControlReply::error("unavailable", error);
-    }
-    let started = Instant::now();
-    while started.elapsed() < CONFIRM_WAIT {
-        std::thread::sleep(Duration::from_millis(100));
-        match (crate::meeting::runtime::state(), stop) {
-            (MeetingMenuState::Recording { title, .. }, false) => {
-                return ControlReply::done(format!(
-                    "Recording “{title}”; `hex meetings stop` stops and transcribes it"
-                ));
-            }
-            (MeetingMenuState::Transcribing | MeetingMenuState::Idle, true) => {
-                return ControlReply::done("Stopped recording; transcribing the meeting");
-            }
-            _ => {}
-        }
-    }
-    ControlReply::done(if stop {
-        "Asked the meeting to stop; `hex status` shows when it's transcribing"
-    } else {
-        "Hex is starting the recording; `hex status` shows when it's recording"
-    })
 }
 
 fn capture(host: &dyn Host) -> Result<CaptureSnapshot, ControlError> {
@@ -561,7 +477,6 @@ fn status(host: &dyn Host) -> Result<ControlReply, ControlError> {
             },
         },
         capture,
-        meeting: meeting_report(),
         model: ModelReport {
             id: selection.model.as_str().into(),
             name: definition.name.into(),
@@ -575,7 +490,6 @@ fn status(host: &dyn Host) -> Result<ControlReply, ControlError> {
             error: state.transcription.error.clone(),
         },
         features: FeatureReport {
-            meetings: crate::app_settings::meetings_enabled(),
             release_microphone_while_idle: settings.release_microphone_while_idle,
             history_retention: serde_json::to_value(settings.history_retention)
                 .ok()

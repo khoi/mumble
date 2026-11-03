@@ -24,7 +24,7 @@ use crate::dictation::vocabulary::{self, VocabularyEntry};
 
 /// The wire version of [`ControlRequest`] and [`ControlResponse`]. A change
 /// that breaks either shape increments it.
-pub const CONTROL_VERSION: u32 = 4;
+pub const CONTROL_VERSION: u32 = 5;
 
 /// What a capture command does. Commands are idempotent: starting while
 /// recording or stopping while idle changes nothing and succeeds.
@@ -69,7 +69,6 @@ pub enum Pane {
     #[value(alias = "replacements")]
     Modes,
     History,
-    Meetings,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -95,12 +94,6 @@ pub enum ControlCommand {
         raw: bool,
     },
     PasteLast,
-    MeetingRecord {
-        #[serde(default)]
-        title: Option<String>,
-    },
-    MeetingStop,
-    MeetingCopyLast,
     SettingsGet {
         #[serde(default)]
         key: Option<String>,
@@ -522,7 +515,6 @@ pub struct StatusReport {
     pub memory_footprint_bytes: Option<u64>,
     pub listener: ListenerReport,
     pub capture: CaptureReport,
-    pub meeting: MeetingReport,
     pub model: ModelReport,
     pub features: FeatureReport,
     pub permissions: PermissionReport,
@@ -627,14 +619,6 @@ impl From<CaptureSnapshot> for CaptureReport {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct MeetingReport {
-    /// idle, starting, recording, or transcribing.
-    pub state: String,
-    pub title: Option<String>,
-    pub elapsed_seconds: Option<u64>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct ModelReport {
     pub id: String,
     pub name: String,
@@ -648,7 +632,6 @@ pub struct ModelReport {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct FeatureReport {
-    pub meetings: bool,
     pub release_microphone_while_idle: bool,
     pub history_retention: String,
 }
@@ -871,21 +854,11 @@ pub fn model_selection(
 /// listener's answer (idle when no listener runs or setup gates it); a
 /// listener that couldn't answer might be recording, so it refuses too.
 pub fn check_quit(
-    meeting: &MeetingReport,
     capture: Result<CaptureSnapshot, ControlError>,
     force: bool,
 ) -> Result<(), ControlError> {
     if force {
         return Ok(());
-    }
-    if meeting.state != "idle" {
-        return Err(ControlError::new(
-            "meeting-active",
-            format!(
-                "a meeting is {}; stop it first (`hex meetings stop`) or pass --force",
-                meeting.state
-            ),
-        ));
     }
     match capture {
         Ok(capture) if capture.recording.is_some() || capture.pending_jobs > 0 => {
@@ -1003,7 +976,7 @@ mod tests {
         assert!(check_flags(CaptureAction::Stop, false, true).is_err());
         assert_eq!(
             serde_json::from_str::<ControlRequest>(
-                r#"{"version":4,"command":"dictation","action":"stop"}"#
+                r#"{"version":5,"command":"dictation","action":"stop"}"#
             )
             .unwrap()
             .command,
@@ -1019,7 +992,7 @@ mod tests {
     #[test]
     fn cancel_parses_and_takes_no_flags() {
         let cancel = serde_json::from_str::<ControlRequest>(
-            r#"{"version":4,"command":"dictation","action":"cancel"}"#,
+            r#"{"version":5,"command":"dictation","action":"cancel"}"#,
         )
         .unwrap();
         let ControlCommand::Dictation { action, .. } = cancel.command else {
@@ -1062,11 +1035,6 @@ mod tests {
                 raw: true,
             },
             ControlCommand::PasteLast,
-            ControlCommand::MeetingRecord {
-                title: Some("Design sync".into()),
-            },
-            ControlCommand::MeetingStop,
-            ControlCommand::MeetingCopyLast,
             ControlCommand::SettingsGet { key: None },
             ControlCommand::SettingsSet {
                 key: "release_microphone_while_idle".into(),
@@ -1112,7 +1080,7 @@ mod tests {
             round_trip_request(command);
         }
         let request: ControlRequest =
-            serde_json::from_str(r#"{"version":4,"command":"vocabulary-add","term":"Rune"}"#)
+            serde_json::from_str(r#"{"version":5,"command":"vocabulary-add","term":"Rune"}"#)
                 .unwrap();
         assert_eq!(
             request.command,
@@ -1161,21 +1129,20 @@ mod tests {
 
     #[test]
     fn requests_are_flat_and_versioned() {
-        let json = serde_json::to_value(ControlRequest::new(ControlCommand::MeetingRecord {
-            title: Some("Standup".into()),
-        }))
-        .unwrap();
+        let json =
+            serde_json::to_value(ControlRequest::new(ControlCommand::Restart { force: true }))
+                .unwrap();
         assert_eq!(
             json,
-            serde_json::json!({"version": 4, "command": "meeting-record", "title": "Standup"})
+            serde_json::json!({"version": 5, "command": "restart", "force": true})
         );
         // Optional fields may be left out.
         let request: ControlRequest =
-            serde_json::from_str(r#"{"version":4,"command":"quit"}"#).unwrap();
+            serde_json::from_str(r#"{"version":5,"command":"quit"}"#).unwrap();
         assert_eq!(request.command, ControlCommand::Quit { force: false });
-        assert!(serde_json::from_str::<ControlRequest>(r#"{"version":4,"command":"x"}"#).is_err());
+        assert!(serde_json::from_str::<ControlRequest>(r#"{"version":5,"command":"x"}"#).is_err());
         let capture: ControlRequest =
-            serde_json::from_str(r#"{"version":4,"command":"scrawl-capture","action":"stop"}"#)
+            serde_json::from_str(r#"{"version":5,"command":"scrawl-capture","action":"stop"}"#)
                 .unwrap();
         assert_eq!(
             capture.command,
@@ -1184,7 +1151,7 @@ mod tests {
             }
         );
         let send: ControlRequest = serde_json::from_str(
-            r#"{"version":4,"command":"scrawl-capture-send","capture":"latest"}"#,
+            r#"{"version":5,"command":"scrawl-capture-send","capture":"latest"}"#,
         )
         .unwrap();
         assert_eq!(
@@ -1276,13 +1243,13 @@ mod tests {
         .unwrap();
         assert_eq!(
             json,
-            serde_json::json!({"version": 4, "status": "transcript", "text": "Ship it."})
+            serde_json::json!({"version": 5, "status": "transcript", "text": "Ship it."})
         );
         let json =
             serde_json::to_value(ControlResponse::from(ControlReply::error("busy", "x"))).unwrap();
         assert_eq!(
             json,
-            serde_json::json!({"version": 4, "status": "error", "code": "busy", "message": "x"})
+            serde_json::json!({"version": 5, "status": "error", "code": "busy", "message": "x"})
         );
     }
 
@@ -1299,27 +1266,14 @@ mod tests {
 
     #[test]
     fn quitting_waits_for_recordings_unless_forced() {
-        let idle = MeetingReport {
-            state: "idle".into(),
-            ..Default::default()
-        };
-        let recording = MeetingReport {
-            state: "recording".into(),
-            ..Default::default()
-        };
-        let quiet = || Ok(CaptureSnapshot::default());
-        assert!(check_quit(&idle, quiet(), false).is_ok());
-        assert_eq!(
-            check_quit(&recording, quiet(), false).unwrap_err().code,
-            "meeting-active"
-        );
-        assert!(check_quit(&recording, quiet(), true).is_ok());
+        assert!(check_quit(Ok(CaptureSnapshot::default()), false).is_ok());
         let busy = CaptureSnapshot {
             recording: None,
             pending_jobs: 1,
             microphone_unavailable: false,
         };
-        assert_eq!(check_quit(&idle, Ok(busy), false).unwrap_err().code, "busy");
+        assert_eq!(check_quit(Ok(busy), false).unwrap_err().code, "busy");
+        assert!(check_quit(Ok(busy), true).is_ok());
         // A listener that can't answer may be recording: only --force quits.
         let unanswered = || {
             Err(ControlError::new(
@@ -1327,11 +1281,8 @@ mod tests {
                 "the listener didn't answer",
             ))
         };
-        assert_eq!(
-            check_quit(&idle, unanswered(), false).unwrap_err().code,
-            "busy"
-        );
-        assert!(check_quit(&idle, unanswered(), true).is_ok());
+        assert_eq!(check_quit(unanswered(), false).unwrap_err().code, "busy");
+        assert!(check_quit(unanswered(), true).is_ok());
     }
 
     #[test]

@@ -20,8 +20,6 @@ mod capture;
 mod dictation_processing;
 mod hotkeys;
 mod labs;
-mod meeting_folder;
-mod meetings;
 mod persistence;
 mod shortcut_repair;
 
@@ -32,27 +30,14 @@ pub use dictation_processing::{
 };
 pub use hotkeys::*;
 pub use labs::*;
-pub use meeting_folder::default_meeting_output_folder;
-pub use meetings::*;
 
 static RECORDING_DUCK_VOLUME: AtomicU32 = AtomicU32::new(0.2_f32.to_bits());
 static RECORDING_AUDIO_BEHAVIOR: AtomicU8 = AtomicU8::new(0);
 static DOUBLE_TAP_LOCK: AtomicBool = AtomicBool::new(true);
 static DOUBLE_TAP_ONLY: AtomicBool = AtomicBool::new(false);
 static SHORTCUT_TOGGLE: AtomicBool = AtomicBool::new(false);
-static MEETINGS_ENABLED: AtomicBool = AtomicBool::new(false);
 static PAUSE_BROWSER_MEDIA: AtomicBool = AtomicBool::new(false);
 static HEX_MICROPHONE_ENABLED: AtomicBool = AtomicBool::new(false);
-static MEETING_NOTES_ENABLED: AtomicBool = AtomicBool::new(true);
-static MEETING_NOTES_OPENCODE: AtomicBool = AtomicBool::new(false);
-static MEETING_INDICATOR_ENABLED: AtomicBool = AtomicBool::new(true);
-static MEETING_INDICATOR_CORNER: AtomicU8 = AtomicU8::new(0);
-/// [`MeetingRetention::encode`]d; [`RETENTION_UNSET`] until settings apply.
-static MEETING_RETENTION: AtomicU8 = AtomicU8::new(RETENTION_UNSET);
-const RETENTION_UNSET: u8 = u8::MAX;
-static MEETING_OUTPUT_FOLDER: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
-static MEETING_PROVIDERS: OnceLock<RwLock<Vec<MeetingProviderChoice>>> = OnceLock::new();
-static CALENDAR_SETTINGS: OnceLock<RwLock<CalendarSettings>> = OnceLock::new();
 static MICROPHONE_POLICY: AtomicU8 = AtomicU8::new(0);
 static CUSTOM_TRANSFORMATIONS_ENABLED: AtomicBool = AtomicBool::new(false);
 static INDICATOR_POSITION: AtomicU8 = AtomicU8::new(0);
@@ -287,7 +272,6 @@ pub struct AppSettings {
     )]
     pub retired_voice_action: Option<serde_json::Value>,
     pub history_retention: crate::history::HistoryRetention,
-    pub meetings: MeetingSettings,
     #[cfg(hex_capture)]
     pub capture: CaptureSettings,
     /// Capture settings from a build with captures, kept as they were.
@@ -351,14 +335,9 @@ const MIGRATIONS: &[&str] = &[
     STREAMING_ENGLISH_MIGRATION,
     ANNOTATE_DEFAULT_MIGRATION,
     ANOMALY_IDENTITY_MIGRATION,
-    MEETING_RETENTION_DEFAULT_MIGRATION,
 ];
 #[cfg(not(hex_capture))]
-const MIGRATIONS: &[&str] = &[
-    STREAMING_ENGLISH_MIGRATION,
-    ANOMALY_IDENTITY_MIGRATION,
-    MEETING_RETENTION_DEFAULT_MIGRATION,
-];
+const MIGRATIONS: &[&str] = &[STREAMING_ENGLISH_MIGRATION, ANOMALY_IDENTITY_MIGRATION];
 /// Scrawl's settings were read into `capture` once. Left out of
 /// `MIGRATIONS` so new settings import them too.
 #[cfg(hex_capture)]
@@ -367,9 +346,6 @@ const SCRAWL_IMPORT_MIGRATION: &str = "scrawl-capture-settings";
 /// migration, as it came after the first import.
 #[cfg(hex_capture)]
 const SCRAWL_ROUTING_IMPORT_MIGRATION: &str = "scrawl-routing-settings";
-/// Meeting retention first saved `forever` as its default; that default is
-/// now unchosen (24 hours for new meetings, older ones kept).
-const MEETING_RETENTION_DEFAULT_MIGRATION: &str = "meeting-retention-default";
 
 fn deserialize_retired_value<'de, D>(
     deserializer: D,
@@ -410,7 +386,6 @@ impl Default for AppSettings {
             dictation_processing: DictationProcessingSettings::default(),
             retired_voice_action: None,
             history_retention: crate::history::HistoryRetention::default(),
-            meetings: MeetingSettings::default(),
             #[cfg(hex_capture)]
             capture: CaptureSettings::default(),
             #[cfg(not(hex_capture))]
@@ -741,10 +716,6 @@ impl AppSettings {
             self.shortcut_mode == crate::dictation::ShortcutMode::Toggle,
             Ordering::Relaxed,
         );
-        MEETINGS_ENABLED.store(
-            self.meetings.available() && crate::labs::Feature::Meetings.shipped(),
-            Ordering::Release,
-        );
         crate::labs::apply(&self.labs);
         #[cfg(hex_capture)]
         {
@@ -766,34 +737,6 @@ impl AppSettings {
             self.experimental.hex_microphone_comfort_noise,
             self.experimental.hex_microphone_strength,
         );
-        MEETING_NOTES_ENABLED.store(
-            self.meetings.summarize_with_apple_intelligence,
-            Ordering::Release,
-        );
-        MEETING_NOTES_OPENCODE.store(self.meetings.summarize_with_opencode, Ordering::Release);
-        crate::meeting::generator::set_summary_model(self.meetings.opencode_model.as_deref());
-        MEETING_INDICATOR_ENABLED.store(self.meetings.show_recording_indicator, Ordering::Release);
-        MEETING_INDICATOR_CORNER.store(
-            self.meetings.recording_indicator_corner as u8,
-            Ordering::Release,
-        );
-        MEETING_RETENTION.store(
-            MeetingRetention::encode(self.meetings.retention),
-            Ordering::Release,
-        );
-        *MEETING_OUTPUT_FOLDER
-            .get_or_init(Default::default)
-            .write()
-            .unwrap_or_else(|error| error.into_inner()) =
-            Some(self.meetings.resolved_output_folder());
-        *MEETING_PROVIDERS
-            .get_or_init(Default::default)
-            .write()
-            .unwrap_or_else(|error| error.into_inner()) = self.meetings.providers.clone();
-        *CALENDAR_SETTINGS
-            .get_or_init(Default::default)
-            .write()
-            .unwrap_or_else(|error| error.into_inner()) = self.meetings.calendar.clone();
         *HOTKEYS
             .get_or_init(Default::default)
             .write()
@@ -870,13 +813,6 @@ impl AppSettings {
         if !self.has_migration(STREAMING_ENGLISH_MIGRATION) {
             self.switch_english_to_streaming_model(installed);
             self.migrations.push(STREAMING_ENGLISH_MIGRATION.into());
-        }
-        if !self.has_migration(MEETING_RETENTION_DEFAULT_MIGRATION) {
-            if self.meetings.retention == Some(MeetingRetention::Forever) {
-                self.meetings.retention = None;
-            }
-            self.migrations
-                .push(MEETING_RETENTION_DEFAULT_MIGRATION.into());
         }
         #[cfg(hex_capture)]
         if !self.has_migration(ANNOTATE_DEFAULT_MIGRATION) {
@@ -956,10 +892,6 @@ impl AppSettings {
         RuntimeHotkeys {
             dictation: self.dictation_hotkey.runtime(),
             paste_last: self.paste_last_hotkey.as_ref().map(HotkeyBinding::runtime),
-            paste_meeting: self
-                .meetings
-                .available()
-                .then(|| HotkeyBinding::paste_meeting_default().runtime()),
             #[cfg(hex_capture)]
             capture: self.capture_on().then(|| self.capture.hotkey.runtime()),
             #[cfg(not(hex_capture))]
@@ -1069,9 +1001,8 @@ pub enum HotkeySlot {
 
 impl AppSettings {
     /// Whether `binding` overlaps a shortcut `slot` must not share: the other
-    /// active shortcuts and, where meetings exist (macOS), meeting paste. The
-    /// two capture shortcuts never share a key, on or off, since turning
-    /// captures on can't pull them apart.
+    /// active shortcuts. The two capture shortcuts never share a key, on or
+    /// off, since turning captures on can't pull them apart.
     pub fn hotkey_in_use(&self, slot: HotkeySlot, binding: &HotkeyBinding) -> bool {
         let mut others = Vec::new();
         if slot != HotkeySlot::Dictation {
@@ -1096,9 +1027,6 @@ impl AppSettings {
             && let Some(second) = &self.second_dictation_hotkey
         {
             others.push(second.clone());
-        }
-        if cfg!(target_os = "macos") && self.meetings.available() {
-            others.push(HotkeyBinding::paste_meeting_default());
         }
         #[cfg(hex_capture)]
         if slot != HotkeySlot::Capture && self.capture_on() {
@@ -1591,111 +1519,7 @@ mod tests {
                 .post_processing
                 .enabled
         );
-        assert!(!settings.meetings.enabled);
-        assert_eq!(settings.meetings.output_folder, None);
-        assert!(settings.meetings.summarize_with_apple_intelligence);
-        assert!(settings.meetings.show_recording_indicator);
-        assert_eq!(
-            settings.meetings.recording_indicator_corner,
-            MeetingIndicatorCorner::TopRight
-        );
-        assert!(
-            settings
-                .meetings
-                .resolved_output_folder()
-                .ends_with("Hex Meetings")
-        );
         assert!(settings.text_replacements.is_empty());
-    }
-
-    #[test]
-    fn calendar_reminders_stay_off_until_connected_and_survive_older_files() {
-        let older: AppSettings =
-            serde_json::from_str(r#"{"meetings":{"enabled":true,"providers":[]}}"#).unwrap();
-        assert_eq!(older.meetings.calendar, CalendarSettings::default());
-        assert!(!older.meetings.calendar.connected);
-        assert!(!older.meetings.calendar.reminders_active());
-        assert_eq!(
-            older.meetings.calendar.lead(),
-            std::time::Duration::from_secs(60)
-        );
-
-        let partial: AppSettings =
-            serde_json::from_str(r#"{"meetings":{"calendar":{"connected":true}}}"#).unwrap();
-        assert!(partial.meetings.calendar.reminders_active());
-        assert!(partial.meetings.calendar.includes("any-calendar"));
-
-        let mut calendar = partial.meetings.calendar.clone();
-        calendar.excluded_calendars.push("work".into());
-        calendar.lead_minutes = 5;
-        let written = serde_json::to_value(&calendar).unwrap();
-        let reread: CalendarSettings = serde_json::from_value(written).unwrap();
-        assert_eq!(reread, calendar);
-        assert!(!reread.includes("work"));
-        assert_eq!(reread.lead(), std::time::Duration::from_secs(300));
-
-        // A hand-edited lead time outside the choices falls back to a minute.
-        let odd: CalendarSettings = serde_json::from_str(r#"{"lead_minutes":7}"#).unwrap();
-        assert_eq!(odd.lead(), std::time::Duration::from_secs(60));
-    }
-
-    #[test]
-    fn meeting_providers_ask_by_default_and_legacy_never_offer_entries_stay_never() {
-        let fresh: AppSettings = serde_json::from_str(r#"{"meetings":{"enabled":true}}"#).unwrap();
-        assert!(fresh.meetings.providers.is_empty());
-
-        let legacy: AppSettings = serde_json::from_str(
-            r#"{"meetings":{"never_offer":[{"key":"problems.kitlangton.com","label":"problems.kitlangton.com"}]}}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            legacy.meetings.providers,
-            vec![MeetingProviderChoice {
-                key: "problems.kitlangton.com".into(),
-                label: "problems.kitlangton.com".into(),
-                policy: MeetingPolicy::NeverOffer,
-            }]
-        );
-
-        let mut meetings = legacy.meetings.clone();
-        assert!(set_meeting_provider(
-            &mut meetings,
-            MeetingProviderChoice {
-                key: "com.tinyspeck.slackmacgap".into(),
-                label: "Slack huddles".into(),
-                policy: MeetingPolicy::AlwaysRecord,
-            }
-        ));
-        let written = serde_json::to_value(&meetings).unwrap();
-        assert!(written.get("never_offer").is_none());
-        assert_eq!(written["providers"][0]["policy"], "never_offer");
-        assert_eq!(written["providers"][1]["policy"], "always_record");
-        let reread: MeetingSettings = serde_json::from_value(written).unwrap();
-        assert_eq!(reread, meetings);
-        // Choosing Ask again keeps the row, so Settings still lists the site.
-        let mut asked = reread.clone();
-        assert!(set_meeting_provider(
-            &mut asked,
-            MeetingProviderChoice {
-                policy: MeetingPolicy::Ask,
-                ..reread.providers[0].clone()
-            }
-        ));
-        assert_eq!(asked.providers.len(), 2);
-        assert_eq!(asked.providers[0].policy, MeetingPolicy::Ask);
-    }
-
-    #[test]
-    fn existing_meeting_settings_summarize_by_default() {
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"meetings":{"enabled":true}}"#).unwrap();
-        assert!(settings.meetings.enabled);
-        assert!(settings.meetings.summarize_with_apple_intelligence);
-        assert!(settings.meetings.show_recording_indicator);
-        assert_eq!(
-            settings.meetings.recording_indicator_corner,
-            MeetingIndicatorCorner::TopRight
-        );
     }
 
     fn english(model: TranscriptionModelId) -> String {
@@ -1873,17 +1697,20 @@ mod tests {
             "sound_effects": false,
             "history_retention": null,
             "show_dock_icon": "sometimes",
-            "meetings": {"enabled": true, "retention": "quarterly"},
+            "experimental": {"hex_microphone_comfort_noise": false, "hex_microphone_mode": "quarterly"},
             "recording_duck_volume": 7.0
         }"#;
         fs::write(&dir.path, file).unwrap();
         let settings = AppSettings::load_from(&dir.path).unwrap();
         let defaults = AppSettings::default();
         assert!(!settings.sound_effects);
-        assert!(settings.meetings.enabled);
+        assert!(!settings.experimental.hex_microphone_comfort_noise);
         assert_eq!(settings.history_retention, defaults.history_retention);
         assert_eq!(settings.show_dock_icon, defaults.show_dock_icon);
-        assert_eq!(settings.meetings.retention, None);
+        assert_eq!(
+            settings.experimental.hex_microphone_mode,
+            defaults.experimental.hex_microphone_mode
+        );
         assert_eq!(
             settings.recording_duck_volume,
             defaults.recording_duck_volume
@@ -1893,19 +1720,6 @@ mod tests {
             file,
             "not rewritten"
         );
-
-        // `null` reads as unchosen, and unchosen is never written as `null`,
-        // which 3.1.0 can't read.
-        fs::write(&dir.path, r#"{"meetings": {"retention": null}}"#).unwrap();
-        assert_eq!(
-            AppSettings::load_from(&dir.path)
-                .unwrap()
-                .meetings
-                .retention,
-            None
-        );
-        let saved = serde_json::to_value(AppSettings::default()).unwrap();
-        assert!(saved["meetings"].get("retention").is_none());
 
         // Even malformed JSON defaults in memory and stays in place.
         fs::write(&dir.path, "{ not json").unwrap();
@@ -2521,20 +2335,7 @@ mod tests {
                 hotkeys.paste_last,
                 Some(HotkeyBinding::paste_last_default().runtime())
             );
-            #[cfg(debug_assertions)]
-            assert_eq!(
-                hotkeys.paste_meeting,
-                Some(HotkeyBinding::paste_meeting_default().runtime())
-            );
-            #[cfg(not(debug_assertions))]
-            assert_eq!(hotkeys.paste_meeting, None);
         }
-        let mut opted_in = AppSettings::default();
-        opted_in.meetings.enabled = true;
-        assert_eq!(
-            opted_in.runtime_hotkeys().paste_meeting,
-            Some(HotkeyBinding::paste_meeting_default().runtime())
-        );
     }
 
     #[test]
@@ -2672,7 +2473,6 @@ mod tests {
         for binding in [
             HotkeyBinding::default(),
             HotkeyBinding::paste_last_default(),
-            HotkeyBinding::paste_meeting_default(),
         ] {
             let json = serde_json::to_value(&binding).unwrap();
             assert_eq!(

@@ -166,14 +166,6 @@ line_icon!(
     ["M6 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L7.5 3.64A1 1 0 0 0 6 4.5z"]
 );
 line_icon!(
-    BELL,
-    "hex-row-bell",
-    [
-        "M10.268 21a2 2 0 0 0 3.464 0",
-        "M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326",
-    ]
-);
-line_icon!(
     MUSIC,
     "hex-row-music",
     [
@@ -202,13 +194,6 @@ line_icon!(
     ]
 );
 line_icon!(
-    FOLDER,
-    "hex-row-folder",
-    [
-        "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z",
-    ]
-);
-line_icon!(
     SPARKLES,
     "hex-row-sparkles",
     [
@@ -223,26 +208,6 @@ line_icon!(
         "M12 6h.01",
         "M9 14a3 3 0 1 0 6 0a3 3 0 1 0-6 0",
     ]
-);
-line_icon!(
-    PILL,
-    "hex-row-pill",
-    ["M8 7h8a5 5 0 0 1 0 10H8A5 5 0 0 1 8 7z", "M9 12h.01",]
-);
-line_icon!(
-    CALENDAR,
-    "hex-row-calendar",
-    [
-        "M8 2v4",
-        "M16 2v4",
-        "M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
-        "M3 10h18",
-    ]
-);
-line_icon!(
-    CLOCK,
-    "hex-row-clock",
-    ["M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0", "M12 6v6l4 2"]
 );
 line_icon!(
     MOUSE,

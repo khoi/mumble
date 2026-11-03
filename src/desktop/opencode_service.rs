@@ -65,11 +65,6 @@ pub(crate) fn find() -> Result<Service, Missing> {
     find_in(&state_dir().ok_or(Missing::NotRunning)?)
 }
 
-/// Whether a service answers now; a short loopback check for availability.
-pub(crate) fn running() -> bool {
-    find().is_ok()
-}
-
 /// OpenCode's state directory on every OS: `$XDG_STATE_HOME` when set, else
 /// `~/.local/state`, then `opencode` (Windows included).
 fn state_dir() -> Option<PathBuf> {

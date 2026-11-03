@@ -713,20 +713,6 @@ impl HotkeyBinding {
         let binding = Self::chord(HotkeyModifiers::default(), "escape");
         binding
     }
-
-    pub fn paste_meeting_default() -> Self {
-        Self {
-            modifiers: HotkeyModifiers {
-                option: Some(ModifierSide::Either),
-                control: Some(ModifierSide::Either),
-                ..Default::default()
-            },
-            key: Some(HotkeyKey {
-                code: paste_key_code(),
-                label: "V".into(),
-            }),
-        }
-    }
 }
 
 /// Scrawl's record shortcut from its app's `{key_code, carbon_modifiers,
@@ -1010,7 +996,6 @@ pub(super) fn side_from_flags(
 pub struct RuntimeHotkeys {
     pub dictation: RuntimeHotkey,
     pub paste_last: Option<RuntimeHotkey>,
-    pub paste_meeting: Option<RuntimeHotkey>,
     /// The capture shortcut, while captures are on (`cfg(hex_capture)`).
     pub capture: Option<RuntimeHotkey>,
     /// Dictate without processing, while it is bound.
@@ -1024,11 +1009,10 @@ pub struct RuntimeHotkeys {
 
 impl RuntimeHotkeys {
     /// Every shortcut Hex matches, for suppression and chord evidence.
-    pub fn all(self) -> [Option<RuntimeHotkey>; 6] {
+    pub fn all(self) -> [Option<RuntimeHotkey>; 5] {
         [
             Some(self.dictation),
             self.paste_last,
-            self.paste_meeting,
             self.capture,
             self.raw_dictation,
             self.second_dictation,
@@ -1041,8 +1025,6 @@ impl Default for RuntimeHotkeys {
         Self {
             dictation: HotkeyBinding::default().runtime(),
             paste_last: Some(HotkeyBinding::paste_last_default().runtime()),
-            paste_meeting: crate::DEVELOPER_FEATURES_ENABLED
-                .then(|| HotkeyBinding::paste_meeting_default().runtime()),
             capture: None,
             raw_dictation: None,
             second_dictation: None,

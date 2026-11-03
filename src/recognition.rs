@@ -21,7 +21,7 @@ use crate::dictation::service::{
 use crate::dictation::{DictationClip, Finish, POST_RELEASE_TAIL};
 use crate::feedback::{self, Tone};
 use crate::parakeet::{
-    DictationJobId, DictationJobStage, DictationWorker, PasteKind, TranscriptionTarget, WorkerEvent,
+    DictationJobId, DictationJobStage, DictationWorker, TranscriptionTarget, WorkerEvent,
 };
 use crate::suppression::{DictationHotkey, DiscardCause, HotkeyAction, InputEvent, InputMonitor};
 
@@ -263,8 +263,7 @@ impl Hotkeys {
                 Some(HotkeyAction::Start) if others_recording => {
                     machine.suspend();
                 }
-                Some(HotkeyAction::PasteLast | HotkeyAction::PasteMeeting)
-                    if shortcut != Shortcut::Dictation => {}
+                Some(HotkeyAction::PasteLast) if shortcut != Shortcut::Dictation => {}
                 Some(action) => actions.push((shortcut, action)),
                 None => {}
             }
@@ -1294,16 +1293,11 @@ fn handle_hotkey_action(
                 indicator,
             )
         }
-        HotkeyAction::PasteLast | HotkeyAction::PasteMeeting => {
+        HotkeyAction::PasteLast => {
             // The paste chord's modifier press started a provisional capture.
             feedback::retract_start();
             dictation.cancel()?;
-            let paste_result = match action {
-                HotkeyAction::PasteLast => worker.paste_last(),
-                HotkeyAction::PasteMeeting => worker.paste_meeting(),
-                _ => unreachable!(),
-            };
-            if let Err(error) = paste_result {
+            if let Err(error) = worker.paste_last() {
                 feedback::play(Tone::Error);
                 events.dictation(DictationPhase::Failed(error.into()), "")?;
             }
@@ -1810,19 +1804,10 @@ fn handle_dictation_event(
                 indicator.send(DictationIndicatorEvent::Failed);
             }
         }
-        WorkerEvent::Pasted {
-            kind,
-            result: Ok(text),
-        } => {
-            let phase = match kind {
-                PasteKind::LastTranscript => DictationPhase::Repasted,
-                PasteKind::MeetingDelta => DictationPhase::MeetingPasted,
-            };
-            events.dictation(phase, text)?;
+        WorkerEvent::Pasted { result: Ok(text) } => {
+            events.dictation(DictationPhase::Repasted, text)?;
         }
-        WorkerEvent::Pasted {
-            result: Err(error), ..
-        } => {
+        WorkerEvent::Pasted { result: Err(error) } => {
             feedback::play(Tone::Error);
             events.dictation(DictationPhase::Failed(error), "")?;
         }

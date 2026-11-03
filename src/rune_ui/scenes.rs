@@ -454,77 +454,6 @@ pub(super) const SCENES: &[Scene] = &[
         ui.host = platform::PlatformHost::Fixture(Vec::new());
         ui.settings.paste_with_shift = false;
     }),
-    ("meetings", |ui| {
-        *ui = mac_fixture();
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-settings", |ui| {
-        *ui = mac_fixture();
-        ui.meetings.view = meetings::View::Settings;
-        ui.pane = Pane::Meetings;
-    }),
-    // System Audio not yet allowed: tap Allow to wait, again to grant.
-    ("meetings-allow", |ui| {
-        *ui = mac_fixture();
-        ui.platform.system_audio = false;
-        ui.meetings.view = meetings::View::Settings;
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-calendar", |ui| {
-        *ui = mac_fixture();
-        ui.settings.meetings.calendar.connected = true;
-        ui.settings.meetings.calendar.excluded_calendars = vec!["birthdays".into()];
-        ui.platform.calendar = platform::CalendarView::preview();
-        ui.meetings.view = meetings::View::Settings;
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-calendar-denied", |ui| {
-        *ui = mac_fixture();
-        ui.platform.calendar.access = crate::calendar::CalendarAccess::Denied;
-        ui.meetings.view = meetings::View::Settings;
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-off", |ui| {
-        *ui = mac_fixture();
-        ui.settings.meetings.enabled = false;
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-recording", |ui| {
-        *ui = mac_fixture();
-        ui.meetings.select("preview-live".into());
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-actions", |ui| {
-        *ui = mac_fixture();
-        ui.open = Some(Menu::MeetingActions);
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-delete", |ui| {
-        *ui = mac_fixture();
-        ui.meetings.delete_armed = Some("preview-notes".into());
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-rename", |ui| {
-        *ui = mac_fixture();
-        ui.meetings.renaming = Some("preview-notes".into());
-        ui.meetings.rename = TextEdit::new("Arcade launch plan");
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-failed", |ui| {
-        *ui = mac_fixture();
-        ui.meetings.select("preview-failed".into());
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-chapters", |ui| {
-        *ui = mac_fixture();
-        ui.meetings = meetings::MeetingsPane::chapters_fixture();
-        ui.pane = Pane::Meetings;
-    }),
-    ("meetings-empty", |ui| {
-        *ui = mac_fixture();
-        ui.meetings = meetings::MeetingsPane::default();
-        ui.pane = Pane::Meetings;
-    }),
     #[cfg(hex_capture)]
     ("mac-scrawl-off", |ui| scrawl_fixture(ui, false, |_| {})),
     #[cfg(hex_capture)]
@@ -590,7 +519,6 @@ pub(super) const SCENES: &[Scene] = &[
     }),
     ("mac-hud-lab", |ui| {
         *ui = mac_fixture();
-        ui.platform.developer = true;
         ui.pane = Pane::HudLab;
     }),
     ("mac-labs", |ui| {
@@ -618,13 +546,8 @@ pub(super) const SCENES: &[Scene] = &[
         ui.settings.labs.cloud_transcription_provider =
             crate::transcription::cloud::CloudProvider::Codex;
     }),
-    ("mac-production", |ui| {
-        *ui = mac_fixture();
-        ui.settings.meetings.enabled = false;
-    }),
     ("mac-activity", |ui| {
         *ui = mac_fixture();
-        ui.platform.developer = true;
         ui.activity = activity::ActivityPane::fixture();
         ui.pane = Pane::Activity;
     }),
@@ -744,19 +667,6 @@ pub(super) fn mac_fixture() -> Ui {
     ui.host = platform::PlatformHost::Fixture(Vec::new());
     ui.settings.dictation_hotkey = AppSettings::default().dictation_hotkey;
     ui.settings.paste_with_shift = false;
-    ui.settings.meetings.enabled = true;
-    ui.settings.meetings.providers = vec![
-        crate::app_settings::MeetingProviderChoice {
-            key: "com.tinyspeck.slackmacgap".into(),
-            label: "Slack huddles".into(),
-            policy: crate::app_settings::MeetingPolicy::AlwaysRecord,
-        },
-        crate::app_settings::MeetingProviderChoice {
-            key: "problems.kitlangton.com".into(),
-            label: "problems.kitlangton.com".into(),
-            policy: crate::app_settings::MeetingPolicy::NeverOffer,
-        },
-    ];
     ui.settings.experimental.hex_microphone = true;
     ui.microphones = Ok(crate::audio::InputDevices {
         names: vec![
@@ -768,7 +678,6 @@ pub(super) fn mac_fixture() -> Ui {
         default_is_hex_microphone: false,
         ..Default::default()
     });
-    ui.meetings = meetings::MeetingsPane::fixture();
     ui
 }
 

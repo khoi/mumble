@@ -123,9 +123,9 @@ pub enum DictationPhase {
     Printed,
     Edited,
     VoiceAction,
+    Repasted,
     // Retained so activity readers can decode records written by older releases.
     Logged,
-    Repasted,
     MeetingPasted,
     Failed(String),
 }

@@ -91,7 +91,6 @@ pub(super) fn mouse_input(
         hotkeys.raw_dictation,
         hotkeys.second_dictation,
         hotkeys.paste_last,
-        hotkeys.paste_meeting,
     ]
     .iter()
     .flatten()

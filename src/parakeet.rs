@@ -14,7 +14,6 @@ use crate::dictation::context::ContextSnapshot;
 use crate::dictation::processor::ProcessingObservation;
 use crate::dictation::{DictationClip, pad_for_parakeet};
 use crate::history::{History, HistoryDraft, HistoryKind};
-use crate::meeting;
 use crate::paste::{PasteMode, Paster};
 use crate::suppression::InputActivity;
 use crate::transcription::WarmTranscriber;
@@ -57,7 +56,6 @@ pub enum WorkerEvent {
         job_id: DictationJobId,
     },
     Pasted {
-        kind: PasteKind,
         result: Result<String, String>,
     },
 }
@@ -75,12 +73,6 @@ impl DictationJobId {
 pub enum DictationJobStage {
     Transcribing,
     Processing,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum PasteKind {
-    LastTranscript,
-    MeetingDelta,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -153,7 +145,6 @@ enum OutputJob {
     },
     Paste {
         sequence: u64,
-        kind: PasteKind,
     },
 }
 
@@ -462,20 +453,12 @@ impl DictationWorker {
     }
 
     pub fn paste_last(&self) -> Result<(), &'static str> {
-        self.submit_paste(PasteKind::LastTranscript)
-    }
-
-    pub fn paste_meeting(&self) -> Result<(), &'static str> {
-        self.submit_paste(PasteKind::MeetingDelta)
-    }
-
-    fn submit_paste(&self, kind: PasteKind) -> Result<(), &'static str> {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         let sequence = state.next_output_sequence()?;
         self.output_jobs
             .as_ref()
             .ok_or("dictation worker is unavailable")?
-            .try_send(OutputJob::Paste { sequence, kind })
+            .try_send(OutputJob::Paste { sequence })
             .map(|()| {
                 state.next_sequence += 1;
                 state.pending_pastes += 1;
@@ -642,7 +625,7 @@ const WORD_DICTATION_WAIT: std::time::Duration = std::time::Duration::from_secs(
 /// warm model (the `capture` experiment). Before each chunk it waits while
 /// dictation is busy (from the shortcut press through inference); each chunk
 /// is then a foreground request: after the dictation already sent, before
-/// meeting chunks, and never inside a dictation live stream, which finishes
+/// background work, and never inside a dictation live stream, which finishes
 /// first. No second copy of the model is loaded, and only a weak reference
 /// to the engine is kept between chunks. Quitting stops it between chunks.
 /// Every chunk runs on `selection`.
@@ -882,57 +865,14 @@ impl Drop for DictationInference {
     }
 }
 
-/// Makes [`dictation_busy`] hold until dropped, as a dictation would.
-#[cfg(test)]
-pub(crate) struct DictationBusyForTest {
-    _busy: DictationInference,
-}
-
-#[cfg(test)]
-pub(crate) fn dictation_busy_for_test() -> DictationBusyForTest {
-    DictationBusyForTest {
-        _busy: DictationInference::begin(),
-    }
-}
-
-/// Whether dictation is capturing or running inference. Meeting
-/// transcription starts no chunk while this holds. A capture counts from its
-/// press: a chunk already running then finishes during the hold threshold
-/// and release tail, before the clip needs the model.
+/// Whether dictation is capturing or running inference. Background
+/// transcription starts no work while this holds. A capture counts from its
+/// press: work already running then finishes during the hold threshold and
+/// release tail, before the clip needs the model.
 pub(crate) fn dictation_busy() -> bool {
     DICTATION_INFERENCE.load(Ordering::Acquire) > 0
         || crate::audio::recording_environment::capture_active()
         || crate::audio::recording_environment::intentional_recording_active()
-}
-
-/// Runs `work` at utility QoS on the dictation inference thread, then
-/// restores its user-interactive class.
-pub(crate) fn at_background_priority<R>(work: impl FnOnce() -> R) -> R {
-    const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
-    const QOS_CLASS_UTILITY: u32 = 0x11;
-    unsafe extern "C" {
-        fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
-    }
-    // SAFETY: These configure only the calling thread using the public macOS
-    // pthread QoS API. Relative priority zero is valid for both classes.
-    unsafe { pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0) };
-    let result = work();
-    unsafe { pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) };
-    result
-}
-
-/// Runs the calling thread at utility QoS for background transcription.
-pub(crate) fn deprioritize_background_thread() {
-    const QOS_CLASS_UTILITY: u32 = 0x11;
-    unsafe extern "C" {
-        fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
-    }
-    // SAFETY: This configures only the calling thread using the public macOS
-    // pthread QoS API. Relative priority zero is valid for this class.
-    let status = unsafe { pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0) };
-    if status != 0 {
-        tracing::warn!(status, "could not lower background transcription QoS");
-    }
 }
 
 fn queue_error(error: TrySendError<impl Sized>) -> &'static str {
@@ -1035,21 +975,16 @@ fn finish_output(
         OutputJob::Completed { job_id, .. } | OutputJob::Cancelled { job_id } => {
             WorkerEvent::Cancelled { job_id }
         }
-        OutputJob::Paste { kind, .. } => {
-            let result = match kind {
-                PasteKind::LastTranscript => last_transcript
-                    .as_deref()
-                    .ok_or_else(|| "no previous transcript is available".to_string())
-                    .and_then(|text| {
-                        paste(text, PasteMode::Continue, &|| true)
-                            .map_err(|error| error.to_string())?;
-                        Ok(text.to_string())
-                    }),
-                PasteKind::MeetingDelta => {
-                    paste_meeting_delta(paste).map_err(|error| error.to_string())
-                }
-            };
-            WorkerEvent::Pasted { kind, result }
+        OutputJob::Paste { .. } => {
+            let result = last_transcript
+                .as_deref()
+                .ok_or_else(|| "no previous transcript is available".to_string())
+                .and_then(|text| {
+                    paste(text, PasteMode::Continue, &|| true)
+                        .map_err(|error| error.to_string())?;
+                    Ok(text.to_string())
+                });
+            WorkerEvent::Pasted { result }
         }
     }
 }
@@ -1081,12 +1016,6 @@ fn record_history(
     if let Err(error) = history.record(draft) {
         tracing::warn!(%error, "could not record dictation history");
     }
-}
-
-fn paste_meeting_delta(
-    paste: &mut impl FnMut(&str, PasteMode, &dyn Fn() -> bool) -> Result<()>,
-) -> Result<String> {
-    meeting::consume_active_or_latest_delta(|text| paste(text, PasteMode::Standalone, &|| true))
 }
 
 pub(crate) fn default_model_path() -> Result<std::path::PathBuf> {
@@ -1300,7 +1229,6 @@ mod tests {
     use super::*;
 
     use crate::dictation::resample_for_parakeet;
-    use crate::meeting::{MeetingSource, TranscriptEntry, format_meeting_delta};
 
     fn processing_job(target: TranscriptionTarget) -> ProcessorJob {
         ProcessorJob {
@@ -1397,33 +1325,9 @@ mod tests {
     }
 
     #[test]
-    fn meeting_delta_coalesces_turns_in_time_order() {
-        let entry = |source, start_ms, end_ms, text: &str| TranscriptEntry {
-            source,
-            start_ms,
-            end_ms,
-            text: text.into(),
-        };
-        let entries = [
-            entry(MeetingSource::Microphone, 0, 1_000, "First."),
-            entry(MeetingSource::Microphone, 1_100, 1_400, "Still me."),
-            entry(MeetingSource::System, 1_500, 2_500, "Reply."),
-            entry(MeetingSource::Microphone, 2_600, 3_000, "Second."),
-        ];
-        assert_eq!(
-            format_meeting_delta(&entries).unwrap(),
-            "You: First. Still me.\n\nThem: Reply.\n\nYou: Second."
-        );
-        assert!(format_meeting_delta(&[]).is_err());
-    }
-
-    #[test]
     fn parallel_processing_results_are_released_in_submission_order() {
         let mut outputs = OrderedOutputs::default();
-        let job = |sequence| OutputJob::Paste {
-            sequence,
-            kind: PasteKind::LastTranscript,
-        };
+        let job = |sequence| OutputJob::Paste { sequence };
 
         assert!(outputs.push(job(1)).is_empty());
         assert_eq!(
@@ -1469,7 +1373,6 @@ mod tests {
             assert!(ordered.push(output_receiver.try_recv().unwrap()).is_empty());
         }
         assert_eq!(worker.paste_last(), Err("dictation queue is full"));
-        assert_eq!(worker.paste_meeting(), Err("dictation queue is full"));
         assert_eq!(ordered.waiting.len(), MAX_PENDING_OUTPUTS - 1);
         assert_eq!(
             worker.state.lock().unwrap().next_sequence,
@@ -1502,10 +1405,7 @@ mod tests {
                 })
                 .is_empty()
         );
-        let ready = outputs.push(OutputJob::Paste {
-            sequence: 0,
-            kind: PasteKind::LastTranscript,
-        });
+        let ready = outputs.push(OutputJob::Paste { sequence: 0 });
         assert_eq!(ready.len(), 2);
         assert!(matches!(ready[1], OutputJob::Cancelled { .. }));
         assert!(outputs.push(completed(1)).is_empty());
@@ -1752,7 +1652,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap();
         // A foreground request: after dictation already sent, counted as a
-        // request so meeting chunks yield to it, and never inside a stream.
+        // request so background work yields to it, and never inside a stream.
         assert!(matches!(
             command,
             EngineCommand::Foreground { ref clip, .. } if clip.len() == WORD_CHUNK_SAMPLES
@@ -1802,10 +1702,3 @@ mod dictation_tail_tests;
 #[cfg(test)]
 #[path = "dictation/corpus_tests.rs"]
 mod dictation_corpus_tests;
-
-/// Loads a GGUF model file directly, for opt-in harnesses that replay
-/// recordings without the installed model catalog.
-#[cfg(test)]
-pub(crate) fn load_test_model(path: &std::path::Path) -> Result<Parakeet> {
-    Parakeet::load_from(path, false, Some(&TranscriptionSelection::default()))
-}

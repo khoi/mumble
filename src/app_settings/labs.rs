@@ -8,7 +8,6 @@ use super::*;
 pub struct LabsSettings {
     /// Live text beside the HUD while dictating.
     pub live_text: bool,
-    pub live_chapters: bool,
     pub playground: bool,
     /// Parakeet transcription biased toward the vocabulary.
     pub vocabulary_biasing: bool,
@@ -27,8 +26,6 @@ pub struct LabsSettings {
     pub spoken_formatting: bool,
     /// Filler words such as "um" and "uh" are removed from dictations (issue 631).
     pub filler_words: bool,
-    /// `hex meetings show --srt|--vtt` exports a transcript as timed subtitles (macOS, issue 633).
-    pub subtitle_export: bool,
     /// `second_dictation_hotkey` dictates like the dictation shortcut (macOS, issue 627).
     pub second_dictation_shortcut: bool,
     /// A paste gets a leading space when the character before the cursor wants one (macOS, issue 632).
@@ -50,8 +47,6 @@ pub struct LabsSettings {
     pub history_stats: bool,
     pub recent_dictations: bool,
     pub skip_pauses: bool,
-    /// An automatic meeting recording stops after its call ends (macOS, issue 835).
-    pub stop_when_call_ends: bool,
     /// Output's Try card offers Vocabulary and Fix this beside its result (issue 989).
     pub output_fixes: bool,
     /// The speech model picker lists the model in use first (issue 1019).
@@ -65,8 +60,6 @@ pub struct LabsSettings {
     /// Dictations saved to History keep their audio, for Transcribe again (issue 1032).
     pub keep_recordings: bool,
     pub hide_menu_bar_icon: bool,
-    pub movable_meeting_capsules: bool,
-    pub meeting_summary_model: bool,
     /// A paste restores the clipboard through a running XWayland on Wayland desktops without data-control, such as GNOME (Linux, issue 1111).
     pub gnome_clipboard_restore: bool,
     /// Dictations go to `cloud_transcription_provider` first, through the sign-in its own app holds.
@@ -81,7 +74,6 @@ impl Default for LabsSettings {
     fn default() -> Self {
         Self {
             live_text: false,
-            live_chapters: false,
             playground: false,
             vocabulary_biasing: false,
             mouse_shortcuts: false,
@@ -92,7 +84,6 @@ impl Default for LabsSettings {
             copy_only: false,
             spoken_formatting: false,
             filler_words: false,
-            subtitle_export: false,
             second_dictation_shortcut: false,
             smart_spacing: false,
             spoken_symbols: false,
@@ -105,7 +96,6 @@ impl Default for LabsSettings {
             history_stats: false,
             recent_dictations: false,
             skip_pauses: false,
-            stop_when_call_ends: false,
             output_fixes: false,
             picker_active_first: false,
             model_in_place: false,
@@ -113,8 +103,6 @@ impl Default for LabsSettings {
             section_key_alone: false,
             keep_recordings: false,
             hide_menu_bar_icon: false,
-            movable_meeting_capsules: false,
-            meeting_summary_model: false,
             gnome_clipboard_restore: false,
             cloud_transcription: false,
             cloud_transcription_provider: Default::default(),

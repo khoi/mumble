@@ -5,7 +5,7 @@
 //! browsers' own output: the level says whether the system pause reached a
 //! browser, and only that proof allows the play at the end.
 
-use std::ffi::c_void;
+use std::ffi::{CStr, c_void};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -14,14 +14,20 @@ use std::time::Duration;
 use block2::RcBlock;
 use color_eyre::eyre::{Result, eyre};
 use objc2::AnyThread;
+use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
 use objc2_core_audio::{
     AudioDeviceCreateIOProcIDWithBlock, AudioDeviceDestroyIOProcID, AudioDeviceIOProcID,
-    AudioDeviceStart, AudioDeviceStop, AudioHardwareCreateProcessTap,
-    AudioHardwareDestroyAggregateDevice, AudioHardwareDestroyProcessTap, AudioObjectID,
-    CATapDescription, CATapMuteBehavior,
+    AudioDeviceStart, AudioDeviceStop, AudioHardwareCreateAggregateDevice,
+    AudioHardwareCreateProcessTap, AudioHardwareDestroyAggregateDevice,
+    AudioHardwareDestroyProcessTap, AudioObjectID, CATapDescription, CATapMuteBehavior,
+    kAudioAggregateDeviceIsPrivateKey, kAudioAggregateDeviceNameKey,
+    kAudioAggregateDeviceTapAutoStartKey, kAudioAggregateDeviceTapListKey,
+    kAudioAggregateDeviceUIDKey, kAudioSubTapDriftCompensationKey, kAudioSubTapUIDKey,
 };
 use objc2_core_audio_types::{AudioBuffer, AudioBufferList, AudioTimeStamp};
-use objc2_foundation::{NSArray, NSNumber, NSString};
+use objc2_core_foundation::CFDictionary;
+use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString};
 
 use crate::microphone_activity::BrowserProcesses;
 
@@ -269,7 +275,7 @@ impl BrowserTap {
         };
         // SAFETY: Reading the UUID of a live description.
         let tap_uid = unsafe { description.UUID() }.UUIDString();
-        source.aggregate = crate::meeting::create_tap_aggregate(
+        source.aggregate = create_tap_aggregate(
             &tap_uid,
             "Hex Browser Level",
             &format!("anomaly.hex.browser-tap.{}", std::process::id()),
@@ -374,6 +380,56 @@ fn check(status: i32, context: &str) -> Result<()> {
     } else {
         Err(eyre!("{context} (OSStatus {status})"))
     }
+}
+
+fn object<T: objc2::Message>(value: Retained<T>) -> Retained<AnyObject> {
+    // SAFETY: Every Objective-C object is an `AnyObject`.
+    unsafe { Retained::cast_unchecked(value) }
+}
+
+/// A private aggregate device that reads one process tap. `uid` must differ
+/// for each concurrent tap of this process.
+fn create_tap_aggregate(tap_uid: &NSString, name: &str, uid: &str) -> Result<AudioObjectID> {
+    fn key(name: &CStr) -> Retained<NSString> {
+        NSString::from_str(name.to_str().unwrap_or_default())
+    }
+    let sub_tap: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::from_retained_objects(
+        &[
+            &*key(kAudioSubTapUIDKey),
+            &*key(kAudioSubTapDriftCompensationKey),
+        ],
+        &[
+            object(NSString::from_str(&tap_uid.to_string())),
+            object(NSNumber::new_bool(true)),
+        ],
+    );
+    let taps = NSArray::from_retained_slice(&[sub_tap]);
+    let description: Retained<NSDictionary<NSString, AnyObject>> =
+        NSDictionary::from_retained_objects(
+            &[
+                &*key(kAudioAggregateDeviceNameKey),
+                &*key(kAudioAggregateDeviceUIDKey),
+                &*key(kAudioAggregateDeviceIsPrivateKey),
+                &*key(kAudioAggregateDeviceTapAutoStartKey),
+                &*key(kAudioAggregateDeviceTapListKey),
+            ],
+            &[
+                object(NSString::from_str(name)),
+                object(NSString::from_str(uid)),
+                object(NSNumber::new_bool(true)),
+                object(NSNumber::new_bool(true)),
+                object(taps),
+            ],
+        );
+    let mut aggregate: AudioObjectID = 0;
+    // SAFETY: NSDictionary is toll-free bridged to CFDictionary.
+    let dictionary: &CFDictionary =
+        unsafe { &*(Retained::as_ptr(&description) as *const CFDictionary) };
+    check(
+        unsafe { AudioHardwareCreateAggregateDevice(dictionary, NonNull::from(&mut aggregate)) },
+        "could not create the system audio device",
+    )?;
+    Ok(aggregate)
 }
 
 type SendCommand = unsafe extern "C" fn(u32, *const c_void) -> bool;

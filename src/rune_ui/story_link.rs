@@ -189,10 +189,7 @@ mod tests {
                 "prototypes-onboarding-option-pill",
             ),
             ("hex://story/mac-settings", "Window/General/Settings"),
-            (
-                "hex://story/Meetings/meetings-calendar",
-                "Window/Meetings/Calendar",
-            ),
+            ("hex://story/History/history-empty", "Window/History/Empty"),
             (
                 "hex://story/general/mac-settings",
                 "Window/General/Settings",

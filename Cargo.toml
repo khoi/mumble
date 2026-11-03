@@ -95,7 +95,6 @@ objc2-foundation = "0.3.2"
 objc2-quartz-core = { version = "0.3.2", features = ["CALayer"] }
 objc2-service-management = { version = "0.3.2", features = ["SMAppService"] }
 ratatui = "0.30.2"
-screencapturekit = { version = "=11.0.0", features = ["macos_15_0"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ctrlc = { version = "3.5.2", features = ["termination"] }
@@ -113,9 +112,6 @@ zbus = { version = "6.1.0", default-features = false, features = ["tokio", "prox
 # The desktop UI, and Annotate (Scrawl's capture engine), compiled into
 # every desktop build (`capture.enabled`).
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
-# `hex mcp`.
-rmcp = { version = "3.5.1", default-features = false, features = ["server", "macros", "transport-io"] }
-tokio = { version = "1.53.1", features = ["rt", "io-std"] }
 anyhow = "1.0.104"
 # The capture capsule's motion-lint trace.
 rune-motion = { git = "https://github.com/anomalyco/rune.git", rev = "14bfef586b97bf1f964a0223d4195270d246c14f" }

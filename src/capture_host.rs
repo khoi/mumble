@@ -90,7 +90,10 @@ pub use permissions::{
 pub use routing::CaptureRoute;
 pub use routing::{RouteAnswer, RouteDelivery, RouteDest};
 #[cfg(target_os = "macos")]
-pub use screen_access::{ScreenAccess, invalidate_screen_access, screen_access, screen_access_now};
+pub use screen_access::{
+    ScreenAccess, invalidate_screen_access, request_screen_recording, screen_access,
+    screen_access_now, screen_recording_permitted,
+};
 #[cfg(target_os = "macos")]
 pub use sink::CaptureSink;
 #[cfg(not(target_os = "macos"))]

@@ -134,7 +134,7 @@ impl<'a, S: StreamFeed> PauseCap<'a, S> {
 
     fn frame(&mut self, out: &mut Vec<f32>) {
         // Only audio at the noise floor counts as pause. Speech a few dB over
-        // steady noise misses the meeting detector's speech margin, and
+        // steady noise misses the pause detector's speech margin, and
         // cutting it truncated the transcript (#458).
         let level = self.speech.classify(&self.frame);
         if !level.quiet {

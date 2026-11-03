@@ -8,8 +8,8 @@
 //! - The runtime thread owns model preparation, starts the listener once
 //!   setup is ready, and publishes the listener, model, update, and settings
 //!   state the window shows ([`RuntimeHandle`]).
-//! - The listener (`recognition::listen`), the meeting controller, and the
-//!   local API keep their own threads.
+//! - The listener (`recognition::listen`) and the local API keep their own
+//!   threads.
 //!
 //! Closing the window hides it; Quit (menu bar, ⌘Q, `hex quit`, `hex restart`
 //! and the onboarding relaunch after scheduling the new copy, or Ctrl-C) ends
@@ -17,10 +17,6 @@
 //! `_exit` ([`crate::desktop::process_exit`]). AppKit's own terminate
 //! (the quit Apple event, logout) does the same from its
 //! will-terminate notification.
-//!
-//! The meeting capsules (offer, call ended, ready, recording) are Rune
-//! overlays (`rune_ui::meeting_capsules`): non-activating panels fed from
-//! the controller events here.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -46,8 +42,6 @@ use crate::desktop::host::{
 };
 use crate::dictation::indicator::DictationIndicatorEvent;
 use crate::macos_rune::status_item::StatusItemAction;
-use crate::meeting::MeetingRequest;
-use crate::meeting::watcher::{ControllerEvent, ListenerConfig, MeetingMenuState};
 use crate::recognition::RecognitionControl;
 use crate::rune_hud::DictationIndicatorUi;
 use crate::rune_ui::{Destination, Ui};
@@ -70,7 +64,7 @@ const PUMP_INTERVAL: f64 = 0.016;
 /// status item, HUD, and menu are set up anyway.
 const LAUNCH_SETUP_DEADLINE: f64 = 1.0;
 const MODEL_MENU_REFRESH: Duration = Duration::from_secs(1);
-const MEETING_MENU_REFRESH: Duration = Duration::from_millis(500);
+const STATUS_MENU_REFRESH: Duration = Duration::from_millis(500);
 /// 'aevt' / 'rapp': the Apple event LaunchServices sends when the app is
 /// opened again while it runs (Dock, Finder, `open`).
 const CORE_EVENT_CLASS: u32 = u32::from_be_bytes(*b"aevt");
@@ -146,7 +140,6 @@ struct Shared {
 pub(crate) struct RuntimeHandle {
     requests: Sender<Request>,
     shared: Arc<Shared>,
-    meeting_requests: SyncSender<MeetingRequest>,
     recognition_controls: SyncSender<RecognitionControl>,
     history: Option<crate::history::History>,
     event_path: PathBuf,
@@ -197,12 +190,6 @@ impl RuntimeHandle {
     /// Wakes `wake` after every publication.
     pub(crate) fn subscribe(&self, wake: Wake) {
         lock(&self.shared.wakers).push(wake);
-    }
-
-    pub(crate) fn meeting(&self, request: MeetingRequest) -> Result<(), String> {
-        self.meeting_requests
-            .try_send(request)
-            .map_err(|error| format!("could not reach the meeting recorder: {error}"))
     }
 
     pub(crate) fn recognition(&self, control: RecognitionControl) -> Result<(), String> {
@@ -298,6 +285,20 @@ fn watch_process() {
     procwatch::watch_with(config, |event, _| tracing::warn!(%event, "process watch"));
 }
 
+pub struct ListenerConfig {
+    pub event_path: PathBuf,
+    pub device: Option<String>,
+}
+
+fn should_open_app_on_launch(
+    show_dock_icon: bool,
+    setup_ready: bool,
+    onboarding_completed: bool,
+    status_item_available: bool,
+) -> bool {
+    show_dock_icon || !setup_ready || !onboarding_completed || !status_item_available
+}
+
 pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()> {
     let Some(mtm) = MainThreadMarker::new() else {
         return Err(eyre!("desktop startup requires the main thread"));
@@ -346,29 +347,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
             ..Default::default()
         },
     )?;
-    let (controller_events_sender, controller_events) = mpsc::sync_channel(32);
-    let (controller_commands, controller_command_receiver) = mpsc::sync_channel(8);
-    let (meeting_requests, meeting_request_receiver) = mpsc::sync_channel(8);
     let (indicator, indicator_events) = crate::dictation::indicator::channel();
-
-    // The controller idles without inspecting microphone activity until the
-    // user opts in to meetings (always available in developer builds).
-    let controller = thread::Builder::new()
-        .name("hex-meetings".into())
-        .spawn(move || {
-            if let Err(error) = crate::meeting::watcher::controller_loop(
-                shutdown,
-                controller_events_sender.clone(),
-                controller_command_receiver,
-                meeting_request_receiver,
-            ) {
-                tracing::error!(%error, "meeting controller stopped");
-                let _ = controller_events_sender.send(ControllerEvent::Failed {
-                    title: "Meeting detection stopped".into(),
-                    error: error.to_string(),
-                });
-            }
-        })?;
 
     // The microphone stays cold until setup is ready; the runtime starts it.
     let (recognition_start, start_receiver) = mpsc::sync_channel(1);
@@ -424,7 +403,6 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     let handle = RuntimeHandle {
         requests: requests.clone(),
         shared: shared.clone(),
-        meeting_requests: meeting_requests.clone(),
         recognition_controls: recognition_controls.clone(),
         history: history.clone(),
         event_path,
@@ -466,7 +444,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     // The status item is created inside the loop; Hex can't run without a
     // way back to its window, so a failed item opens the window there.
     let open_at_launch = settings_error.is_some()
-        || crate::meeting::watcher::should_open_app_on_launch(
+        || should_open_app_on_launch(
             settings.show_dock_icon,
             setup_ready,
             onboarding_completed,
@@ -480,24 +458,6 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     } else {
         app.windowless()
     };
-    let capsules = {
-        let window = window.clone();
-        crate::rune_ui::meeting_capsules::MeetingCapsules::install(
-            &mut app,
-            controller_commands,
-            {
-                let window = window.clone();
-                move |choice| {
-                    crate::app_settings::save_meeting_provider(choice.clone());
-                    window.update(move |ui, _| crate::rune_ui::meeting_provider_chosen(ui, choice));
-                }
-            },
-            move |corner| {
-                crate::app_settings::save_meeting_indicator_corner(corner);
-                window.update(move |ui, _| crate::rune_ui::meeting_corner_moved(ui, corner));
-            },
-        )
-    };
     let hud = crate::rune_hud::install(&mut app);
     crate::rune_ui::live_text::install(&mut app, crate::rune_hud::live_text_place);
     // The capture capsule, picker, and ink.
@@ -506,7 +466,6 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
         Some(crate::rune_ui::capture_capsule::feed::CaptureOverlays::install(&mut app));
     let pump = Pump {
         window: window.clone(),
-        capsules,
         #[cfg(hex_capture)]
         capture_overlays,
         runtime: handle,
@@ -514,12 +473,9 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
         indicator_events,
         hud,
         status_actions: None,
-        controller_events,
         developer_calls: developer_receiver,
         control_calls: control_receiver,
-        meeting_waiters: Vec::new(),
-        meeting_state: MeetingMenuState::Idle,
-        meeting_menu_at: Instant::now(),
+        status_menu_at: Instant::now(),
         model_menu_at: Instant::now(),
         show_dock_icon: settings.show_dock_icon,
     };
@@ -536,11 +492,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
         local_api.shutdown();
         // The listener owns the transcription engine; joining it frees the
         // model after its last use.
-        for (name, worker) in [
-            ("recognition", recognition),
-            ("meeting controller", controller),
-            ("runtime", runtime),
-        ] {
+        for (name, worker) in [("recognition", recognition), ("runtime", runtime)] {
             if worker.join().is_err() {
                 tracing::error!("{name} worker panicked during shutdown");
             }
@@ -587,7 +539,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     crate::desktop::process_exit::finish(&DRAIN)
 }
 
-/// Stops and joins the runtime, listener, meeting controller, and local API.
+/// Stops and joins the runtime, listener, and local API.
 static DRAIN: crate::desktop::process_exit::Drain = crate::desktop::process_exit::Drain::new();
 
 // ---------------------------------------------------------------------------
@@ -823,7 +775,6 @@ impl Runtime {
 
 struct Pump {
     window: rune::AppHandle<Ui>,
-    capsules: crate::rune_ui::meeting_capsules::MeetingCapsules,
     #[cfg(hex_capture)]
     capture_overlays: Option<crate::rune_ui::capture_capsule::feed::CaptureOverlays>,
     runtime: RuntimeHandle,
@@ -831,12 +782,9 @@ struct Pump {
     indicator_events: Receiver<DictationIndicatorEvent>,
     hud: crate::rune_hud::HudSender,
     status_actions: Option<Receiver<StatusItemAction>>,
-    controller_events: Receiver<ControllerEvent>,
     developer_calls: Receiver<crate::control::developer_control::DeveloperCall>,
     control_calls: Receiver<crate::control::ControlCall>,
-    meeting_waiters: Vec<control::MeetingWaiter>,
-    meeting_state: MeetingMenuState,
-    meeting_menu_at: Instant,
+    status_menu_at: Instant,
     model_menu_at: Instant,
     show_dock_icon: bool,
 }
@@ -1036,12 +984,6 @@ impl Pump {
         {
             self.status_action(action);
         }
-        while let Ok(event) = self.controller_events.try_recv() {
-            self.settle_meeting_waiters(Some(&event));
-            self.controller_event(event);
-            self.meeting_menu_at = Instant::now();
-        }
-        self.settle_meeting_waiters(None);
         #[cfg(hex_capture)]
         if let Some(overlays) = &mut self.capture_overlays
             && let Some(shown) = overlays.follow_recordings()
@@ -1061,13 +1003,10 @@ impl Pump {
             }
             self.model_menu_at = now + MODEL_MENU_REFRESH;
         }
-        if now >= self.meeting_menu_at {
-            crate::macos_rune::status_item::update_meeting(
-                &self.meeting_state,
-                crate::app_settings::meetings_enabled(),
-            );
+        if now >= self.status_menu_at {
+            crate::macos_rune::status_item::update_visibility();
             crate::macos_rune::status_item::update_software(&update_status());
-            self.meeting_menu_at = now + MEETING_MENU_REFRESH;
+            self.status_menu_at = now + STATUS_MENU_REFRESH;
         }
     }
 
@@ -1124,38 +1063,6 @@ impl Pump {
                     tracing::warn!(error = %format!("{error:#}"), "the update menu item failed");
                 }
             }
-            StatusItemAction::StartMeeting => {
-                if let Err(error) = self.runtime.meeting(MeetingRequest::Start { title: None }) {
-                    tracing::warn!(%error, "could not start meeting from status item");
-                }
-            }
-            StatusItemAction::StopMeeting => {
-                if let Err(error) = self.runtime.meeting(MeetingRequest::Stop) {
-                    tracing::warn!(%error, "could not stop meeting from status item");
-                }
-            }
-            StatusItemAction::CopyLastMeetingTranscript => {
-                let copied = crate::meeting::latest_transcript_markdown().and_then(|markdown| {
-                    arboard::Clipboard::new()?.set_text(markdown)?;
-                    Ok(())
-                });
-                if let Err(error) = copied {
-                    tracing::warn!(%error, "could not copy last meeting transcript");
-                }
-            }
-            StatusItemAction::CopyChapter(index) => {
-                let MeetingMenuState::Recording { id, .. } = &self.meeting_state else {
-                    return;
-                };
-                let copied = crate::meeting::section_for_id(id, index).and_then(|markdown| {
-                    arboard::Clipboard::new()?.set_text(markdown)?;
-                    Ok(())
-                });
-                if let Err(error) = copied {
-                    tracing::warn!(%error, "could not copy a meeting section");
-                }
-            }
-            StatusItemAction::OpenMeetings => show(&self.window, Destination::Meetings(None)),
             #[cfg(hex_capture)]
             StatusItemAction::ToggleOverlaysInRecordings => self.toggle_overlays_in_recordings(),
             StatusItemAction::Quit => {
@@ -1180,61 +1087,6 @@ impl Pump {
             }
             Err(error) => {
                 tracing::warn!(error = %format!("{error:#}"), "could not save the recordings setting");
-            }
-        }
-    }
-
-    fn controller_event(&mut self, event: ControllerEvent) {
-        self.capsules.event(&event);
-        match event {
-            ControllerEvent::Offer(_)
-            | ControllerEvent::Reminder { .. }
-            | ControllerEvent::ReminderWithdrawn { .. } => {}
-            ControllerEvent::Starting => self.meeting_state = MeetingMenuState::Starting,
-            ControllerEvent::RecordingStarted { id, title, .. } => {
-                self.meeting_state = MeetingMenuState::Recording {
-                    started: Instant::now(),
-                    id,
-                    title,
-                    chapters: Vec::new(),
-                };
-            }
-            ControllerEvent::Chapters(chapters) => {
-                if let MeetingMenuState::Recording {
-                    chapters: shown, ..
-                } = &mut self.meeting_state
-                {
-                    *shown = chapters;
-                }
-            }
-            ControllerEvent::Retitled { title } => {
-                if let MeetingMenuState::Recording { title: shown, .. } = &mut self.meeting_state {
-                    *shown = title;
-                }
-            }
-            ControllerEvent::OpenMeeting(id) => {
-                show(&self.window, Destination::Meetings(Some(id)));
-            }
-            ControllerEvent::CallEnded { app, auto_stop } => {
-                if auto_stop {
-                    tracing::info!(%app, "the call ended; the recording stops after its grace unless kept");
-                } else {
-                    tracing::info!(%app, "the call ended; the recording continues until Stop");
-                }
-            }
-            ControllerEvent::Transcribing => self.meeting_state = MeetingMenuState::Transcribing,
-            ControllerEvent::Finished(manifest) => {
-                tracing::info!(id = %manifest.id, "meeting transcript ready");
-                self.meeting_state = MeetingMenuState::Idle;
-            }
-            ControllerEvent::NotesStarted | ControllerEvent::NotesFinished(_) => {}
-            ControllerEvent::Failed { title, error } => {
-                tracing::error!(%title, %error, "meeting failed");
-                self.meeting_state = MeetingMenuState::Idle;
-                let message = format!("{title}: {error}");
-                self.window
-                    .update(move |ui, _| crate::rune_ui::meeting_failed(ui, message));
-                show(&self.window, Destination::Meetings(None));
             }
         }
     }
@@ -1279,7 +1131,6 @@ impl Pump {
                     DeveloperPane::Settings => Destination::Settings,
                     DeveloperPane::Modes => Destination::Modes,
                     DeveloperPane::History => Destination::History,
-                    DeveloperPane::Meetings => Destination::Meetings(None),
                     other => {
                         return DeveloperReply::error(
                             "pane-unavailable",

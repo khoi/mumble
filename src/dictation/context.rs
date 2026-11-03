@@ -134,67 +134,6 @@ impl ContextSnapshot {
         Ok(Self::default())
     }
 
-    #[cfg(target_os = "macos")]
-    pub fn capture_for_meeting(canonical_bundle_id: &str) -> Result<Self> {
-        if let Some(browser) = ScriptableBrowser::from_bundle_id(canonical_bundle_id) {
-            match browser.meeting_tab() {
-                Ok(Some((browser_url, window_title))) => {
-                    return Ok(Self {
-                        application: Some(browser.name.into()),
-                        browser_url: Some(browser_url),
-                        window_title,
-                        input_revision: None,
-                    });
-                }
-                Ok(None) => {}
-                Err(error) => browser.warn_once(&error),
-            }
-            // The dictionary didn't answer (Automation not allowed, a
-            // browser whose script fails): read the page from the browser's
-            // own web area through Accessibility, even behind another app.
-            let pid = autoreleasepool(|_| {
-                crate::microphone_activity::running_application_by_bundle_id(browser.bundle_id)
-                    .map(|(pid, _)| pid)
-            });
-            // Chromium browsers behind another app expose no focused element,
-            // and Arc's chrome sits between its windows and the page, so every
-            // window's web areas and titles are read (`browser_page`), and a
-            // Meet tab's title still names the call when no address does
-            // (#827, #831). The browser's own window is reported rather than
-            // the app in front.
-            if let Some(pid) = pid {
-                let pages = crate::accessibility::browser_pages(pid);
-                let (url, title) = crate::dictation::browser_page::choose(
-                    &pages,
-                    |url| {
-                        web_url(url).is_some_and(|url| crate::meeting::detection::names_call(&url))
-                    },
-                    crate::meeting::detection::title_names_call,
-                );
-                // A call's tab title outranks another tab's address.
-                let title_names_call = title
-                    .as_deref()
-                    .is_some_and(crate::meeting::detection::title_names_call);
-                let url = url
-                    .as_deref()
-                    .and_then(web_url)
-                    .filter(|url| crate::meeting::detection::names_call(url) || !title_names_call);
-                return Ok(Self {
-                    application: Some(browser.name.into()),
-                    browser_url: url,
-                    window_title: title,
-                    input_revision: None,
-                });
-            }
-        }
-        capture_macos(true)
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    pub fn capture_for_meeting(_canonical_bundle_id: &str) -> Result<Self> {
-        Self::capture()
-    }
-
     pub fn browser_host(&self) -> Option<&str> {
         self.browser_url.as_ref().and_then(Url::host_str)
     }
@@ -363,10 +302,10 @@ impl ScriptableBrowser {
 
 #[cfg(target_os = "macos")]
 impl ScriptableBrowser {
-    fn tab(self) -> (&'static str, &'static str) {
+    fn tab(self) -> &'static str {
         match self.dialect {
-            TabDialect::Chromium => ("active tab", "title"),
-            TabDialect::Safari => ("current tab", "name"),
+            TabDialect::Chromium => "active tab",
+            TabDialect::Safari => "current tab",
         }
     }
 
@@ -374,7 +313,7 @@ impl ScriptableBrowser {
     /// browser) is logged once per browser and leaves the application
     /// context intact.
     fn active_url(self) -> Option<Url> {
-        let (tab, _) = self.tab();
+        let tab = self.tab();
         let script = format!(
             "tell application id \"{}\"\n    if (count of windows) > 0 then return URL of {tab} of front window\nend tell\nreturn \"\"",
             self.bundle_id
@@ -399,20 +338,6 @@ impl ScriptableBrowser {
                 "could not read the browser tab"
             );
         }
-    }
-
-    /// The front window's tab, even when another app is in front.
-    /// Background tabs are deliberately not searched: a call open in one
-    /// says nothing about which tab is using the microphone. The tab is
-    /// named through the front window each time rather than kept in a
-    /// variable: Arc can't resolve the stored tab-by-id reference (#1113).
-    fn meeting_tab(self) -> Result<Option<(Url, Option<String>)>> {
-        let (tab, title) = self.tab();
-        let script = format!(
-            "tell application id \"{}\"\n    if (count of windows) is 0 then return \"\"\n    return (URL of {tab} of front window) & linefeed & ({title} of {tab} of front window)\nend tell",
-            self.bundle_id
-        );
-        Ok(parse_tab_output(&self.run(&script)?))
     }
 
     fn run(self, script: &str) -> Result<String> {
@@ -450,15 +375,6 @@ fn run_osascript(script: &str) -> Result<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn parse_tab_output(output: &str) -> Option<(Url, Option<String>)> {
-    let mut lines = output.lines();
-    let url = Url::parse(lines.next()?.trim()).ok()?;
-    let title = lines.collect::<Vec<_>>().join(" ");
-    let title = title.trim();
-    Some((url, (!title.is_empty()).then(|| title.to_string())))
 }
 
 fn normalize_browser_host(host: &str) -> String {
@@ -590,24 +506,5 @@ mod tests {
             ..ContextSnapshot::default()
         };
         assert!(ContextSelector::browser_host("x.com").matches(&context));
-    }
-
-    #[test]
-    fn parses_tab_url_and_title_output() {
-        assert_eq!(
-            parse_tab_output("https://meet.google.com/abc-defg-hij\nDesign sync - Google Meet\n"),
-            Some((
-                Url::parse("https://meet.google.com/abc-defg-hij").unwrap(),
-                Some("Design sync - Google Meet".into()),
-            ))
-        );
-        assert_eq!(
-            parse_tab_output("https://meet.google.com/abc-defg-hij\n"),
-            Some((
-                Url::parse("https://meet.google.com/abc-defg-hij").unwrap(),
-                None,
-            ))
-        );
-        assert_eq!(parse_tab_output(""), None);
     }
 }

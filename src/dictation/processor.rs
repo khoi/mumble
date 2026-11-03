@@ -323,7 +323,7 @@ impl Profiles {
     ) -> Processed {
         let profile = self.select(context);
         // Labs › Spoken formatting starts here, ahead of every mode's
-        // corrections, so it is off for raw dictation and meetings.
+        // corrections, so it is off for raw dictation.
         let formatted;
         let transcript = if crate::labs::spoken_formatting() {
             formatted = crate::dictation::spoken_formatting::apply(transcript);
@@ -474,27 +474,6 @@ fn numbers_only(transcript: &str) -> bool {
 pub(crate) struct Generated {
     pub text: String,
     pub model: Option<Model>,
-}
-
-/// One generation from OpenCode's default ranked models, for work outside
-/// dictation such as meeting notes.
-pub(crate) fn generate_text(
-    prompt: &str,
-    deadline: Duration,
-    cancelled: &AtomicBool,
-) -> Result<Generated> {
-    generate_cancellable(prompt, None, deadline, cancelled)
-}
-
-/// One generation from exactly `model`, never another provider's: a failure
-/// is OpenCode's answer for that model (Labs › Choose meeting summary model).
-pub(crate) fn generate_text_with(
-    prompt: &str,
-    model: &Model,
-    deadline: Duration,
-    cancelled: &AtomicBool,
-) -> Result<Generated> {
-    generate_cancellable(prompt, Some(model), deadline, cancelled)
 }
 
 /// Runs one generation and reports it as a processing observation. The text is
@@ -1464,8 +1443,8 @@ mod tests {
         assert!(!retryable_generation_error("processor returned empty text"));
     }
 
-    /// Labs › Choose meeting summary model: a chosen model is the only one
-    /// asked, and its failure is reported rather than another provider tried.
+    /// A mode's chosen rewrite model is the only one asked, and its failure
+    /// is reported rather than another provider tried.
     #[test]
     fn a_chosen_model_is_asked_alone_and_never_falls_back() {
         let chosen = Model {

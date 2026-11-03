@@ -46,20 +46,9 @@ fn main() {
         .expect("xcode-select is required to link ScreenCaptureKit");
     assert!(output.status.success(), "xcode-select -p failed");
     let developer_dir = String::from_utf8(output.stdout).expect("Xcode path must be UTF-8");
-    compile_swift_bridge("apple_speech", "HEXAppleSpeechBridge", &[]);
+    compile_swift_bridge("apple_speech", "HEXAppleSpeechBridge");
     println!("cargo:rustc-link-lib=framework=AVFAudio");
     println!("cargo:rustc-link-lib=framework=Speech");
-    // FoundationModels exists only on macOS 26 and later. Weak-link it, and
-    // drop the object's strong autolink entry, so Hex still launches on older
-    // systems and reports Apple Intelligence as unavailable.
-    compile_swift_bridge(
-        "apple_intelligence",
-        "HEXAppleIntelligenceBridge",
-        &["FoundationModels"],
-    );
-    println!("cargo:rustc-link-arg=-Wl,-weak_framework,FoundationModels");
-    compile_swift_bridge("calendar", "HEXCalendarBridge", &[]);
-    println!("cargo:rustc-link-lib=framework=EventKit");
     compile_permission_guide();
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     for runtime in ["swift-5.5/macosx", "swift/macosx"] {
@@ -262,7 +251,7 @@ fn compile_permission_guide() {
         .compile("hex_permission_guide");
 }
 
-fn compile_swift_bridge(name: &str, module: &str, without_autolink: &[&str]) {
+fn compile_swift_bridge(name: &str, module: &str) {
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let output_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let source = manifest_dir.join(format!("src/{name}.swift"));
@@ -291,14 +280,6 @@ fn compile_swift_bridge(name: &str, module: &str, without_autolink: &[&str]) {
     swift
         .arg(String::from_utf8_lossy(&sdk.stdout).trim())
         .args(["-target", target]);
-    for framework in without_autolink {
-        swift.args([
-            "-Xfrontend",
-            "-disable-autolink-framework",
-            "-Xfrontend",
-            framework,
-        ]);
-    }
     let status = swift
         .arg(&source)
         .arg("-o")

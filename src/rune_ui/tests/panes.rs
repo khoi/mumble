@@ -1,12 +1,12 @@
 //! The macOS and Windows surfaces, driven headlessly on Linux from preview
-//! data: Meetings, the OS-only General rows, and the full tour.
+//! data: the OS-only General rows and the full tour.
 
 use super::*;
 use crate::desktop::login_item::LoginItemStatus;
 use crate::desktop::onboarding::{
     Input, Observation, PermissionAction, PermissionKind, Practice, Step,
 };
-use platform::{CalendarRequest, MeetingRequest, PlatformHost, PlatformRequest};
+use platform::{PlatformHost, PlatformRequest};
 
 fn asked(rt: &Runtime<Ui>) -> &[PlatformRequest] {
     match &rt.state.host {
@@ -23,16 +23,24 @@ fn refresh(rt: &mut Runtime<Ui>) {
 
 #[test]
 fn each_os_lists_only_the_panes_it_can_run() {
-    // Meetings (beta) is a Labs switch on every OS; this Mac fixture has it on.
-    for scene in ["portal", "windows-settings"] {
+    // Windows can't create a virtual microphone, so it has no Voice Filter.
+    for (scene, voice_filter) in [
+        ("portal", true),
+        ("mac-settings", true),
+        ("windows-settings", false),
+    ] {
         let mut rt = runtime(scene, true, PANE_SIZE);
         tap(&mut rt, "nav-labs");
-        assert!(rt.find("lab-meetings").is_some(), "{scene} offers Meetings");
+        assert_eq!(
+            rt.find("lab-voice-filter").is_some(),
+            voice_filter,
+            "{scene}"
+        );
     }
     let mut mac = runtime("mac-settings", true, PANE_SIZE);
     tap(&mut mac, "nav-labs");
     for (key, pane) in [
-        ("nav-meetings", Pane::Meetings),
+        ("nav-voice-filter", Pane::VoiceFilter),
         ("nav-general", Pane::General),
     ] {
         tap(&mut mac, key);
@@ -50,7 +58,6 @@ fn settings_rows_follow_each_os() {
     assert!(present(&linux, "enable-on-launch"));
     assert!(present(&linux, "launch-at-login"));
     assert!(!present(&linux, "dock-icon"));
-    assert!(!present(&linux, "meetings-enabled"));
 
     let mut mac = runtime("mac-settings", true, TALL_SIZE);
     open_advanced(&mut mac, Pane::General);
@@ -62,8 +69,6 @@ fn settings_rows_follow_each_os() {
         "terminal-paste",
         "toggle-listening",
         "enable-on-launch",
-        "meetings-enabled",
-        "detected-calls",
         "hex-mic-driver",
         "command-model-notice",
     ] {
@@ -79,7 +84,6 @@ fn settings_rows_follow_each_os() {
         !present(&windows, "terminal-paste"),
         "Windows has it in Labs"
     );
-    assert!(!present(&windows, "meetings-enabled"));
 }
 
 #[test]
@@ -190,9 +194,6 @@ impl platform::NativeHost for SlowLoginItem {
     fn poll(&mut self, _: &mut platform::PlatformState) -> bool {
         false
     }
-    fn meetings(&mut self) -> Option<Result<Vec<meetings::Meeting>, String>> {
-        None
-    }
     fn tour_inputs(&mut self, _: bool) -> Vec<Input> {
         Vec::new()
     }
@@ -252,8 +253,9 @@ fn drawn(rt: &Runtime<Ui>, path: &str) -> Option<([f32; 4], f32)> {
 
 #[test]
 fn a_grant_gathers_then_releases_into_allowed() {
-    let mut rt = runtime("meetings-allow", true, PANE_SIZE);
-    let pill = "meeting-system-audio-allow";
+    let mut rt = runtime("mac-settings-pause-browser", true, TALL_SIZE);
+    open_advanced(&mut rt, Pane::General);
+    let pill = "pause-browser-allow";
     let control = format!("{pill}-control");
     tap(&mut rt, pill);
     assert_eq!(asked(&rt), [PlatformRequest::SystemAudio]);
@@ -304,8 +306,8 @@ fn a_grant_gathers_then_releases_into_allowed() {
     assert_eq!(asked(&rt).len(), 2, "Allowed is not a button");
 
     // Coming back to the pane shows Allowed at rest, without replaying.
-    tap(&mut rt, "nav-general");
-    let (x, y) = rt.find("nav-meetings").unwrap();
+    tap(&mut rt, "nav-history");
+    let (x, y) = rt.find("nav-general").unwrap();
     rt.pointer_down(x, y);
     rt.pointer_up(x, y);
     rt.frame(1.0 / 60.0);
@@ -320,10 +322,12 @@ fn a_grant_gathers_then_releases_into_allowed() {
 
 #[test]
 fn reduce_motion_swaps_allow_for_allowed_at_once() {
-    let mut rt = runtime("meetings-allow", true, PANE_SIZE);
-    let pill = "meeting-system-audio-allow";
+    let mut rt = runtime("mac-settings-pause-browser", true, TALL_SIZE);
+    open_advanced(&mut rt, Pane::General);
+    let pill = "pause-browser-allow";
     tap(&mut rt, pill);
-    let mut settled = runtime("meetings-allow", true, PANE_SIZE);
+    let mut settled = runtime("mac-settings-pause-browser", true, TALL_SIZE);
+    open_advanced(&mut settled, Pane::General);
     tap(&mut settled, pill);
     settled.state.platform.system_audio = true;
     refresh(&mut settled);
@@ -952,54 +956,6 @@ fn the_explainer_picker_and_shortcut_recording_never_share_the_window() {
 }
 
 #[test]
-fn meetings_switch_between_recordings_and_settings() {
-    let mut rt = runtime("meetings", true, PANE_SIZE);
-    assert!(rt.find("meeting-preview-design").is_some());
-    assert!(rt.find("meetings-enabled").is_none());
-    tap(&mut rt, "meetings-view/segment1");
-    assert_eq!(rt.state.meetings.view, meetings::View::Settings);
-    assert!(rt.find("meetings-enabled").is_some());
-    assert!(rt.find("meeting-preview-design").is_none());
-    tap(&mut rt, "meetings-view/segment0");
-    assert!(rt.find("meeting-preview-design").is_some());
-}
-
-#[test]
-fn a_meeting_recording_error_can_be_dismissed() {
-    let mut rt = runtime("meetings", true, PANE_SIZE);
-    rt.state.meetings.runtime_error = Some("Browser call: Access is denied.".into());
-    refresh(&mut rt);
-    assert!(rt.find("meeting-runtime-error").is_some());
-    tap(&mut rt, "meeting-runtime-error/dismiss");
-    assert_eq!(rt.state.meetings.runtime_error, None);
-    assert!(rt.find("meeting-runtime-error").is_none());
-}
-
-#[test]
-fn the_meetings_switch_stays_put_and_a_swap_drops_pending_edits() {
-    let mut rt = runtime("meetings", true, PANE_SIZE);
-    let switch = |rt: &Runtime<Ui>| {
-        rt.elements()
-            .into_iter()
-            .find(|e| e.key.as_deref() == Some("meetings-view"))
-            .map(|e| e.rect)
-            .unwrap()
-    };
-    let recordings = switch(&rt);
-    tap(&mut rt, "meeting-rename");
-    assert!(rt.state.meetings.renaming.is_some());
-    rt.state.meetings.delete_armed = Some("preview-notes".into());
-    tap(&mut rt, "meetings-view/segment1");
-    assert_eq!(switch(&rt), recordings, "the search field never moves it");
-    assert!(rt.state.meetings.renaming.is_none());
-    assert!(rt.state.meetings.delete_armed.is_none());
-
-    tap(&mut rt, "meetings-enabled");
-    assert!(!rt.state.settings.meetings.enabled);
-    assert_eq!(rt.state.meetings.view, meetings::View::Recordings);
-}
-
-#[test]
 fn an_update_is_a_secondary_button_with_a_dot_and_its_own_label() {
     let mut rt = runtime("mac-update-ready", true, PANE_SIZE);
     assert!(rt.find("sidebar-update-control/dot").is_some());
@@ -1035,270 +991,6 @@ fn a_staged_dev_build_lists_its_first_changes_under_the_update() {
     assert!(shown.iter().any(|text| text == "· Three"));
     assert!(!shown.iter().any(|text| text == "· Four"), "three at most");
     assert!(rt.find("sidebar-update-control/dot").is_some());
-}
-
-#[test]
-fn meetings_off_offers_the_opt_in_and_keeps_the_pane() {
-    let mut rt = runtime("meetings-off", true, PANE_SIZE);
-    assert!(rt.find("meetings-view").is_none());
-    assert!(rt.find("start-meeting").is_none());
-    tap(&mut rt, "meetings-enabled");
-    assert!(rt.state.settings.meetings.enabled);
-    refresh(&mut rt);
-    assert!(
-        rt.find("nav-meetings").is_some(),
-        "on, it joins the sidebar"
-    );
-    assert!(rt.find("meetings-view").is_some());
-}
-
-#[test]
-fn meetings_settings_save_and_ask_for_system_audio() {
-    let mut rt = runtime("meetings-settings", true, (980.0, 2400.0));
-    rt.state.platform.system_audio = false;
-    refresh(&mut rt);
-    tap(&mut rt, "meeting-system-audio-allow");
-    assert_eq!(asked(&rt), [PlatformRequest::SystemAudio]);
-    use crate::app_settings::MeetingPolicy;
-    let policy = |rt: &Runtime<Ui>, key: &str| {
-        rt.state
-            .settings
-            .meetings
-            .providers
-            .iter()
-            .find(|choice| choice.key == key)
-            .map(|choice| choice.policy)
-    };
-    // Known services first (Zoom is second), then the sites and apps chosen for.
-    pick(&mut rt, "call1-policy", 1);
-    assert_eq!(
-        policy(&rt, "us.zoom.xos"),
-        Some(MeetingPolicy::AlwaysRecord)
-    );
-    pick(&mut rt, "call7-policy", 0);
-    assert_eq!(
-        policy(&rt, "problems.kitlangton.com"),
-        Some(MeetingPolicy::Ask)
-    );
-    assert!(rt.find("call7").is_some());
-    tap(&mut rt, "meetings-enabled");
-    assert!(!rt.state.settings.meetings.enabled);
-    assert!(rt.find("meeting-folder").is_none());
-    assert!(rt.find("meetings-enabled").is_some(), "the opt-in remains");
-}
-
-#[test]
-fn the_calendar_asks_for_access_only_when_connect_is_pressed() {
-    let mut rt = runtime("meetings-settings", true, (980.0, 2400.0));
-    assert!(rt.find("calendar-connect").is_some());
-    assert!(rt.find("calendar-remind").is_none());
-    assert!(asked(&rt).is_empty());
-    tap(&mut rt, "calendar-connect-button");
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Calendar(CalendarRequest::Connect)]
-    );
-
-    // Meetings off: no calendar card, so nothing can ask for access.
-    tap(&mut rt, "meetings-enabled");
-    assert!(rt.find("calendar").is_none());
-    for scene in ["portal", "windows-settings"] {
-        let rt = runtime(scene, true, GOLDEN_SIZE);
-        assert!(rt.find("calendar").is_none(), "{scene} has no calendar");
-    }
-}
-
-#[test]
-fn a_connected_calendar_saves_reminders_and_lists_meetings() {
-    let mut rt = runtime("meetings-calendar", true, (980.0, 2600.0));
-    let shown = texts(&rt);
-    for text in [
-        "Design sync",
-        "Today · 2:30 PM",
-        "Google Meet",
-        "2 of 3 calendars",
-    ] {
-        assert!(shown.iter().any(|shown| shown == text), "shows {text}");
-    }
-    assert!(rt.find("upcoming2").is_some());
-    assert!(
-        rt.find("upcoming2/provider/icon").is_none(),
-        "no link, no icon"
-    );
-    pick(&mut rt, "calendar-lead", 3);
-    assert_eq!(rt.state.settings.meetings.calendar.lead_minutes, 5);
-    tap(&mut rt, "calendar-remind");
-    assert!(!rt.state.settings.meetings.calendar.remind);
-    assert!(rt.find("calendar-lead").is_none());
-    tap(&mut rt, "calendar-calendars-control-trigger");
-    assert_eq!(rt.state.open, Some(Menu::Calendars));
-}
-
-#[test]
-fn denied_calendar_access_links_to_privacy_settings() {
-    let mut rt = runtime("meetings-calendar-denied", true, (980.0, 2400.0));
-    assert!(rt.find("calendar-connect").is_none());
-    tap(&mut rt, "calendar-privacy");
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Calendar(
-            CalendarRequest::OpenPrivacySettings
-        )]
-    );
-}
-
-#[test]
-fn meetings_select_search_and_copy_a_transcript() {
-    let mut rt = runtime("meetings", true, PANE_SIZE);
-    tap(&mut rt, "meeting-preview-design");
-    assert_eq!(
-        rt.state.meetings.selected.as_deref(),
-        Some("preview-design")
-    );
-    tap(&mut rt, "meeting-copy-transcript");
-    let copied = rt.copy_request.as_deref().unwrap().to_owned();
-    assert!(copied.starts_with("**You** · 00:09\nOh nice."), "{copied}");
-    rt.state.meetings.search = TextEdit::new("roblox");
-    refresh(&mut rt);
-    assert!(rt.find("meeting-preview-failed").is_none());
-    assert!(
-        rt.find("meeting-preview-notes").is_some(),
-        "searches transcripts"
-    );
-}
-
-#[test]
-fn recording_starts_and_stops_from_the_header() {
-    let mut rt = runtime("meetings", true, PANE_SIZE);
-    tap(&mut rt, "stop-meeting");
-    assert_eq!(asked(&rt), [PlatformRequest::Meeting(MeetingRequest::Stop)]);
-    assert!(rt.find("stop-meeting").is_none(), "finalizing");
-
-    let mut rt = runtime("meetings-empty", true, PANE_SIZE);
-    assert!(texts(&rt).iter().any(|text| text == "No meetings yet."));
-    tap(&mut rt, "start-meeting");
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Meeting(MeetingRequest::Start)]
-    );
-}
-
-#[test]
-fn meetings_rename_from_the_title_field() {
-    let mut rt = runtime("meetings", true, PANE_SIZE);
-    tap(&mut rt, "meeting-rename");
-    assert_eq!(rt.state.meetings.renaming.as_deref(), Some("preview-notes"));
-    rt.state.meetings.rename = TextEdit::new("Arcade launch");
-    refresh(&mut rt);
-    tap(&mut rt, "meeting-save-title");
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Meeting(MeetingRequest::Rename {
-            id: "preview-notes".into(),
-            title: "Arcade launch".into(),
-        })]
-    );
-    assert_eq!(rt.state.meetings.meetings[1].title, "Arcade launch");
-    assert!(rt.state.meetings.renaming.is_none());
-}
-
-#[test]
-fn deleting_a_meeting_takes_the_menu_then_a_confirmation() {
-    let mut rt = runtime("meetings", true, PANE_SIZE);
-    tap(&mut rt, "meeting-more");
-    assert_eq!(rt.state.open, Some(Menu::MeetingActions));
-    // Copy summary, Reveal Markdown, Regenerate summary, a separator, Delete.
-    tap(&mut rt, "meeting-actions-item4");
-    assert_eq!(
-        rt.state.meetings.delete_armed.as_deref(),
-        Some("preview-notes")
-    );
-    assert!(asked(&rt).is_empty(), "the first step only arms");
-    assert!(
-        texts(&rt)
-            .iter()
-            .any(|text| text == "Trash recording & Markdown")
-    );
-    tap(&mut rt, "meeting-confirm-delete");
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Meeting(MeetingRequest::Trash(
-            "preview-notes".into()
-        ))]
-    );
-    assert!(
-        rt.state
-            .meetings
-            .meetings
-            .iter()
-            .all(|m| m.id != "preview-notes")
-    );
-
-    let mut rt = runtime("meetings-delete", true, PANE_SIZE);
-    key(&mut rt, Key::Escape, Mods::default());
-    assert!(rt.state.meetings.delete_armed.is_none(), "Escape cancels");
-
-    let mut rt = runtime("meetings-delete", true, PANE_SIZE);
-    key(&mut rt, Key::Enter, Mods::default());
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Meeting(MeetingRequest::Trash(
-            "preview-notes".into()
-        ))],
-        "Return confirms"
-    );
-}
-
-#[test]
-fn the_overflow_menu_copies_the_summary_and_asks_for_new_notes() {
-    let mut rt = runtime("meetings-actions", true, PANE_SIZE);
-    tap(&mut rt, "meeting-actions-item0");
-    assert!(
-        rt.copy_request
-            .as_deref()
-            .is_some_and(|summary| summary.starts_with("One login"))
-    );
-    assert_eq!(rt.state.open, Some(Menu::MeetingActions), "stays open");
-    tap(&mut rt, "meeting-actions-item2");
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Meeting(MeetingRequest::Summarize(
-            "preview-notes".into()
-        ))]
-    );
-}
-
-#[test]
-fn copy_section_copies_one_chapter() {
-    let rt = runtime("meetings", true, PANE_SIZE);
-    assert!(rt.find("chapters").is_none(), "no chapters, no section");
-
-    let mut rt = runtime("meetings-chapters", true, PANE_SIZE);
-    assert!(texts(&rt).iter().any(|text| text == "Chapters"));
-    tap(&mut rt, "chapter1/copy-section");
-    let copied = rt.copy_request.as_deref().unwrap().to_owned();
-    assert!(
-        copied.starts_with("## Gravity well\n\nA pulse and gravity well"),
-        "{copied}"
-    );
-    assert!(copied.contains("Prototype it in WebGPU"), "{copied}");
-    assert!(!copied.contains("Roblox") && !copied.contains("build screen"));
-}
-
-#[test]
-fn active_and_failed_meetings_show_their_state() {
-    let rt = runtime("meetings-recording", true, PANE_SIZE);
-    let shown = texts(&rt);
-    assert!(shown.iter().any(|text| text == "Live transcript"));
-    assert!(shown.iter().any(|text| text == "Listening…"));
-    assert!(
-        rt.find("meeting-rename").is_none(),
-        "no rename while recording"
-    );
-    let rt = runtime("meetings-failed", true, PANE_SIZE);
-    let shown = texts(&rt);
-    assert!(shown.iter().any(|text| text == "Recording failed."));
-    assert!(shown.iter().any(|text| text == "Recovered draft"));
 }
 
 #[test]
@@ -1442,27 +1134,6 @@ fn stale_permissions_offer_fix_it_and_reset_entries_across_panes() {
         )]
     );
     assert!(!rt.state.platform.stale(PermissionKind::Accessibility));
-
-    // 3. Meetings › Settings › Screen & System Audio Recording.
-    let mut rt = runtime("meetings-settings", true, (980.0, 2400.0));
-    rt.state.platform.system_audio = false;
-    rt.state.platform.note_stale(PermissionKind::SystemAudio);
-    refresh(&mut rt);
-    let shown = texts(&rt);
-    assert!(shown.iter().any(|text| text == "Still grey? Fix it"));
-    assert!(
-        shown
-            .iter()
-            .any(|text| text == "An older Hex entry can keep this off")
-    );
-    tap(&mut rt, "meeting-system-audio-allow");
-    assert_eq!(
-        asked(&rt),
-        [PlatformRequest::Permission(
-            PermissionAction::ResetAndPrompt(PermissionKind::SystemAudio)
-        )]
-    );
-    assert!(!rt.state.platform.stale(PermissionKind::SystemAudio));
 }
 
 #[test]
@@ -1481,14 +1152,6 @@ fn visible_untrusted_permission_rows_are_reported_for_legacy_cleanup() {
         [PermissionKind::Accessibility]
     );
 
-    let mut rt = runtime("meetings-settings", true, (980.0, 2400.0));
-    rt.state.platform.system_audio = false;
-    refresh(&mut rt);
-    assert_eq!(
-        rt.state.platform.permissions_shown,
-        [PermissionKind::SystemAudio]
-    );
-
     #[cfg(hex_capture)]
     {
         let mut rt = runtime("mac-scrawl-permission", true, PANE_SIZE);
@@ -1505,14 +1168,9 @@ fn visible_untrusted_permission_rows_are_reported_for_legacy_cleanup() {
 fn platform_goldens() {
     let _goldens = Goldens::collect();
     for dark in [true, false] {
-        check_golden("meetings-calendar", dark, (980.0, 1800.0));
         for scene in [
             "mac-settings",
             "mac-input-source-models",
-            "meetings",
-            "meetings-settings",
-            "meetings-off",
-            "meetings-recording",
             "mac-settings-permissions-stale",
             "shortcut-mode",
             "shortcut-mode-key",
@@ -1528,12 +1186,7 @@ fn platform_goldens() {
     check_golden("mac-settings-permissions", true, PANE_SIZE);
     check_golden("mac-settings-advanced", false, PANE_SIZE);
     check_golden("mac-microphone-bluetooth", true, PANE_SIZE);
-    check_golden("meetings-calendar-denied", true, PANE_SIZE);
     check_golden("windows-settings", false, GOLDEN_SIZE);
-    check_golden("meetings-actions", true, PANE_SIZE);
-    check_golden("meetings-delete", false, PANE_SIZE);
-    check_golden("meetings-rename", true, PANE_SIZE);
-    check_golden("meetings-empty", false, PANE_SIZE);
 }
 
 #[test]
@@ -1610,8 +1263,6 @@ fn try_it_records_and_plays_through_the_host() {
 #[test]
 fn hud_lab_and_activity_stay_out_of_the_window_sidebar() {
     let mut rt = runtime("mac-settings", true, PANE_SIZE);
-    rt.state.platform.developer = true;
-    refresh(&mut rt);
     tap(&mut rt, "nav-labs");
     assert!(rt.find("nav-hud-lab").is_none());
     assert!(rt.find("nav-activity").is_none());
@@ -1696,12 +1347,11 @@ fn hud_lab_picks_dot_scope_processing_placement_and_level() {
 
 #[test]
 fn labs_is_one_flat_list_of_toggles_off_by_default() {
-    let mut rt = runtime("mac-production", true, (980.0, 2000.0));
+    let mut rt = runtime("mac-settings", true, (980.0, 2000.0));
     rt.state.settings.experimental.hex_microphone = false;
     rt.state.platform.hex_microphone = None;
     refresh(&mut rt);
     for hidden in [
-        "nav-meetings",
         "nav-annotate",
         "nav-voice-filter",
         "nav-playground",
@@ -1715,11 +1365,9 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
     assert!(rt.find("restart-onboarding").is_some());
     let settings = &rt.state.settings;
     for (row, on) in [
-        ("lab-meetings", settings.meetings.enabled),
         ("lab-voice-filter", settings.experimental.hex_microphone),
         ("lab-playground", settings.labs.playground),
         ("lab-live-text", settings.labs.live_text),
-        ("lab-live-chapters", settings.labs.live_chapters),
         ("lab-vocabulary-biasing", settings.labs.vocabulary_biasing),
     ] {
         assert!(rt.find(row).is_some(), "Labs lacks {row}");
@@ -1727,18 +1375,18 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
     }
     assert!(rt.find("lab-terminal-paste").is_none(), "Windows only");
 
-    tap(&mut rt, "lab-meetings");
-    assert!(rt.state.settings.meetings.enabled);
+    tap(&mut rt, "lab-voice-filter");
+    assert!(rt.state.settings.experimental.hex_microphone);
     assert!(
-        rt.find("nav-meetings").is_some(),
-        "Meetings joins the main sidebar"
+        rt.find("nav-voice-filter").is_some(),
+        "Voice Filter joins the main sidebar"
     );
     tap(&mut rt, "lab-live-text");
     assert!(rt.state.settings.labs.live_text);
     tap(&mut rt, "lab-vocabulary-biasing");
     assert!(rt.state.settings.labs.vocabulary_biasing);
-    tap(&mut rt, "lab-meetings");
-    assert!(rt.find("nav-meetings").is_none(), "hidden while off");
+    tap(&mut rt, "lab-voice-filter");
+    assert!(rt.find("nav-voice-filter").is_none(), "hidden while off");
 
     // Windows lists Terminal paste in Labs, not General. Labs is tall enough
     // that its last row needs the macOS half's height to be on screen.
@@ -1748,8 +1396,8 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
     tap(&mut rt, "lab-terminal-paste");
     assert!(rt.state.settings.paste_with_shift);
     assert!(
-        rt.find("lab-meetings").is_some(),
-        "Meetings runs on Windows too"
+        rt.find("lab-voice-filter").is_none(),
+        "Windows has no Voice Filter"
     );
 }
 

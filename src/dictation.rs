@@ -1,7 +1,5 @@
 #[cfg(target_os = "macos")]
 pub(crate) mod audio;
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-pub(crate) mod browser_page;
 #[cfg(target_os = "macos")]
 pub(crate) mod config;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
@@ -166,7 +164,7 @@ impl ReleaseWait {
 }
 
 /// Speech flags of a recording's 16 kHz audio, one per 20 ms frame, against
-/// the meeting detector's adaptive noise floor. Only recent frames are kept.
+/// the pause detector's adaptive noise floor. Only recent frames are kept.
 #[derive(Default)]
 struct VoiceTrack {
     speech: crate::transcription::pause_segmenter::SpeechFrames,

@@ -109,7 +109,7 @@ pub fn summarize<'a>(
 
 /// The local calendar day of a timestamp, as days since 1970-01-01.
 pub fn local_day(timestamp_ms: u64) -> i64 {
-    let iso = crate::meeting::query::iso_local(timestamp_ms);
+    let iso = crate::history::time::iso_local(timestamp_ms);
     let field = |range: std::ops::Range<usize>| iso.get(range)?.parse::<i64>().ok();
     match (field(0..4), field(5..7), field(8..10)) {
         (Some(year), Some(month), Some(day)) => days_from_civil(year, month, day),

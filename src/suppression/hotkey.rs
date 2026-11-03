@@ -13,7 +13,6 @@ pub enum HotkeyAction {
     /// Toggle's cancel shortcut discarded the recording.
     CancelShortcut,
     PasteLast,
-    PasteMeeting,
 }
 
 impl HotkeyAction {

@@ -218,8 +218,6 @@ mod tests {
             &["hex", "check-for-updates"],
             &["hex", "launch-at-login", "on"],
             &["hex", "logs", "-n", "5"],
-            &["hex", "meetings", "list"],
-            &["hex", "mcp"],
             &["hex", "commands", "check"],
             &["hex", "onboarding", "reset"],
             &["hex", "annotate", "status"],

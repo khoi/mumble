@@ -443,7 +443,6 @@ fn mouse_hotkeys() -> RuntimeHotkeys {
         }
         .runtime(),
         paste_last: None,
-        paste_meeting: None,
         capture: None,
         raw_dictation: None,
         second_dictation: None,
@@ -3761,7 +3760,6 @@ fn paste_last_can_be_disabled_or_bound_to_a_side_specific_shortcut() {
     };
     let disabled = RuntimeHotkeys {
         paste_last: None,
-        paste_meeting: None,
         ..RuntimeHotkeys::default()
     };
     assert_eq!(paste_action(input, disabled), None);
@@ -3774,7 +3772,6 @@ fn paste_last_can_be_disabled_or_bound_to_a_side_specific_shortcut() {
             },
             key_code: Some(key_code),
         }),
-        paste_meeting: None,
         ..RuntimeHotkeys::default()
     };
     assert_eq!(
@@ -3792,74 +3789,6 @@ fn paste_last_can_be_disabled_or_bound_to_a_side_specific_shortcut() {
         ),
         None
     );
-}
-
-#[test]
-fn meeting_paste_is_only_active_in_developer_builds() {
-    let now = capture_time();
-    let mut hotkey = test_hotkey(true, now);
-    let paste_key_code = HotkeyBinding::paste_last_default()
-        .key
-        .expect("default paste key")
-        .code;
-    assert_eq!(
-        hotkey.process(
-            InputEvent::Key {
-                code: paste_key_code,
-                down: true,
-                flags: OPTION_KEY_MASK | CONTROL_KEY_MASK,
-            },
-            now + Duration::from_millis(50),
-        ),
-        // Release treats this as an ordinary chord, not a reserved meeting action.
-        if crate::DEVELOPER_FEATURES_ENABLED {
-            Some(HotkeyAction::PasteMeeting)
-        } else {
-            Some(HotkeyAction::Discard(DiscardCause::Key))
-        }
-    );
-    assert!(!hotkey.is_recording());
-    assert_eq!(
-        paste_action_with_meetings(
-            InputEvent::Key {
-                code: paste_key_code,
-                down: true,
-                flags: OPTION_KEY_MASK | SHIFT_KEY_MASK,
-            },
-            paste_key_code,
-            true,
-        ),
-        Some(HotkeyAction::PasteLast)
-    );
-    assert_eq!(
-        paste_action_with_meetings(
-            InputEvent::Key {
-                code: paste_key_code,
-                down: true,
-                flags: OPTION_KEY_MASK,
-            },
-            paste_key_code,
-            true,
-        ),
-        None
-    );
-    let key_down = InputEvent::Key {
-        code: paste_key_code,
-        down: true,
-        flags: OPTION_KEY_MASK | CONTROL_KEY_MASK,
-    };
-    assert_eq!(
-        paste_action_with_meetings(key_down, paste_key_code, false),
-        None
-    );
-    let mut suppression = ShortcutSuppression::default();
-    assert!(suppression.process(key_down, paste_key_code, option_binding(), true));
-    assert!(!ShortcutSuppression::default().process(
-        key_down,
-        paste_key_code,
-        option_binding(),
-        false,
-    ));
 }
 
 #[test]

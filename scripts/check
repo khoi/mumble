@@ -2,7 +2,7 @@
 # The local check loop.
 #
 #   scripts/check                 fmt, clippy, then every test
-#   scripts/check meeting::query  fmt, then only the tests matching the filters
+#   scripts/check history         fmt, then only the tests matching the filters
 #
 # Tests run through cargo-nextest (.config/nextest.toml): each test is its own
 # process, and one that hangs is killed and reported by name. Exit codes:

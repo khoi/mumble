@@ -66,7 +66,7 @@ in
         {
           sound_effect_volume = 0.4;
           shortcut_mode = "toggle";
-          "meetings.enabled" = true;
+          "labs.live_text" = true;
         }
       '';
       description = ''

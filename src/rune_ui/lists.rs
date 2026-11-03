@@ -1,6 +1,6 @@
-//! Pieces the list-and-detail panes (Meetings) and the OS-only Settings rows
-//! share: list rows and group labels, the detail header and facts, tinted
-//! status tags, and the permission control.
+//! Pieces the list-and-detail panes and the OS-only Settings rows share:
+//! list rows and group labels, the detail header and facts, tinted status
+//! tags, and the permission control.
 
 use std::sync::LazyLock;
 
@@ -201,51 +201,6 @@ pub(super) fn error_panel(p: Paint, key: &str, title: &str, detail: &str) -> El 
                 .font(DESCRIPTION)
                 .color(p.muted())
                 .wrap(),
-        )
-}
-
-/// An [`error_panel`] with a close button, for an error that stays until the
-/// user dismisses it.
-pub(super) fn dismissible_error_panel(
-    p: Paint,
-    key: &str,
-    title: &str,
-    detail: &str,
-    dismiss: impl Fn(&mut Ui) + 'static,
-) -> El {
-    let d = &p.k.c.danger;
-    row()
-        .key(key)
-        .pl(12.0)
-        .pr(6.0)
-        .py(6.0)
-        .gap(8.0)
-        .radius(p.k.radius.md)
-        .fill(d.bg)
-        .border(0.5, d.border)
-        .child(
-            col()
-                .key("message")
-                .grow(1.0)
-                .shrink()
-                .py(4.0)
-                .gap(2.0)
-                .child(text(title).key("title").font(p.k.ty.ui_medium).color(d.fg))
-                .child(
-                    text(detail)
-                        .key("detail")
-                        .font(DESCRIPTION)
-                        .color(p.muted())
-                        .wrap(),
-                ),
-        )
-        .child(
-            rune_kit::IconButton::new(CLOSE)
-                .variant(rune_kit::IconButtonVariant::Ghost)
-                .label(tr("Close"))
-                .on_press(dismiss)
-                .build(p.k)
-                .key("dismiss"),
         )
 }
 

@@ -354,7 +354,7 @@ impl ModelDefinition {
     }
 }
 
-/// Silero VAD v6.2. Dictation and meetings skip audio it finds no speech in,
+/// Silero VAD v6.2. Dictation skips audio it finds no speech in,
 /// because models hallucinate closing phrases such as "thank you" on silence
 /// and room noise. It downloads with every transcription model.
 pub const SPEECH_DETECTOR_ARTIFACT: GgufArtifact = GgufArtifact {
@@ -1037,8 +1037,8 @@ pub fn download_with_stage_progress(
         download_artifact(artifact, model.name, canceled, downloaded_bytes, stage)?
     };
     // In the background, so an installed model activates at once even
-    // offline. Until the detector lands, dictation and meetings keep their
-    // level-only silence handling.
+    // offline. Until the detector lands, dictation keeps its level-only
+    // silence handling.
     if !speech_detector_installed() {
         crate::transcription::speech_detector::start_download();
     }

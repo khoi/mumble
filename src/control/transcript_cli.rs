@@ -2,19 +2,16 @@
 
 use std::io::{self, Read, Write};
 use std::path::Path;
-use std::sync::Arc;
 
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{Result, WrapErr, eyre};
 use serde::{Deserialize, Serialize};
 
 use crate::dictation::vocabulary::VocabularyEntry;
+use crate::history::search::{TextHit, search_texts};
 use crate::history::stats::HistoryStats;
+use crate::history::time::TimeRange;
 use crate::history::{HistoryEntry, HistoryKind, HistoryRetention};
-use crate::meeting::query::{
-    ChapterView, Library, ListQuery, Meeting, OffsetRange, SearchQuery, TextHit, TimeRange,
-    TranscriptSource, search_texts,
-};
 
 #[derive(Args, Debug)]
 pub struct HistoryArgs {
@@ -30,7 +27,7 @@ pub struct HistoryArgs {
     /// Case-insensitive substring in final or raw text.
     #[arg(long)]
     grep: Option<String>,
-    /// Rank by relevance with the meeting search's stemmed, fuzzy BM25.
+    /// Rank by relevance with stemmed, fuzzy BM25.
     #[arg(long, conflicts_with = "oldest_first")]
     search: Option<String>,
     #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=10_000))]
@@ -69,97 +66,6 @@ pub enum HistoryAction {
         until: Option<String>,
         #[arg(long)]
         json: bool,
-    },
-}
-
-#[derive(Args, Debug)]
-pub struct MeetingListArgs {
-    /// Include meetings overlapping this time or later.
-    #[arg(long)]
-    since: Option<String>,
-    #[arg(long)]
-    until: Option<String>,
-    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=200))]
-    limit: u32,
-    #[arg(long)]
-    json: bool,
-}
-
-impl Default for MeetingListArgs {
-    fn default() -> Self {
-        Self {
-            since: None,
-            until: None,
-            limit: 20,
-            json: false,
-        }
-    }
-}
-
-#[derive(Subcommand, Debug)]
-pub enum MeetingsCommand {
-    /// List recorded meetings, newest first, including recordings in progress.
-    List(MeetingListArgs),
-    /// Read a full transcript and stored notes, by id, unique prefix, or latest.
-    Show {
-        id: String,
-        /// Markdown output (the default).
-        #[arg(long, conflicts_with = "json")]
-        md: bool,
-        #[arg(long)]
-        json: bool,
-        /// SubRip subtitles, one cue per speaker turn (Labs › Subtitle export).
-        #[arg(long, conflicts_with_all = ["md", "json", "vtt"])]
-        srt: bool,
-        /// WebVTT subtitles, one cue per speaker turn (Labs › Subtitle export).
-        #[arg(long, conflicts_with_all = ["md", "json"])]
-        vtt: bool,
-        /// Only entries overlapping this offset or later: mm:ss, h:mm:ss, or seconds.
-        #[arg(long)]
-        from: Option<String>,
-        /// Only entries starting before this offset: mm:ss, h:mm:ss, or seconds.
-        #[arg(long)]
-        to: Option<String>,
-        /// Only chapter N (counting from 1), as `hex meetings chapters` lists them.
-        #[arg(long, conflicts_with_all = ["from", "to"])]
-        chapter: Option<usize>,
-    },
-    /// List a meeting's chapters (Labs), by id, unique
-    /// prefix, or latest.
-    Chapters {
-        id: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Search transcripts and notes with the same stemmed, fuzzy BM25 query as MCP.
-    Search {
-        query: String,
-        #[arg(long)]
-        since: Option<String>,
-        #[arg(long)]
-        until: Option<String>,
-        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..=50))]
-        limit: u32,
-    },
-    /// Start recording a meeting in the running Hex, visibly, as the menu
-    /// bar's Record Meeting does (needs meetings.enabled).
-    Record {
-        /// The meeting's title (default: the calendar event's, or a
-        /// provisional one).
-        #[arg(long)]
-        title: Option<String>,
-        #[command(flatten)]
-        output: crate::control::cli::Output,
-    },
-    /// Stop the recording meeting and transcribe it (Stop & Transcribe).
-    Stop {
-        #[command(flatten)]
-        output: crate::control::cli::Output,
-    },
-    /// Copy the last meeting's transcript to the clipboard.
-    CopyLast {
-        #[command(flatten)]
-        output: crate::control::cli::Output,
     },
 }
 
@@ -419,7 +325,7 @@ pub fn history(args: &HistoryArgs) -> Result<()> {
         write!(
             out,
             "{} · {}",
-            crate::meeting::query::iso_local(row.timestamp_ms),
+            crate::history::time::iso_local(row.timestamp_ms),
             row.application.unwrap_or("Unknown app")
         )?;
         if let Some(mode) = row.mode {
@@ -440,327 +346,6 @@ pub fn history(args: &HistoryArgs) -> Result<()> {
         writeln!(out, "More matches; raise --limit or narrow the time range.")?;
     }
     Ok(())
-}
-
-#[derive(Serialize)]
-struct MeetingRow<'a> {
-    id: &'a str,
-    title: String,
-    timestamp_ms: u64,
-    duration_ms: u64,
-    application: Option<&'a str>,
-    status: crate::meeting::MeetingStatus,
-    in_progress: bool,
-    transcript_source: &'static str,
-    warnings: &'a [String],
-}
-
-fn meeting_row(meeting: &Meeting, now: u64) -> MeetingRow<'_> {
-    MeetingRow {
-        id: &meeting.id,
-        title: meeting.title(),
-        timestamp_ms: meeting.start_ms(),
-        duration_ms: meeting.duration_ms(now),
-        application: meeting.manifest.app.as_deref(),
-        status: meeting.status,
-        in_progress: meeting.in_progress,
-        transcript_source: match meeting.source {
-            TranscriptSource::Final => "final",
-            TranscriptSource::Rolling => "rolling",
-            TranscriptSource::Missing => "missing",
-        },
-        warnings: &meeting.warnings,
-    }
-}
-
-fn meeting_json(meeting: &Meeting, range: OffsetRange, now: u64) -> Result<serde_json::Value> {
-    let notes = meeting.manifest.notes.as_ref().map(|notes| serde_json::json!({
-        "title": notes.title, "summary": notes.summary, "generated_at_ms": notes.generated_at_ms,
-    }));
-    let mut json = serde_json::json!({
-        "version": 1, "meeting": meeting_row(meeting, now), "notes": notes,
-        "entries": meeting.entries_in(range, now)?,
-    });
-    if range.is_bounded() {
-        json["range"] = serde_json::json!({
-            "from_ms": range.from_ms.unwrap_or_default(), "to_ms": range.to_ms,
-        });
-    }
-    // Only meetings with chapters carry the field.
-    if !meeting.manifest.chapters.is_empty() {
-        json["chapters"] = chapters_json(meeting, now);
-    }
-    Ok(json)
-}
-
-fn chapter_json(view: &ChapterView) -> serde_json::Value {
-    serde_json::json!({
-        "number": view.number, "title": view.chapter.title, "summary": view.chapter.summary,
-        "start_ms": view.chapter.start_ms, "end_ms": view.end_ms,
-    })
-}
-
-fn chapters_json(meeting: &Meeting, now: u64) -> serde_json::Value {
-    meeting
-        .chapter_views(now)
-        .iter()
-        .map(chapter_json)
-        .collect()
-}
-
-/// `show --chapter N --json`: the meeting, its chapter, and only that
-/// chapter's entries.
-fn meeting_chapter_json(meeting: &Meeting, number: usize, now: u64) -> Result<serde_json::Value> {
-    let view = meeting.chapter(number, now)?;
-    let mut json = meeting_json(meeting, OffsetRange::default(), now)?;
-    json["entries"] = serde_json::to_value(&view.entries)?;
-    json["chapter"] = chapter_json(&view);
-    Ok(json)
-}
-
-fn meeting_chapters_json(meeting: &Meeting, now: u64) -> serde_json::Value {
-    serde_json::json!({
-        "version": 1, "meeting": meeting_row(meeting, now),
-        "chapters": chapters_json(meeting, now),
-        "refined": meeting.manifest.chapters_refined,
-    })
-}
-
-fn resolve(library: &Library, id: &str) -> Result<Arc<Meeting>> {
-    if id == "latest" {
-        library
-            .scan()?
-            .meetings
-            .into_iter()
-            .next()
-            .ok_or_else(|| eyre!("No meetings found."))
-    } else {
-        library.meeting(id)
-    }
-}
-
-fn meeting_list_json(
-    scan: &crate::meeting::query::Scan,
-    limit: usize,
-    now: u64,
-) -> serde_json::Value {
-    let rows: Vec<_> = scan
-        .meetings
-        .iter()
-        .take(limit)
-        .map(|meeting| meeting_row(meeting, now))
-        .collect();
-    let skipped: Vec<_> = scan
-        .skipped
-        .iter()
-        .map(|item| serde_json::json!({"id": item.id, "reason": item.reason}))
-        .collect();
-    serde_json::json!({"version": 1, "meetings": rows, "skipped": skipped, "truncated": scan.meetings.len() > limit})
-}
-
-pub fn meetings(command: &MeetingsCommand) -> Result<()> {
-    let root = crate::app_paths::support_dir()?;
-    let library = Library::new(root.join("meetings"));
-    let now = crate::desktop::events::now_ms();
-    let mut out = io::stdout().lock();
-    match command {
-        MeetingsCommand::List(args) => {
-            let query = ListQuery {
-                since: args.since.clone(),
-                until: args.until.clone(),
-                query: None,
-                limit: args.limit as usize,
-                include_in_progress: true,
-            };
-            if args.json {
-                let scan = library.list_matches(&query, now)?;
-                write_json(
-                    &mut out,
-                    &meeting_list_json(&scan, args.limit as usize, now),
-                )
-            } else {
-                write!(out, "{}", library.list(&query, now)?)?;
-                Ok(())
-            }
-        }
-        MeetingsCommand::Show {
-            id,
-            json,
-            from,
-            to,
-            chapter,
-            srt,
-            vtt,
-            ..
-        } => {
-            let subtitles = SubtitleFormat::from_flags(*srt, *vtt);
-            if subtitles.is_some() {
-                require_subtitle_export(crate::labs::subtitle_export())?;
-            }
-            let range = OffsetRange::parse(from.as_deref(), to.as_deref())?;
-            let meeting = resolve(&library, id)?;
-            if let Some(format) = subtitles {
-                let text = match chapter {
-                    Some(number) => {
-                        let view = meeting.chapter(*number, now)?;
-                        render_subtitles(view.entries.iter(), format)
-                    }
-                    None => render_subtitles(meeting.entries_in(range, now)?, format),
-                };
-                write!(out, "{text}")?;
-                return Ok(());
-            }
-            match (chapter, *json) {
-                (Some(number), true) => {
-                    write_json(&mut out, &meeting_chapter_json(&meeting, *number, now)?)
-                }
-                (Some(number), false) => {
-                    write!(
-                        out,
-                        "{}",
-                        library.chapter_markdown(&meeting.id, *number, now)?
-                    )?;
-                    Ok(())
-                }
-                (None, true) => write_json(&mut out, &meeting_json(&meeting, range, now)?),
-                (None, false) => {
-                    write!(out, "{}", library.markdown(&meeting.id, range, now)?)?;
-                    Ok(())
-                }
-            }
-        }
-        MeetingsCommand::Chapters { id, json } => {
-            let meeting = resolve(&library, id)?;
-            if *json {
-                write_json(&mut out, &meeting_chapters_json(&meeting, now))
-            } else {
-                write!(out, "{}", library.chapters(&meeting.id, now)?)?;
-                Ok(())
-            }
-        }
-        MeetingsCommand::Search {
-            query,
-            since,
-            until,
-            limit,
-        } => {
-            write!(
-                out,
-                "{}",
-                library.search(
-                    &SearchQuery {
-                        query: query.clone(),
-                        since: since.clone(),
-                        until: until.clone(),
-                        meeting_id: None,
-                        limit: *limit as usize,
-                        fuzzy: true,
-                        include_in_progress: true,
-                        vocabulary: crate::dictation::vocabulary::read_saved(&root),
-                    },
-                    now
-                )?
-            )?;
-            Ok(())
-        }
-        // `main` sends these to the running Hex.
-        MeetingsCommand::Record { .. }
-        | MeetingsCommand::Stop { .. }
-        | MeetingsCommand::CopyLast { .. } => Err(eyre!("this command needs the running Hex")),
-    }
-}
-
-/// A timed subtitle format for `hex meetings show --srt|--vtt`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SubtitleFormat {
-    Srt,
-    Vtt,
-}
-
-impl SubtitleFormat {
-    fn from_flags(srt: bool, vtt: bool) -> Option<Self> {
-        match (srt, vtt) {
-            (true, _) => Some(Self::Srt),
-            (false, true) => Some(Self::Vtt),
-            (false, false) => None,
-        }
-    }
-}
-
-/// Subtitle export is a Labs feature, refused before any meeting is read
-/// while its toggle is off.
-fn require_subtitle_export(on: bool) -> Result<()> {
-    if on {
-        Ok(())
-    } else {
-        Err(eyre!(
-            "Subtitle export is a Labs feature and is off. Turn it on with `hex labs on subtitle-export` or in Settings › Labs."
-        ))
-    }
-}
-
-/// One cue per transcript entry (a speaker turn), timed by the entry's
-/// offsets from the meeting's start and labelled You or Them.
-fn render_subtitles<'a>(
-    entries: impl IntoIterator<Item = &'a crate::meeting::TranscriptEntry>,
-    format: SubtitleFormat,
-) -> String {
-    let mut out = String::new();
-    if format == SubtitleFormat::Vtt {
-        out.push_str("WEBVTT\n\n");
-    }
-    let mut number = 0_usize;
-    for entry in entries {
-        let text = cue_text(&entry.text);
-        if text.is_empty() {
-            continue;
-        }
-        number += 1;
-        let start = entry.start_ms;
-        let end = entry.end_ms.max(start);
-        let speaker = entry.source.label();
-        match format {
-            SubtitleFormat::Srt => {
-                out.push_str(&format!(
-                    "{number}\n{} --> {}\n{speaker}: {text}\n\n",
-                    subtitle_time(start, ','),
-                    subtitle_time(end, ',')
-                ));
-            }
-            SubtitleFormat::Vtt => {
-                let text = text
-                    .replace('&', "&amp;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;");
-                out.push_str(&format!(
-                    "{} --> {}\n<v {speaker}>{text}\n\n",
-                    subtitle_time(start, '.'),
-                    subtitle_time(end, '.')
-                ));
-            }
-        }
-    }
-    out
-}
-
-/// The entry's text with blank lines and `-->` removed, so it can't end
-/// or break its cue.
-fn cue_text(text: &str) -> String {
-    text.replace("-->", "->")
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// `HH:MM:SS,mmm` (SRT) or `HH:MM:SS.mmm` (VTT); hours grow past 99.
-fn subtitle_time(ms: u64, separator: char) -> String {
-    let hours = ms / 3_600_000;
-    let minutes = ms / 60_000 % 60;
-    let seconds = ms / 1_000 % 60;
-    let millis = ms % 1_000;
-    format!("{hours:02}:{minutes:02}:{seconds:02}{separator}{millis:03}")
 }
 
 fn write_json(out: &mut impl Write, value: &impl Serialize) -> Result<()> {

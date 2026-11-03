@@ -1,7 +1,7 @@
 //! Labs: one flat sidebar item listing every Labs feature (`crate::labs`)
 //! as a row with a toggle, each off by default, plus Send feedback and Run
-//! setup again. A feature with its own pane (Meetings, Voice Filter,
-//! Playground) joins the main sidebar while on and is hidden while off.
+//! setup again. A feature with its own pane (Voice Filter, Playground)
+//! joins the main sidebar while on and is hidden while off.
 
 use rune::{El, Icon, Tx, row, text};
 
@@ -22,14 +22,13 @@ pub(super) static LABS_ICON: Icon = Icon {
 };
 
 /// The main sidebar's panes, in order: General, Output, History, then the
-/// features turned on (Meetings and Voice Filter from Labs, Annotate in dev
-/// builds).
+/// features turned on (Annotate, and Voice Filter from Labs).
 pub(super) fn main_panes(ui: &Ui) -> Vec<Pane> {
     let mut panes = vec![Pane::General, Pane::Output, Pane::History];
     #[cfg(hex_capture)]
-    let optional = [Pane::Meetings, Pane::Annotate, Pane::VoiceFilter];
+    let optional = [Pane::Annotate, Pane::VoiceFilter];
     #[cfg(not(hex_capture))]
-    let optional = [Pane::Meetings, Pane::VoiceFilter];
+    let optional = [Pane::VoiceFilter];
     panes.extend(optional.into_iter().filter(|pane| pane.shown(ui)));
     panes
 }
@@ -172,14 +171,6 @@ fn rows(ui: &Ui) -> Vec<Row> {
         None => row(feature, icon, title, about),
     };
     let mut rows = Vec::new();
-    if caps.meetings {
-        rows.push(row(
-            Feature::Meetings,
-            Pane::Meetings.icon(),
-            tr("Meetings (beta)"),
-            tr("Record calls and keep transcripts"),
-        ));
-    }
     if caps.fun && Feature::VoiceFilter.managed().is_some() {
         rows.push(row(
             Feature::VoiceFilter,
@@ -212,44 +203,6 @@ fn rows(ui: &Ui) -> Vec<Row> {
         tr("Live text"),
         tr("Show provisional words beside the HUD while dictating"),
     ));
-    if caps.meetings {
-        rows.push(row(
-            Feature::LiveChapters,
-            &HINTS,
-            tr("Live chapters"),
-            tr("Break meeting transcripts into chapters while recording"),
-        ));
-        rows.push(row(
-            Feature::SubtitleExport,
-            &HINTS,
-            tr("Subtitle export"),
-            tr("Export meeting transcripts as SRT or VTT subtitles with hex meetings show"),
-        ));
-        // macOS's meeting controller reads the call app's audio output, so
-        // Linux renders of macOS scenes leave it out.
-        if cfg!(target_os = "macos") {
-            rows.push(row(
-                Feature::StopWhenCallEnds,
-                &TIMER,
-                tr("Stop when the call ends"),
-                tr("Stop a recording Hex started on its own 30 s after the call app leaves the microphone and goes quiet"),
-            ));
-            // Only macOS's capsules know the screen to snap a drag against.
-            rows.push(row(
-                Feature::MovableMeetingCapsules,
-                &HINTS,
-                tr("Movable meeting capsules"),
-                tr("Drag meeting capsules out of the way; they come back in the corner you left them"),
-            ));
-            // Meeting notes run on macOS's meeting controller.
-            rows.push(row(
-                Feature::MeetingSummaryModel,
-                &SPARKLES,
-                tr("Choose meeting summary model"),
-                tr("Pick the OpenCode provider and model that write meeting titles and summaries, in Meetings › Settings › Advanced"),
-            ));
-        }
-    }
     rows.push(row(
         Feature::VocabularyBiasing,
         &BOOK,
@@ -493,11 +446,9 @@ fn rows(ui: &Ui) -> Vec<Row> {
 
 fn row_key(feature: Feature) -> &'static str {
     match feature {
-        Feature::Meetings => "lab-meetings",
         Feature::VoiceFilter => "lab-voice-filter",
         Feature::Playground => "lab-playground",
         Feature::LiveText => "lab-live-text",
-        Feature::LiveChapters => "lab-live-chapters",
         Feature::VocabularyBiasing => "lab-vocabulary-biasing",
         Feature::TerminalPaste => "lab-terminal-paste",
         Feature::KeyboardModelSwitching => "lab-keyboard-model-switching",
@@ -510,7 +461,6 @@ fn row_key(feature: Feature) -> &'static str {
         Feature::CopyOnly => "lab-copy-only",
         Feature::SpokenFormatting => "lab-spoken-formatting",
         Feature::FillerWords => "lab-filler-words",
-        Feature::SubtitleExport => "lab-subtitle-export",
         Feature::SecondDictationShortcut => "lab-second-dictation-shortcut",
         Feature::SmartSpacing => "lab-smart-spacing",
         Feature::SpokenSymbols => "lab-spoken-symbols",
@@ -523,7 +473,6 @@ fn row_key(feature: Feature) -> &'static str {
         Feature::HistoryStats => "lab-history-stats",
         Feature::RecentDictations => "lab-recent-dictations",
         Feature::SkipPauses => "lab-skip-pauses",
-        Feature::StopWhenCallEnds => "lab-stop-when-call-ends",
         Feature::OutputFixes => "lab-output-fixes",
         Feature::PickerActiveFirst => "lab-picker-active-first",
         Feature::ModelInPlace => "lab-model-in-place",
@@ -531,8 +480,6 @@ fn row_key(feature: Feature) -> &'static str {
         Feature::SectionKeyAlone => "lab-section-key",
         Feature::KeepRecordings => "lab-keep-recordings",
         Feature::HideMenuBarIcon => "lab-hide-menu-bar-icon",
-        Feature::MovableMeetingCapsules => "lab-movable-meeting-capsules",
-        Feature::MeetingSummaryModel => "lab-meeting-summary-model",
         Feature::GnomeClipboardRestore => "lab-gnome-clipboard-restore",
         Feature::CloudTranscription => "lab-cloud-transcription",
     }

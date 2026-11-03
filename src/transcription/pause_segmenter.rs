@@ -1,5 +1,5 @@
-//! Pause detection over 16 kHz meeting audio, so rolling transcription cuts
-//! chunks at natural pauses.
+//! Pause detection over 16 kHz audio, so rolling transcription cuts chunks at
+//! natural pauses.
 //!
 //! Speech is any 20 ms frame at least 12 dB above an adaptive noise floor and
 //! never quieter than -55 dBFS. The floor starts at the first frame, falls

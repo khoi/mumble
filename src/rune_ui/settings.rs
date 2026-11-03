@@ -375,7 +375,7 @@ pub(super) fn validate(
 }
 
 /// Whether `binding` overlaps a shortcut `target` must not share: the other
-/// active shortcuts and, where meetings exist (macOS), meeting paste.
+/// active shortcuts.
 pub(super) fn conflicts(
     settings: &AppSettings,
     target: ShortcutTarget,

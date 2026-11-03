@@ -7,8 +7,7 @@ use serde_json::Value;
 
 use super::ControlError;
 use crate::app_settings::{
-    AppSettings, CALENDAR_LEAD_MINUTES, HotkeyBinding, HotkeyKey, HotkeyModifiers, HotkeySlot,
-    ModifierSide,
+    AppSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, HotkeySlot, ModifierSide,
 };
 
 /// One setting as `hex settings get` reports it.
@@ -110,7 +109,7 @@ const UNIT: Kind = Kind::Number { min: 0.0, max: 1.0 };
 const MODEL_CHANGE: &str = "change the transcription model with `hex model use`";
 
 /// Choice keys whose values are numbers in settings.json.
-const NUMERIC_CHOICES: [&str; 2] = ["meetings.calendar.lead_minutes", "labs.unload_idle_minutes"];
+const NUMERIC_CHOICES: [&str; 1] = ["labs.unload_idle_minutes"];
 
 const KEYS: &[Key] = &[
     key(
@@ -269,11 +268,6 @@ const KEYS: &[Key] = &[
         "Labs: provisional words beside the HUD while dictating",
     ),
     key(
-        "labs.live_chapters",
-        Kind::Bool,
-        "Labs: chapter meeting transcripts while recording",
-    ),
-    key(
         "labs.playground",
         Kind::Bool,
         "Labs: the scene and story browser in the window",
@@ -327,11 +321,6 @@ const KEYS: &[Key] = &[
         "labs.filler_words",
         Kind::Bool,
         "Labs: remove filler words such as um and uh from dictations, without an AI model",
-    ),
-    key(
-        "labs.subtitle_export",
-        Kind::Bool,
-        "Labs: export meeting transcripts as SRT or VTT subtitles with hex meetings show --srt|--vtt",
     ),
     key(
         "labs.second_dictation_shortcut",
@@ -404,21 +393,6 @@ const KEYS: &[Key] = &[
         "Labs: a dictation transcribed as a whole clip hears only the start and end of each long pause, so slow computers paste sooner (Linux and Windows)",
     ),
     key(
-        "labs.stop_when_call_ends",
-        Kind::Bool,
-        "Labs: a meeting recording Hex started on its own stops 30 s after its call app leaves the microphone and goes quiet, unless you keep recording (macOS)",
-    ),
-    key(
-        "labs.movable_meeting_capsules",
-        Kind::Bool,
-        "Labs: drag meeting capsules such as Meeting transcript ready out of the way; they show in the corner you left them, shared with the recording capsule (macOS)",
-    ),
-    key(
-        "labs.meeting_summary_model",
-        Kind::Bool,
-        "Labs: meeting notes written with OpenCode use meetings.opencode_model, with no fallback to another model (macOS)",
-    ),
-    key(
         "labs.gnome_clipboard_restore",
         Kind::Bool,
         "Labs: on Wayland desktops without data-control, such as GNOME, a paste restores the previous clipboard through XWayland while it is already running (Linux)",
@@ -452,72 +426,6 @@ const KEYS: &[Key] = &[
         "labs.picker_downloaded",
         Kind::Bool,
         "Labs: the speech model picker's All speech models view offers Only downloaded models, with the space they take",
-    ),
-    key(
-        "meetings.enabled",
-        Kind::Bool,
-        "Labs: Meetings (beta), call detection, recording, and transcripts",
-    ),
-    optional(
-        "meetings.output_folder",
-        Kind::Path,
-        "Folder for meeting Markdown; none uses ~/Documents/Hex Meetings",
-    ),
-    key(
-        "meetings.summarize_with_apple_intelligence",
-        Kind::Bool,
-        "Title and summarize meetings with Apple Intelligence",
-    ),
-    key(
-        "meetings.summarize_with_opencode",
-        Kind::Bool,
-        "Title and summarize meetings with the OpenCode model (sends the transcript to it)",
-    ),
-    optional(
-        "meetings.opencode_model",
-        Kind::Text,
-        "The OpenCode provider/model meeting notes use, with labs.meeting_summary_model; none tries Hex's ranked fast models",
-    ),
-    key(
-        "meetings.show_recording_indicator",
-        Kind::Bool,
-        "Show the floating recording indicator during meetings",
-    ),
-    key(
-        "meetings.recording_indicator_corner",
-        Kind::Choice(&["top_right", "top_left", "bottom_right", "bottom_left"]),
-        "Screen corner of the meeting recording indicator",
-    ),
-    optional(
-        "meetings.retention",
-        Kind::Choice(&["day", "week", "month", "forever"]),
-        "How long finished meetings are kept before they move to the Trash; none keeps new meetings 24 hours and older ones until you choose",
-    ),
-    key(
-        "meetings.providers",
-        Kind::Json,
-        "Per-app call choices, as a JSON array of {key, label, policy: ask|always_record|never_offer}",
-    ),
-    read_only(
-        "meetings.calendar.connected",
-        Kind::Bool,
-        "A calendar is connected for meeting reminders",
-        "connect a calendar from Settings › Meetings, which asks macOS for access",
-    ),
-    key(
-        "meetings.calendar.excluded_calendars",
-        Kind::Json,
-        "Calendars left out of reminders, as a JSON array of EventKit identifiers",
-    ),
-    key(
-        "meetings.calendar.remind",
-        Kind::Bool,
-        "Remind before calendar meetings",
-    ),
-    key(
-        "meetings.calendar.lead_minutes",
-        Kind::Choice(&["0", "1", "2", "5"]),
-        "Minutes before a meeting its reminder shows",
     ),
     key(
         "experimental.hex_microphone",
@@ -652,13 +560,6 @@ const CAPTURE_KEYS: &[Key] = &[];
 /// `rune_ui::capabilities` name), the same one that shows their row in the
 /// window. The first matching prefix decides.
 const NEEDS: &[(&str, &str)] = &[
-    ("meetings.calendar.", "calendar"),
-    ("meetings.", "meetings"),
-    ("labs.live_chapters", "meetings"),
-    ("labs.subtitle_export", "meetings"),
-    ("labs.stop_when_call_ends", "meetings"),
-    ("labs.movable_meeting_capsules", "meetings"),
-    ("labs.meeting_summary_model", "meetings"),
     ("experimental.hex_microphone", "fun"),
     ("show_dock_icon", "dock_icon"),
     ("labs.hide_menu_bar_icon", "dock_icon"),
@@ -782,7 +683,7 @@ pub fn list(settings: &AppSettings) -> Vec<SettingValue> {
     keys().map(|key| value_of(key, &json)).collect()
 }
 
-/// One setting, or every setting under a prefix such as `meetings`.
+/// One setting, or every setting under a prefix such as `labs`.
 pub fn get(settings: &AppSettings, name: &str) -> Result<Vec<SettingValue>, ControlError> {
     if name == RECOGNITION_HINTS {
         return Ok(vec![recognition_hints(settings)]);
@@ -1141,11 +1042,7 @@ fn parse(key: &Key, raw: &str, shortcuts: &ShortcutRules) -> Result<Value, Contr
                 .iter()
                 .find(|choice| choice.to_ascii_lowercase().replace('-', "_") == normalized)
                 .ok_or_else(|| invalid(name, &format!("expected one of {}", choices.join(", "))))?;
-            Ok(if name == "meetings.calendar.lead_minutes" {
-                let minutes: u8 = choice.parse().expect("lead choices are numbers");
-                debug_assert!(CALENDAR_LEAD_MINUTES.contains(&minutes));
-                Value::from(minutes)
-            } else if name == "labs.unload_idle_minutes" {
+            Ok(if name == "labs.unload_idle_minutes" {
                 let minutes: u32 = choice.parse().expect("idle choices are numbers");
                 debug_assert!(crate::app_settings::UNLOAD_IDLE_MINUTES.contains(&minutes));
                 Value::from(minutes)
@@ -1345,18 +1242,11 @@ mod tests {
     fn a_managed_setting_is_refused() {
         use crate::policy::{Lock, Policy};
         let policy = Policy::default()
-            .with(Lock::Meetings)
             .with(Lock::Annotate)
             .with(Lock::OpenCodeProcessing);
-        for name in [
-            "meetings.enabled",
-            "capture.enabled",
-            "meetings.summarize_with_opencode",
-        ] {
-            let error = unavailable_under(name, policy).expect(name);
-            assert_eq!(error.code, "managed");
-            assert!(error.message.contains("managed by your organization"));
-        }
+        let error = unavailable_under("capture.enabled", policy).expect("capture.enabled");
+        assert_eq!(error.code, "managed");
+        assert!(error.message.contains("managed by your organization"));
         assert!(unavailable_under("sound_effects", policy).is_none());
         assert!(unavailable_under("labs.live_text", policy).is_none());
         let labs = Policy::default().with(Lock::Labs);
@@ -1424,11 +1314,6 @@ mod tests {
                 term: "Rune".into(),
                 sounds_like: vec!["roon".into()],
             }],
-            meetings: crate::app_settings::MeetingSettings {
-                retention: Some(crate::app_settings::MeetingRetention::Day),
-                opencode_model: Some("anthropic/claude-haiku".into()),
-                ..Default::default()
-            },
             ..Default::default()
         };
         let json = serde_json::to_value(settings).unwrap();
@@ -1561,10 +1446,10 @@ mod tests {
         let settings = AppSettings::default();
         let all = list(&settings);
         assert_eq!(all.len(), keys().count());
-        let calendar = get(&settings, "meetings.calendar").unwrap();
-        assert_eq!(calendar.len(), 4);
-        let lead = get(&settings, "meetings.calendar.lead_minutes").unwrap();
-        assert_eq!(lead[0].value, Value::String("1".into()));
+        let experimental = get(&settings, "experimental").unwrap();
+        assert_eq!(experimental.len(), 4);
+        let idle = get(&settings, "labs.unload_idle_minutes").unwrap();
+        assert_eq!(idle[0].value, Value::String("15".into()));
         assert_eq!(get(&settings, "nope").unwrap_err().code, "unknown-setting");
         let retention = get(&settings, "history_retention").unwrap();
         assert_eq!(retention[0].value, Value::String("week".into()));
@@ -1610,8 +1495,8 @@ mod tests {
             ("sound_effects", "maybe"),
             ("sound_effect_volume", "2"),
             ("shortcut_mode", "tap"),
-            ("meetings.calendar.lead_minutes", "3"),
-            ("meetings.output_folder", "relative/path"),
+            ("labs.unload_idle_minutes", "3"),
+            ("capture.folder", "relative/path"),
             ("dictation_processing.modes", "[{"),
         ] {
             assert_eq!(
@@ -1635,35 +1520,20 @@ mod tests {
             change.settings.shortcut_mode,
             crate::dictation::ShortcutMode::Toggle
         );
-        let change = apply(&settings, "meetings.calendar.lead_minutes", "5", &rules()).unwrap();
-        assert_eq!(change.settings.meetings.calendar.lead_minutes, 5);
+        let change = apply(&settings, "labs.unload_idle_minutes", "30", &rules()).unwrap();
+        assert_eq!(change.settings.labs.unload_idle_minutes, 30);
         let change = apply(&settings, "ui_language", "none", &rules()).unwrap();
         assert_eq!(change.settings.ui_language, None);
-        let change = apply(
-            &settings,
-            "meetings.opencode_model",
-            "anthropic/claude-haiku",
-            &rules(),
-        )
-        .unwrap();
+        let change = apply(&settings, "microphone", "USB Mic", &rules()).unwrap();
+        assert_eq!(change.settings.microphone.as_deref(), Some("USB Mic"));
         assert_eq!(
-            change.settings.meetings.opencode_model.as_deref(),
-            Some("anthropic/claude-haiku")
+            get(&change.settings, "microphone").unwrap()[0].value,
+            "USB Mic"
         );
-        assert_eq!(
-            get(&change.settings, "meetings.opencode_model").unwrap()[0].value,
-            "anthropic/claude-haiku"
-        );
-        let cleared = apply(
-            &change.settings,
-            "meetings.opencode_model",
-            "none",
-            &rules(),
-        )
-        .unwrap();
-        assert_eq!(cleared.settings.meetings.opencode_model, None);
+        let cleared = apply(&change.settings, "microphone", "none", &rules()).unwrap();
+        assert_eq!(cleared.settings.microphone, None);
         assert!(
-            get(&cleared.settings, "meetings.opencode_model").unwrap()[0]
+            get(&cleared.settings, "microphone").unwrap()[0]
                 .value
                 .is_null()
         );

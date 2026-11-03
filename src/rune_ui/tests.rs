@@ -3,7 +3,7 @@ use super::*;
 use crate::transcription::models::TranscriptionSelection;
 use rune::render::Gpu;
 use rune::text::TextSystem;
-use rune::{Env, Key, KeyEvent, Mods, Runtime};
+use rune::{Env, Key, KeyEvent, Mods, Runtime, TextEdit};
 
 /// Tall enough to show every General section without scrolling.
 const GOLDEN_SIZE: (f32, f32) = (980.0, 1720.0);
@@ -756,7 +756,7 @@ fn every_scene_stops_asking_for_frames() {
 
 #[test]
 fn the_sidebar_always_shows_output() {
-    for scene in ["portal", "mac-settings", "mac-production"] {
+    for scene in ["portal", "mac-settings"] {
         let rt = runtime(scene, true, PANE_SIZE);
         assert!(
             rt.find("nav-output").is_some(),
@@ -889,10 +889,9 @@ fn hovered_items(rt: &mut Runtime<Ui>, x: f32, y: f32) -> Vec<Pane> {
         .collect()
 }
 
-/// A sidebar with Labs features turned on, as a developer sees it.
+/// A sidebar with Labs features turned on.
 fn grouped_sidebar() -> Runtime<Ui> {
     let mut rt = runtime("mac-settings", true, PANE_SIZE);
-    rt.state.platform.developer = true;
     rt.state.labs_open = true;
     rt.invalidate();
     settle(&mut rt);

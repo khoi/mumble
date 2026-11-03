@@ -14,13 +14,6 @@ use crate::desktop::events::{
     CommandOutcome, DictationPhase, EventReader, TranscriptPhase, VoiceEvent, VoiceState,
 };
 use crate::dictation::context::ContextSnapshot;
-use crate::meeting::{self, MeetingManifest, MeetingStatus};
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum View {
-    Activity,
-    Meetings,
-}
 
 enum RecentAction<'a> {
     Command(&'a str, &'a CommandOutcome, &'a str),
@@ -35,56 +28,20 @@ pub fn run(path: PathBuf) -> Result<()> {
 }
 
 fn run_loop(terminal: &mut ratatui::DefaultTerminal, path: PathBuf) -> io::Result<()> {
-    let mut view = View::Activity;
-    let mut selected_meeting = 0;
     let mut events = EventReader::open(&path);
     loop {
         events.refresh()?;
-        let meetings = meeting::list().unwrap_or_default();
-        selected_meeting = selected_meeting.min(meetings.len().saturating_sub(1));
-        terminal.draw(|frame| {
-            draw(
-                frame,
-                events.events(),
-                view,
-                &path,
-                &meetings,
-                selected_meeting,
-            )
-        })?;
+        terminal.draw(|frame| draw(frame, events.events(), &path))?;
         if event::poll(Duration::from_millis(100))?
             && let TerminalEvent::Key(key) = event::read()?
+            && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
         {
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                KeyCode::Char('1') => view = View::Activity,
-                KeyCode::Char('2') => view = View::Meetings,
-                KeyCode::Down | KeyCode::Char('j') if view == View::Meetings => {
-                    selected_meeting = (selected_meeting + 1).min(meetings.len().saturating_sub(1));
-                }
-                KeyCode::Up | KeyCode::Char('k') if view == View::Meetings => {
-                    selected_meeting = selected_meeting.saturating_sub(1);
-                }
-                KeyCode::Tab => {
-                    view = match view {
-                        View::Activity => View::Meetings,
-                        View::Meetings => View::Activity,
-                    }
-                }
-                _ => {}
-            }
+            return Ok(());
         }
     }
 }
 
-fn draw(
-    frame: &mut ratatui::Frame,
-    events: &VecDeque<VoiceEvent>,
-    view: View,
-    path: &Path,
-    meetings: &[MeetingManifest],
-    selected_meeting: usize,
-) {
+fn draw(frame: &mut ratatui::Frame, events: &VecDeque<VoiceEvent>, path: &Path) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -221,83 +178,18 @@ fn draw(
         areas[1],
     );
 
-    match view {
-        View::Activity => draw_activity(frame, events, areas[2]),
-        View::Meetings => draw_meetings(frame, meetings, selected_meeting, areas[2]),
-    }
+    draw_activity(frame, events, areas[2]);
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("q/esc", Style::default().fg(Color::Cyan)),
             Span::raw(" quit  "),
-            Span::styled("1", tab_style(matches!(view, View::Activity))),
-            Span::raw(" log  "),
-            Span::styled("2", tab_style(matches!(view, View::Meetings))),
-            Span::raw(" meetings  "),
             Span::styled(
                 path.display().to_string(),
                 Style::default().fg(Color::DarkGray),
             ),
         ])),
         areas[3],
-    );
-}
-
-fn draw_meetings(
-    frame: &mut ratatui::Frame,
-    meetings: &[MeetingManifest],
-    selected: usize,
-    area: ratatui::layout::Rect,
-) {
-    let direction = if area.width >= 90 {
-        Direction::Horizontal
-    } else {
-        Direction::Vertical
-    };
-    let panes = Layout::default()
-        .direction(direction)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(area);
-    let rows: Vec<_> = meetings
-        .iter()
-        .enumerate()
-        .map(|(index, meeting)| {
-            let marker = if index == selected { "›" } else { " " };
-            let (status, color) = match meeting.status {
-                MeetingStatus::Starting => ("...", Color::Yellow),
-                MeetingStatus::Recording => ("REC", Color::Red),
-                MeetingStatus::Transcribing => ("ASR", Color::Cyan),
-                MeetingStatus::Complete => ("OK ", Color::Green),
-                MeetingStatus::Interrupted => ("INT", Color::Yellow),
-                MeetingStatus::Failed => ("ERR", Color::Red),
-            };
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{marker} {status} "), Style::default().fg(color)),
-                Span::raw(&meeting.title),
-                Span::styled(
-                    format!(
-                        "  {}",
-                        meeting::format_duration(meeting.duration_ms.unwrap_or_default())
-                    ),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]))
-        })
-        .collect();
-    frame.render_widget(
-        List::new(rows).block(Block::default().title(" Meetings ").borders(Borders::ALL)),
-        panes[0],
-    );
-
-    let transcript = meetings
-        .get(selected)
-        .and_then(|meeting| meeting::show(&meeting.id).ok())
-        .unwrap_or_else(|| "No transcript available".into());
-    frame.render_widget(
-        Paragraph::new(transcript)
-            .wrap(Wrap { trim: false })
-            .block(Block::default().title(" Transcript ").borders(Borders::ALL)),
-        panes[1],
     );
 }
 
@@ -459,16 +351,5 @@ fn dictation_color(phase: &DictationPhase) -> Color {
         DictationPhase::Discarded => Color::DarkGray,
         DictationPhase::Cancelled => Color::Yellow,
         DictationPhase::Failed(_) => Color::Red,
-    }
-}
-
-fn tab_style(active: bool) -> Style {
-    if active {
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::Cyan)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::Cyan)
     }
 }

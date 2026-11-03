@@ -24,8 +24,8 @@ pub struct CaptureSettings {
     /// router settings, imported once from Scrawl.
     pub routing: CaptureRouting,
     /// Lets screen recordings, Hex's own captures included, show Hex's
-    /// overlays: the capture capsule, picker, and ink, the dictation HUD,
-    /// and the meeting capsules. Off keeps them out (`capture_host`).
+    /// overlays: the capture capsule, picker, and ink, and the dictation
+    /// HUD. Off keeps them out (`capture_host`).
     pub show_overlays_in_recordings: bool,
     /// How the capsule offers where to send a finished capture, while Kit
     /// compares the directions.

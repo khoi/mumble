@@ -1,6 +1,5 @@
 use super::*;
-use crate::app_settings::{MeetingRetention, MeetingSettings, RecordingAudioBehavior};
-use serde::Deserialize;
+use crate::app_settings::RecordingAudioBehavior;
 use serde_json::json;
 use std::sync::atomic::Ordering;
 
@@ -42,43 +41,8 @@ impl Drop for SettingsFile {
 }
 
 #[test]
-fn unset_retention_saves_a_shape_older_hex_can_read() {
-    // The meeting field in 46c3c762 was non-optional, defaulting to Forever.
-    #[derive(Deserialize)]
-    struct OldMeetings {
-        #[serde(default = "forever")]
-        retention: MeetingRetention,
-    }
-    fn forever() -> MeetingRetention {
-        MeetingRetention::Forever
-    }
-    assert!(serde_json::from_str::<OldMeetings>(r#"{"retention":null}"#).is_err());
-    let settings: MeetingSettings = serde_json::from_str(r#"{"retention":null}"#).unwrap();
-    assert_eq!(settings.retention, None);
-    let written = serde_json::to_value(settings).unwrap();
-    assert!(written.get("retention").is_none());
-    let older: OldMeetings = serde_json::from_value(written.clone()).unwrap();
-    assert_eq!(older.retention, MeetingRetention::Forever);
-    let current: MeetingSettings = serde_json::from_value(written).unwrap();
-    assert_eq!(current.retention, None);
-    for retention in MeetingRetention::ALL {
-        let written = serde_json::to_value(MeetingSettings {
-            retention: Some(retention),
-            ..Default::default()
-        })
-        .unwrap();
-        assert_eq!(
-            serde_json::from_value::<OldMeetings>(written)
-                .unwrap()
-                .retention,
-            retention
-        );
-    }
-}
-
-#[test]
 fn invalid_enum_resets_only_that_field_and_leaves_disk_alone() {
-    let original = br#"{"recording_audio_behavior":"future-mode","sound_effect_volume":0.37,"meetings":{"enabled":true}}"#;
+    let original = br#"{"recording_audio_behavior":"future-mode","sound_effect_volume":0.37,"labs":{"live_text":true}}"#;
     let file = SettingsFile::new(original);
     let settings = AppSettings::load_from(&file.path).unwrap();
     assert_eq!(
@@ -86,7 +50,7 @@ fn invalid_enum_resets_only_that_field_and_leaves_disk_alone() {
         RecordingAudioBehavior::default()
     );
     assert_eq!(settings.sound_effect_volume, 0.37);
-    assert!(settings.meetings.enabled);
+    assert!(settings.labs.live_text);
     assert_eq!(fs::read(&file.path).unwrap(), original);
     assert!(file.backups().is_empty());
 }
@@ -100,7 +64,7 @@ fn unbound_optional_shortcuts_stay_unbound_after_saving() {
         ..Default::default()
     };
     let value = serde_json::to_value(&settings).unwrap();
-    // Unlike retention, omitting Paste Last would restore a bound default.
+    // Omitting Paste Last would restore a bound default.
     assert_eq!(value.get("paste_last_hotkey"), Some(&Value::Null));
     let loaded: AppSettings = serde_json::from_value(value).unwrap();
     assert!(loaded.paste_last_hotkey.is_none());
@@ -127,39 +91,50 @@ fn invalid_transcription_language_keeps_unrelated_settings() {
 #[test]
 fn wrong_nested_type_and_multiple_bad_fields_keep_siblings() {
     let file = SettingsFile::new(br#"{
-        "meetings":{"enabled":true,"calendar":{"connected":true,"lead_minutes":"soon","remind":false}},
+        "dictation_processing":{"default_mode":{"applications":["Xcode"],"post_processing":{"enabled":true,"deadline_seconds":"soon","prompt":"Tidy it"}}},
         "sound_effects":[], "recording_audio_behavior":"unknown", "microphone":"USB mic"
     }"#);
     let settings = AppSettings::load_from(&file.path).unwrap();
-    assert!(settings.meetings.enabled);
-    assert!(settings.meetings.calendar.connected);
-    assert!(!settings.meetings.calendar.remind);
-    assert_eq!(settings.meetings.calendar.lead_minutes, 1);
+    let mode = &settings.dictation_processing.default_mode;
+    assert_eq!(mode.applications, ["Xcode"]);
+    assert!(mode.post_processing.enabled);
+    assert_eq!(mode.post_processing.prompt, "Tidy it");
+    assert_eq!(
+        mode.post_processing.deadline_seconds,
+        crate::app_settings::DictationPostProcessing::default().deadline_seconds
+    );
     assert!(settings.sound_effects);
     assert_eq!(settings.microphone.as_deref(), Some("USB mic"));
 }
 
 #[test]
-fn bad_list_entries_do_not_discard_good_entries() {
+fn bad_entries_do_not_discard_good_entries() {
     let (settings, repaired) = decode(
-        br#"{"meetings":{"providers":[
-        {"key":"good","label":"Good","policy":"always_record"},
-        {"key":42,"label":"Bad"},
-        {"key":"kept","label":"Kept","policy":"unknown"}
+        br#"{"keyboard_model_switching":{"mappings":{
+        "good":{"model":"parakeet_v3","language":"en"},
+        "bad":{"model":42,"language":"en"},
+        "partial":{"language":"de"}
+    }},"dictation_processing":{"modes":[
+        {"name":"Code","applications":["Xcode"]},
+        {"name":"Mail","applications":"Mail"}
     ]}}"#,
     );
     assert!(repaired);
-    assert_eq!(settings.meetings.providers.len(), 2);
-    assert_eq!(settings.meetings.providers[0].key, "good");
-    assert_eq!(settings.meetings.providers[1].key, "kept");
+    let mappings = &settings.keyboard_model_switching.mappings;
+    assert_eq!(mappings.keys().collect::<Vec<_>>(), ["good"]);
+    let modes = &settings.dictation_processing.modes;
+    assert_eq!(modes.len(), 2);
+    assert_eq!(modes[0].applications, ["Xcode"]);
+    assert_eq!(modes[1].name, "Mail");
+    assert!(modes[1].applications.is_empty());
 }
 
 #[test]
 fn unknown_keys_are_ignored_without_repair() {
     let (settings, repaired) =
-        decode(br#"{"future":{"flag":true},"meetings":{"future":42,"enabled":true}}"#);
+        decode(br#"{"future":{"flag":true},"labs":{"future":42,"live_text":true}}"#);
     assert!(!repaired);
-    assert!(settings.meetings.enabled);
+    assert!(settings.labs.live_text);
 }
 
 #[test]
@@ -262,30 +237,22 @@ fn unreadable_file_does_not_block_load_or_get_overwritten() {
 #[test]
 fn a_managed_lock_reads_off_and_never_rewrites_the_saved_switch() {
     use crate::policy::{Lock, Policy};
-    let file = SettingsFile::new(
-        br#"{"meetings":{"enabled":true,"summarize_with_opencode":true},"labs":{"live_text":true}}"#,
-    );
-    let policy = Policy::default()
-        .with(Lock::Meetings)
-        .with(Lock::OpenCodeProcessing)
-        .with(Lock::Labs);
+    let file = SettingsFile::new(br#"{"labs":{"live_text":true}}"#);
+    let policy = Policy::default().with(Lock::Labs);
     let (mut settings, _) = AppSettings::read_managed_from(&file.path, policy).unwrap();
-    assert!(!settings.meetings.enabled);
-    assert!(!settings.meetings.summarize_with_opencode);
     assert!(!settings.labs.live_text);
 
     // Saving another change, or the locked switch itself, keeps the file's.
     settings.sound_effects = false;
-    settings.meetings.enabled = true;
+    settings.labs.playground = true;
     settings.write_managed_to(&file.path, policy).unwrap();
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(&file.path).unwrap()).unwrap();
-    assert_eq!(saved["meetings"]["enabled"], json!(true));
-    assert_eq!(saved["meetings"]["summarize_with_opencode"], json!(true));
     assert_eq!(saved["labs"]["live_text"], json!(true));
+    assert_eq!(saved["labs"]["playground"], json!(false));
     assert_eq!(saved["sound_effects"], json!(false));
 
     // Without the policy the user's own choices come back.
     let (unmanaged, _) = AppSettings::read_managed_from(&file.path, Policy::default()).unwrap();
-    assert!(unmanaged.meetings.enabled);
     assert!(unmanaged.labs.live_text);
+    assert!(!unmanaged.labs.playground);
 }

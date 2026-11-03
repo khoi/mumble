@@ -1,7 +1,7 @@
 //! The macOS window's host: the runtime thread `macos_rune` starts in this
 //! process, which owns model preparation and publishes the listener, model,
 //! update, and settings state, plus the OS-only work the panes ask for
-//! (permissions, the login item, Hex Microphone, meetings).
+//! (permissions, the login item, Hex Microphone).
 //!
 //! Shortcut capture stays in the window: an AppKit local event
 //! monitor records the chord, because a modifier-only binding such as Option
@@ -9,7 +9,6 @@
 //! suspended meanwhile so the current binding can be recorded again.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::ptr::NonNull;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
@@ -22,19 +21,14 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{NSEvent, NSEventMask, NSEventType};
 
-use super::meetings::Meeting;
-use super::meetings_host::MeetingFeed;
 use super::platform::{
-    CalendarRequest, CalendarView, HudDemo, HudLab, MeetingRequest, NativeHost, NotesAvailability,
-    PlatformRequest, PlatformState, UpcomingMeeting, poll_voice_filter, voice_filter_request,
+    HudDemo, HudLab, NativeHost, PlatformRequest, PlatformState, poll_voice_filter,
+    voice_filter_request,
 };
 use super::practice::PracticeFeed;
 use super::settings::Chord;
 use super::{HostState, ServiceView};
-use crate::app_settings::{
-    CalendarSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, modifiers_from_flags,
-};
-use crate::calendar::{AccessAnswer, CalendarAccess, CalendarSnapshot};
+use crate::app_settings::{HotkeyBinding, HotkeyKey, HotkeyModifiers, modifiers_from_flags};
 use crate::desktop::host::DesktopAction;
 use crate::desktop::i18n::tr;
 use crate::desktop::login_item::{LoginItemFailure, LoginItemRequest, LoginItemWorker};
@@ -53,9 +47,6 @@ pub(super) const QUIT_IN_WINDOW: bool = false;
 
 /// How often the native host re-reads permissions and driver state.
 const PLATFORM_REFRESH: Duration = Duration::from_secs(1);
-/// How often the Calendar card rereads EventKit when nothing changed, so
-/// started meetings leave the list.
-const CALENDAR_REFRESH: Duration = Duration::from_secs(30);
 const ESCAPE_KEY_CODE: u16 = 53;
 
 /// The runtime is found through its own module; nothing is handed over.
@@ -526,14 +517,8 @@ struct MacHost {
     wake: Arc<dyn Fn() + Send + Sync>,
     login: Option<LoginItemWorker>,
     login_checking: bool,
-    folder_error: Option<String>,
     refresh_at: Instant,
-    notes: Option<NotesAvailability>,
-    meetings: MeetingFeed,
     practice: Option<PracticeFeed>,
-    /// The meetings folder panel, while it is open.
-    folder_choice: Option<crate::desktop::file_dialog::Pending>,
-    calendar: CalendarFeed,
     /// Tracks System Settings return timing for Accessibility, System Audio,
     /// and Screen Recording.
     stale: [StalePermissionTracker; 3],
@@ -555,13 +540,8 @@ impl MacHost {
             wake,
             login,
             login_checking: false,
-            folder_error: None,
             refresh_at: Instant::now(),
-            notes: None,
-            meetings: MeetingFeed::default(),
             practice: None,
-            folder_choice: None,
-            calendar: CalendarFeed::default(),
             stale: Default::default(),
             resetting: [false; 3],
             reset_tx,
@@ -594,9 +574,9 @@ impl MacHost {
                 }
             }
             PermissionKind::SystemAudio => {
-                crate::meeting::reset_system_audio_request();
-                if !crate::meeting::system_audio_ready()
-                    && !crate::meeting::request_system_audio_access()
+                crate::audio::system_audio::reset_request();
+                if !crate::audio::system_audio::ready()
+                    && !crate::audio::system_audio::request_access()
                 {
                     crate::desktop::permission_guide::show(PermissionKind::SystemAudio);
                 }
@@ -604,8 +584,8 @@ impl MacHost {
             PermissionKind::ScreenRecording => {
                 #[cfg(hex_capture)]
                 crate::capture_host::invalidate_screen_access();
-                if !crate::meeting::screen_recording_permitted() {
-                    let _ = crate::meeting::request_screen_recording();
+                if !crate::capture_host::screen_recording_permitted() {
+                    let _ = crate::capture_host::request_screen_recording();
                     crate::desktop::permission_guide::show(PermissionKind::ScreenRecording);
                 }
             }
@@ -628,48 +608,6 @@ impl MacHost {
 
     fn runtime(&self) -> Result<RuntimeHandle, String> {
         crate::macos_rune::runtime().ok_or_else(|| "Hex's runtime is not running".into())
-    }
-
-    fn meeting(&mut self, request: MeetingRequest) -> Result<(), String> {
-        match request {
-            MeetingRequest::Start => self
-                .runtime()?
-                .meeting(crate::meeting::MeetingRequest::Start { title: None }),
-            MeetingRequest::Stop => self
-                .runtime()?
-                .meeting(crate::meeting::MeetingRequest::Stop),
-            MeetingRequest::Summarize(id) => self
-                .runtime()?
-                .meeting(crate::meeting::MeetingRequest::Summarize(id)),
-            MeetingRequest::Rename { id, title } => crate::meeting::rename(&id, &title)
-                .map(|_| ())
-                .map_err(|error| format!("{error:#}")),
-            MeetingRequest::Trash(id) => {
-                crate::meeting::trash(&id).map_err(|error| format!("{error:#}"))
-            }
-            MeetingRequest::Reveal(id) => {
-                let root = crate::meeting::root().map_err(|error| format!("{error:#}"))?;
-                open_path(&root.join(id));
-                Ok(())
-            }
-            MeetingRequest::RevealFolder => {
-                let folder = crate::app_settings::meeting_output_folder();
-                match std::fs::create_dir_all(&folder) {
-                    Ok(()) => {
-                        crate::meeting::reveal(&folder);
-                        self.folder_error = None;
-                    }
-                    Err(error) => self.folder_error = Some(error.to_string()),
-                }
-                Ok(())
-            }
-            MeetingRequest::ChooseFolder => {
-                if self.folder_choice.is_none() {
-                    self.folder_choice = Some(choose_folder());
-                }
-                Ok(())
-            }
-        }
     }
 }
 
@@ -717,7 +655,7 @@ impl NativeHost for MacHost {
                 );
                 // macOS prompts once; after that the switch is in System
                 // Settings, with the guide beside it.
-                if !crate::meeting::request_system_audio_access() {
+                if !crate::audio::system_audio::request_access() {
                     crate::desktop::permission_guide::show(PermissionKind::SystemAudio);
                 }
             }
@@ -731,12 +669,6 @@ impl NativeHost for MacHost {
             | PlatformRequest::UninstallHexMicrophone
             | PlatformRequest::SetTuning(_)
             | PlatformRequest::HexMicrophoneDemo(_) => voice_filter_request(request),
-            PlatformRequest::Meeting(request) => self.meeting(request)?,
-            PlatformRequest::Calendar(CalendarRequest::Connect) => self.calendar.connect(),
-            PlatformRequest::Calendar(CalendarRequest::OpenPrivacySettings) => {
-                self.calendar.opening_privacy_settings();
-                crate::calendar::open_privacy_settings();
-            }
             PlatformRequest::Relaunch => {
                 if let Err(error) = crate::desktop::onboarding::record_relaunch(
                     crate::desktop::onboarding::unix_ms(),
@@ -802,15 +734,6 @@ impl NativeHost for MacHost {
                 }
             }
         }
-        if let Some(choice) = self.folder_choice.as_ref().and_then(|p| p.poll()) {
-            self.folder_choice = None;
-            match choice {
-                Ok(Some(folder)) => self.folder_error = save_meetings_folder(folder).err(),
-                Ok(None) => {}
-                Err(error) => self.folder_error = Some(error),
-            }
-            changed = true;
-        }
         let refresh = Instant::now() >= self.refresh_at;
         changed |= poll_voice_filter(state, refresh);
         #[cfg(hex_capture)]
@@ -835,7 +758,6 @@ impl NativeHost for MacHost {
                 },
             );
         }
-        changed |= self.calendar.poll(&mut state.calendar);
         changed |= update(
             &mut state.accessibility_renamed,
             crate::desktop::permission_guide::list_name(PermissionKind::Accessibility)
@@ -850,7 +772,7 @@ impl NativeHost for MacHost {
         let permissions = crate::desktop::onboarding::status_with_transcription_model(
             state.permissions.transcription_model,
         );
-        let system_audio = crate::meeting::system_audio_ready();
+        let system_audio = crate::audio::system_audio::ready();
         changed |= update(&mut state.permissions, permissions);
         changed |= update(&mut state.system_audio, system_audio);
         let asked_len = state.permissions_asked.len();
@@ -900,16 +822,7 @@ impl NativeHost for MacHost {
         }
         changed |= update(&mut state.permissions_stale, next_stale);
         changed |= update(&mut state.login_item_checking, self.login_checking);
-        changed |= update(
-            &mut state.notes,
-            *self.notes.get_or_insert_with(notes_availability),
-        );
-        changed |= update(&mut state.meeting_folder_error, self.folder_error.clone());
         changed
-    }
-
-    fn meetings(&mut self) -> Option<Result<Vec<Meeting>, String>> {
-        self.meetings.poll()
     }
 
     fn tour_inputs(&mut self, practicing: bool) -> Vec<Input> {
@@ -936,290 +849,6 @@ impl NativeHost for MacHost {
     }
 }
 
-/// The Calendar card's state. EventKit is touched only on the reader thread,
-/// never the window's. Connect asks macOS once, on the person's click.
-#[derive(Default)]
-struct CalendarFeed {
-    connect: Option<Receiver<AccessAnswer>>,
-    reader: Option<CalendarReader>,
-    connect_error: Option<String>,
-    /// macOS's last answer in this process. EventKit's status can keep
-    /// saying "not determined" after it until Hex relaunches; once the reader
-    /// sees a decision, that is current and this is forgotten.
-    answered: Option<CalendarAccess>,
-    /// The person asked Hex to connect (Connect, or Open settings from the
-    /// blocked card) and it is not saved yet, so full access granted in System
-    /// Settings afterwards connects. A grant Hex did not start never does.
-    asked: bool,
-}
-
-struct CalendarReader {
-    snapshots: Receiver<CalendarSnapshot>,
-    /// Dropping this stops the reader thread.
-    _stop: mpsc::SyncSender<()>,
-}
-
-/// The Calendar card's reader: rereads when the settings, macOS access, or
-/// (once connected) the EventKit store change, and every
-/// [`CALENDAR_REFRESH`] so started meetings leave the list.
-fn calendar_reader(snapshots: mpsc::SyncSender<CalendarSnapshot>, stop: Receiver<()>) {
-    let mut read_for: Option<(CalendarSettings, CalendarAccess, u64)> = None;
-    let mut read_at: Option<Instant> = None;
-    let mut logged: Option<(CalendarAccess, bool, usize, Option<String>)> = None;
-    let mut wait = Duration::ZERO;
-    loop {
-        if let Err(mpsc::RecvTimeoutError::Disconnected) = stop.recv_timeout(wait) {
-            return;
-        }
-        wait = PLATFORM_REFRESH;
-        if !crate::app_settings::meetings_enabled() {
-            read_for = None;
-            continue;
-        }
-        let settings = crate::app_settings::calendar_settings();
-        let changes = if settings.connected {
-            crate::calendar::change_count()
-        } else {
-            0
-        };
-        let key = (settings.clone(), crate::calendar::access(), changes);
-        if read_for.as_ref() == Some(&key)
-            && read_at.is_some_and(|at| at.elapsed() < CALENDAR_REFRESH)
-        {
-            continue;
-        }
-        let snapshot = crate::calendar::snapshot(&settings, crate::calendar::wall_clock_ms());
-        let summary = (
-            snapshot.access,
-            settings.connected,
-            snapshot.calendars.len(),
-            snapshot.error.clone(),
-        );
-        if logged.as_ref() != Some(&summary) {
-            tracing::info!(
-                access = ?snapshot.access,
-                connected = settings.connected,
-                calendars = snapshot.calendars.len(),
-                upcoming = snapshot.upcoming.len(),
-                error = snapshot.error.as_deref().unwrap_or(""),
-                "calendar: read"
-            );
-            logged = Some(summary);
-        }
-        read_for = Some(key);
-        read_at = Some(Instant::now());
-        // The window dropped its feed: stop.
-        if snapshots.send(snapshot).is_err() {
-            return;
-        }
-    }
-}
-
-impl CalendarFeed {
-    fn connect(&mut self) {
-        if self.connect.is_some() {
-            tracing::info!("calendar: connect clicked while macOS is still asking");
-            return;
-        }
-        tracing::info!("calendar: connect clicked; asking macOS for full access");
-        self.asked = true;
-        let (sender, receiver) = mpsc::sync_channel(1);
-        let spawned = std::thread::Builder::new()
-            .name("hex-calendar-connect".into())
-            .spawn(move || {
-                let _ = sender.send(crate::calendar::request_access());
-            });
-        match spawned {
-            Ok(_) => {
-                self.connect = Some(receiver);
-                self.connect_error = None;
-            }
-            Err(error) => {
-                tracing::warn!(%error, "calendar: could not start the access request");
-                self.connect_error = Some(error.to_string());
-            }
-        }
-    }
-
-    /// Open settings on the blocked card: switching Hex on there connects.
-    fn opening_privacy_settings(&mut self) {
-        tracing::info!("calendar: opening Privacy & Security › Calendars");
-        self.asked = true;
-    }
-
-    /// Applies macOS's answer: a grant marks the calendar connected (through
-    /// `save`) and shows full access; anything else shows what macOS left.
-    fn answer(
-        &mut self,
-        answer: &AccessAnswer,
-        view: &mut CalendarView,
-        save: impl FnOnce() -> Result<(), String>,
-    ) {
-        let access = answer.access();
-        tracing::info!(
-            granted = answer.granted,
-            status = ?answer.status,
-            error = answer.error.as_deref().unwrap_or(""),
-            ?access,
-            "calendar: macOS answered"
-        );
-        self.connect_error = answer.error.clone();
-        if access != CalendarAccess::NotDetermined {
-            self.answered = Some(access);
-        }
-        if access == CalendarAccess::FullAccess {
-            self.save_connected(save);
-        }
-        view.access = access;
-        view.error = self.connect_error.clone();
-    }
-
-    fn save_connected(&mut self, save: impl FnOnce() -> Result<(), String>) {
-        match save() {
-            Ok(()) => {
-                tracing::info!("calendar: saved connected; settings reloading");
-                self.asked = false;
-            }
-            Err(error) => {
-                tracing::warn!(%error, "calendar: could not save connected");
-                self.connect_error = Some(error);
-            }
-        }
-    }
-
-    /// Takes a reader snapshot: forgets the answer once EventKit reports a
-    /// decision, and connects when full access arrives after the person asked
-    /// Hex to connect (refused the prompt, then switched Hex on in System
-    /// Settings).
-    fn read(
-        &mut self,
-        snapshot: CalendarSnapshot,
-        connected: bool,
-        view: &CalendarView,
-        now_ms: i64,
-        save: impl FnOnce() -> Result<(), String>,
-    ) -> CalendarView {
-        if snapshot.access != CalendarAccess::NotDetermined {
-            self.answered = None;
-        }
-        if self.asked && !connected && snapshot.access == CalendarAccess::FullAccess {
-            tracing::info!("calendar: full access granted after connect; connecting");
-            self.connect_error = None;
-            self.save_connected(save);
-        }
-        self.shown(snapshot, view, now_ms)
-    }
-
-    /// A reader snapshot as the card shows it.
-    fn shown(&self, snapshot: CalendarSnapshot, view: &CalendarView, now_ms: i64) -> CalendarView {
-        let access = match (snapshot.access, self.answered) {
-            (CalendarAccess::NotDetermined, Some(answered)) => answered,
-            (access, _) => access,
-        };
-        CalendarView {
-            access,
-            calendars: snapshot.calendars,
-            upcoming: snapshot
-                .upcoming
-                .iter()
-                .map(|meeting| upcoming_meeting(meeting, now_ms))
-                .collect(),
-            connecting: view.connecting,
-            error: snapshot.error.or_else(|| self.connect_error.clone()),
-        }
-    }
-
-    fn poll(&mut self, view: &mut CalendarView) -> bool {
-        let mut changed = false;
-        if let Some(receiver) = &self.connect
-            && let Ok(answer) = receiver.try_recv()
-        {
-            self.connect = None;
-            self.answer(&answer, view, save_calendar_connected);
-            changed = true;
-        }
-        changed |= update(&mut view.connecting, self.connect.is_some());
-        if self.reader.is_none() && crate::app_settings::meetings_enabled() {
-            let (sender, snapshots) = mpsc::sync_channel(1);
-            let (stop, stopped) = mpsc::sync_channel(1);
-            let spawned = std::thread::Builder::new()
-                .name("hex-calendar-read".into())
-                .spawn(move || calendar_reader(sender, stopped));
-            match spawned {
-                Ok(_) => {
-                    self.reader = Some(CalendarReader {
-                        snapshots,
-                        _stop: stop,
-                    });
-                }
-                Err(error) => tracing::warn!(%error, "calendar: could not start the reader"),
-            }
-        }
-        if let Some(reader) = &self.reader
-            && let Ok(snapshot) = reader.snapshots.try_recv()
-        {
-            let connected = crate::app_settings::calendar_settings().connected;
-            let shown = self.read(
-                snapshot,
-                connected,
-                view,
-                crate::calendar::wall_clock_ms(),
-                save_calendar_connected,
-            );
-            changed |= update(view, shown);
-        }
-        changed
-    }
-}
-
-/// One upcoming meeting as the Calendar card lists it: "Today · 2:30 PM".
-fn upcoming_meeting(meeting: &crate::calendar::CalendarMeeting, now_ms: i64) -> UpcomingMeeting {
-    let start = meeting.start_ms.max(0) as u64;
-    let now = now_ms.max(0) as u64;
-    let day = if crate::meeting::day_label(start, now) == "Today" {
-        tr("Today").to_string()
-    } else if crate::meeting::day_label(start, now + 86_400_000) == "Today" {
-        tr("Tomorrow").to_string()
-    } else {
-        crate::meeting::day_label(start, now)
-    };
-    UpcomingMeeting {
-        title: meeting.display_title(),
-        when: format!("{day} · {}", crate::meeting::clock(start)),
-        provider: meeting.link.as_ref().map(|link| link.provider),
-    }
-}
-
-/// Marks the calendar connected after macOS granted access; the runtime
-/// publishes it to the window and starts reminders.
-fn save_calendar_connected() -> Result<(), String> {
-    let mut settings =
-        crate::app_settings::AppSettings::load().map_err(|error| format!("{error:#}"))?;
-    settings.meetings.calendar.connected = true;
-    settings.save().map_err(|error| format!("{error:#}"))?;
-    match crate::macos_rune::runtime() {
-        Some(runtime) => runtime
-            .send(Request::ReloadSettings)
-            .map_err(|error| format!("{error:#}"))?,
-        None => tracing::warn!("calendar: no runtime to reload settings"),
-    }
-    Ok(())
-}
-
-/// Opens the folder panel beside the window, starting at the current
-/// meetings folder.
-fn choose_folder() -> crate::desktop::file_dialog::Pending {
-    use crate::desktop::file_dialog::{Dialog, Target};
-    crate::desktop::file_dialog::open(
-        Dialog {
-            title: tr("Transcript folder").into(),
-            target: Target::Folder,
-            directory: Some(crate::app_settings::meeting_output_folder()),
-        },
-        || crate::macos_rune::on_main_thread(|| {}),
-    )
-}
-
 /// The Scrawl pane's OS work: Scrawl's own app and the captures folder.
 /// Its Screen Recording Allow opens the permission guide.
 #[cfg(hex_capture)]
@@ -1241,7 +870,7 @@ impl ScrawlHost {
                 let folder = crate::app_settings::capture_settings().captures_dir();
                 match std::fs::create_dir_all(&folder) {
                     Ok(()) => {
-                        crate::meeting::reveal(&folder);
+                        reveal(&folder);
                         self.folder_error = None;
                     }
                     Err(error) => self.folder_error = Some(error.to_string()),
@@ -1316,20 +945,6 @@ fn save_settings(change: impl FnOnce(&mut crate::app_settings::AppSettings)) -> 
     Ok(())
 }
 
-/// Saves the chosen meetings folder; the runtime publishes it to the window.
-fn save_meetings_folder(folder: PathBuf) -> Result<(), String> {
-    let mut settings =
-        crate::app_settings::AppSettings::load().map_err(|error| format!("{error:#}"))?;
-    settings.meetings.output_folder = Some(folder);
-    settings.save().map_err(|error| format!("{error:#}"))?;
-    if let Some(runtime) = crate::macos_rune::runtime() {
-        runtime
-            .send(Request::ReloadSettings)
-            .map_err(|error| format!("{error:#}"))?;
-    }
-    Ok(())
-}
-
 /// Shows HUD Lab's tuning and demonstrated state on the dictation HUD.
 fn configure_hud(runtime: &RuntimeHandle, lab: HudLab) {
     use crate::dictation::indicator::DictationIndicatorEvent as Event;
@@ -1366,24 +981,15 @@ fn update<T: PartialEq>(slot: &mut T, value: T) -> bool {
     }
 }
 
-fn notes_availability() -> NotesAvailability {
-    use crate::apple_intelligence::Availability;
-    match crate::apple_intelligence::availability() {
-        Availability::Available => NotesAvailability::Available,
-        Availability::DeviceNotEligible => NotesAvailability::DeviceNotEligible,
-        Availability::AppleIntelligenceNotEnabled => NotesAvailability::NotEnabled,
-        Availability::ModelNotReady => NotesAvailability::ModelNotReady,
-        Availability::UnsupportedSystem => NotesAvailability::UnsupportedSystem,
-        Availability::Unknown => NotesAvailability::Unknown,
-    }
-}
-
-fn open_path(path: &std::path::Path) {
+/// Shows `path` selected in a Finder window.
+#[cfg(hex_capture)]
+fn reveal(path: &std::path::Path) {
     if let Err(error) = std::process::Command::new("/usr/bin/open")
+        .arg("-R")
         .arg(path)
         .spawn()
     {
-        tracing::error!(%error, path = %path.display(), "could not open path");
+        tracing::error!(%error, path = %path.display(), "could not reveal path");
     }
 }
 
@@ -1671,151 +1277,5 @@ mod tests {
             capture.key_down(ESCAPE_KEY_CODE, false, None, 0),
             Some(Chord::Cancelled)
         ));
-    }
-
-    fn calendar_answer(granted: bool, status: CalendarAccess) -> AccessAnswer {
-        AccessAnswer {
-            granted,
-            status,
-            error: None,
-        }
-    }
-
-    #[test]
-    fn a_granted_calendar_is_saved_connected_and_stays_connected() {
-        let mut feed = CalendarFeed::default();
-        let mut view = CalendarView::default();
-        let mut saved = false;
-        feed.answer(
-            &calendar_answer(true, CalendarAccess::NotDetermined),
-            &mut view,
-            || {
-                saved = true;
-                Ok(())
-            },
-        );
-        assert!(saved);
-        assert_eq!(view.access, CalendarAccess::FullAccess);
-        assert_eq!(view.error, None);
-        // A snapshot read before the answer must not undo it.
-        let stale = CalendarSnapshot::default();
-        assert_eq!(
-            feed.shown(stale, &view, 0).access,
-            CalendarAccess::FullAccess
-        );
-    }
-
-    #[test]
-    fn a_failed_save_shows_its_error() {
-        let mut feed = CalendarFeed::default();
-        let mut view = CalendarView::default();
-        feed.answer(
-            &calendar_answer(true, CalendarAccess::FullAccess),
-            &mut view,
-            || Err("disk full".into()),
-        );
-        assert_eq!(view.error.as_deref(), Some("disk full"));
-        let shown = feed.shown(CalendarSnapshot::default(), &view, 0);
-        assert_eq!(shown.error.as_deref(), Some("disk full"));
-    }
-
-    #[test]
-    fn a_denied_calendar_is_not_saved_and_stays_blocked() {
-        let mut feed = CalendarFeed::default();
-        let mut view = CalendarView::default();
-        feed.answer(
-            &calendar_answer(false, CalendarAccess::NotDetermined),
-            &mut view,
-            || panic!("a denial must not save"),
-        );
-        assert_eq!(view.access, CalendarAccess::Denied);
-        assert!(view.access.blocked());
-        let shown = feed.shown(CalendarSnapshot::default(), &view, 0);
-        assert_eq!(shown.access, CalendarAccess::Denied);
-        // System Settings granting it later is what the reader reports.
-        let granted = CalendarSnapshot {
-            access: CalendarAccess::FullAccess,
-            ..CalendarSnapshot::default()
-        };
-        assert_eq!(
-            feed.shown(granted, &view, 0).access,
-            CalendarAccess::FullAccess
-        );
-    }
-
-    fn full_access() -> CalendarSnapshot {
-        CalendarSnapshot {
-            access: CalendarAccess::FullAccess,
-            ..CalendarSnapshot::default()
-        }
-    }
-
-    #[test]
-    fn granting_in_system_settings_after_a_refusal_connects() {
-        let mut feed = CalendarFeed::default();
-        let mut view = CalendarView::default();
-        feed.asked = true; // Connect was clicked.
-        feed.answer(
-            &calendar_answer(false, CalendarAccess::NotDetermined),
-            &mut view,
-            || panic!("a denial must not save"),
-        );
-        let denied = CalendarSnapshot {
-            access: CalendarAccess::Denied,
-            ..CalendarSnapshot::default()
-        };
-        feed.read(denied, false, &view, 0, || panic!("still denied"));
-        feed.opening_privacy_settings();
-        let mut saved = 0;
-        let shown = feed.read(full_access(), false, &view, 0, || {
-            saved += 1;
-            Ok(())
-        });
-        assert_eq!(saved, 1);
-        assert_eq!(shown.access, CalendarAccess::FullAccess);
-        // Saved once: the next read before the reload does not save again.
-        feed.read(full_access(), false, &view, 0, || panic!("saved twice"));
-    }
-
-    #[test]
-    fn a_grant_hex_did_not_ask_for_never_connects() {
-        let mut feed = CalendarFeed::default();
-        let shown = feed.read(full_access(), false, &CalendarView::default(), 0, || {
-            panic!("connecting needs the person's click")
-        });
-        assert_eq!(shown.access, CalendarAccess::FullAccess);
-    }
-
-    #[test]
-    fn a_decision_from_eventkit_replaces_the_remembered_answer() {
-        let mut feed = CalendarFeed::default();
-        let mut view = CalendarView::default();
-        feed.answer(
-            &calendar_answer(true, CalendarAccess::NotDetermined),
-            &mut view,
-            || Ok(()),
-        );
-        feed.read(full_access(), true, &view, 0, || panic!("connected"));
-        // `tccutil reset` puts it back to not determined: Connect again.
-        let reset = feed.read(CalendarSnapshot::default(), true, &view, 0, || {
-            panic!("not granted")
-        });
-        assert_eq!(reset.access, CalendarAccess::NotDetermined);
-    }
-
-    #[test]
-    fn a_failed_request_keeps_connect_and_shows_the_error() {
-        let mut feed = CalendarFeed::default();
-        let mut view = CalendarView::default();
-        let answer = AccessAnswer {
-            granted: false,
-            status: CalendarAccess::NotDetermined,
-            error: Some("missing usage description".into()),
-        };
-        feed.answer(&answer, &mut view, || panic!("a failure must not save"));
-        assert_eq!(view.access, CalendarAccess::NotDetermined);
-        assert_eq!(view.error.as_deref(), Some("missing usage description"));
-        let shown = feed.shown(CalendarSnapshot::default(), &view, 0);
-        assert_eq!(shown.access, CalendarAccess::NotDetermined);
     }
 }

@@ -1,6 +1,5 @@
 #[cfg(target_os = "macos")]
 pub(crate) mod browser_media;
-mod call_input;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 pub(crate) mod hex_microphone;
 pub(crate) mod idle_sleep;
@@ -14,6 +13,8 @@ mod mix_format;
 pub(crate) mod output_ducking;
 #[cfg(target_os = "macos")]
 pub(crate) mod recording_environment;
+#[cfg(target_os = "macos")]
+pub(crate) mod system_audio;
 mod transport;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 pub(crate) mod voice_filter;
@@ -260,22 +261,6 @@ struct OpenRequest {
     selected_device: Option<String>,
     fallback: SelectedFallback,
     keep: Option<String>,
-    /// Whether System default passes over a Bluetooth default when the
-    /// setting asks. Dictation does; a meeting records the input the call
-    /// is using, so the headset a call app holds is never swapped out.
-    avoids_bluetooth: bool,
-    /// The UID of the input a meeting's call app records from, tried first.
-    call_input: Option<String>,
-}
-
-impl OpenRequest {
-    /// The route this open resolves against.
-    fn route(&self, current: Route) -> Route {
-        Route {
-            avoid_bluetooth: current.avoid_bluetooth && self.avoids_bluetooth,
-            ..current
-        }
-    }
 }
 
 type Opener = Arc<dyn Fn(&OpenRequest) -> Result<Opened> + Send + Sync>;
@@ -330,7 +315,7 @@ const SELECTED_MICROPHONE_RETRY_DELAY: Duration = Duration::from_millis(100);
 /// microphone is tried again with backoff.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SelectedFallback {
-    /// Startup and meetings fall back at once.
+    /// Startup falls back at once.
     Immediate,
     /// Other opens retry briefly first.
     AfterRetries,
@@ -456,8 +441,6 @@ impl AudioInput {
             selected_device: None,
             fallback: SelectedFallback::Immediate,
             keep: None,
-            avoids_bluetooth: true,
-            call_input: None,
         })? {
             Opened::Input(input) => Ok(*input),
             Opened::Unchanged { .. } => unreachable!("nothing to keep"),
@@ -503,8 +486,8 @@ impl AudioInput {
     }
 
     /// Whether this stream's audio feeds Hex Microphone. Only the dictation
-    /// listener's current input does; a meeting's second stream on the same
-    /// microphone must not.
+    /// listener's current input does; another stream on the same microphone
+    /// must not.
     pub fn feed_hex_microphone(&self, on: bool) {
         self.hex_microphone.set(on);
     }
@@ -554,8 +537,6 @@ impl RecoveringAudioInput {
             selected_device: selected_device.map(str::to_owned),
             fallback: SelectedFallback::Immediate,
             keep: None,
-            avoids_bluetooth: true,
-            call_input: None,
         })
         .and_then(|opened| match opened {
             Opened::Input(input) => Ok(*input),
@@ -838,8 +819,6 @@ impl RecoveringAudioInput {
             selected_device: self.selected_device.clone(),
             fallback: SelectedFallback::AfterRetries,
             keep,
-            avoids_bluetooth: true,
-            call_input: None,
         };
         self.route_generation = (self.route_generation_source)();
         let opener = self.opener.clone();
@@ -1068,7 +1047,7 @@ fn open_configured_input(request: &OpenRequest) -> Result<Opened> {
     let (devices, names) = input_devices_of(&host)?;
     let (default, default_name) = default_input_of(&host).unzip();
     let transports = devices.iter().map(transport).collect::<Vec<_>>();
-    let route = request.route(current_route());
+    let route = current_route();
     let resolve = |selected: Option<&str>| {
         resolve_input(
             request.device_override.as_deref(),
@@ -1132,18 +1111,6 @@ fn open_configured_input(request: &OpenRequest) -> Result<Opened> {
         }
         Ok(Opened::Input(Box::new(input)))
     };
-    if let Some(index) =
-        (request.call_input.as_deref()).and_then(|uid| call_input::listed_at(uid, &devices, &names))
-    {
-        let target = InputTarget::Named(index);
-        match open(InputPlan {
-            target,
-            selection: Selection::InUse,
-        }) {
-            Ok(opened) => return Ok(opened),
-            Err(error) => tracing::warn!(%error, "the input the call uses would not open"),
-        }
-    }
     let plan = resolve(request.selected_device.as_deref())?;
     let (Some(selected), InputTarget::Named(_), None) = (
         request.selected_device.as_deref(),
@@ -1163,25 +1130,6 @@ fn open_configured_input(request: &OpenRequest) -> Result<Opened> {
         },
         std::thread::sleep,
     )
-}
-
-/// Opens the microphone a meeting records: the input its call app records
-/// from (`call_input`, a device UID) when that opens, else one resolved like
-/// dictation's but keeping a Bluetooth default a call app on a headset uses;
-/// or keeps the open one named `keep` when it resolves to that again.
-pub fn open_meeting_input(
-    selected_device: Option<&str>,
-    call_input: Option<&str>,
-    keep: Option<&str>,
-) -> Result<Opened> {
-    open_configured_input(&OpenRequest {
-        device_override: None,
-        selected_device: selected_device.map(str::to_owned),
-        fallback: SelectedFallback::Immediate,
-        keep: keep.map(str::to_owned),
-        avoids_bluetooth: false,
-        call_input: call_input.map(str::to_owned),
-    })
 }
 
 fn open_selected<T>(
@@ -1549,39 +1497,6 @@ mod tests {
             ),
             found(StandIn(2), Selection::InUse)
         );
-    }
-
-    #[test]
-    fn a_meeting_keeps_the_bluetooth_default_a_call_uses() {
-        use Transport::{Bluetooth, BuiltIn};
-        let names = listed(&["AirPods Pro", "MacBook Pro Microphone"]);
-        let transport = |index: usize| [Bluetooth, BuiltIn][index];
-        let current = Route {
-            lid_closed: false,
-            avoid_bluetooth: true,
-        };
-        let request = |avoids_bluetooth| OpenRequest {
-            device_override: None,
-            selected_device: None,
-            fallback: SelectedFallback::Immediate,
-            keep: None,
-            avoids_bluetooth,
-            call_input: None,
-        };
-        let target = |request: OpenRequest| {
-            resolve_input(
-                None,
-                None,
-                &names,
-                Some("AirPods Pro"),
-                transport,
-                request.route(current),
-            )
-            .map(|plan| plan.target)
-        };
-        // Dictation passes over the headset; a meeting records it.
-        assert_eq!(target(request(true)), Ok(InputTarget::StandIn(1)));
-        assert_eq!(target(request(false)), Ok(InputTarget::SystemDefault));
     }
 
     #[test]
@@ -2263,7 +2178,7 @@ mod tests {
 
     #[test]
     fn only_the_listeners_current_input_feeds_hex_microphone() {
-        let (meeting, _) = AudioInput::channel_for_test();
+        let (other, _) = AudioInput::channel_for_test();
         let (first, _) = AudioInput::channel_for_test();
         let (replacement, _) = AudioInput::channel_for_test();
         let first_feed = first.hex_microphone.clone();
@@ -2272,7 +2187,7 @@ mod tests {
         let mut input = RecoveringAudioInput::closed(None, 3, Some("Test microphone"));
         input.finish_initial_open(Ok(first), Instant::now());
         assert!(first_feed.is_on());
-        assert!(!meeting.hex_microphone.is_on());
+        assert!(!other.hex_microphone.is_on());
 
         let (sender, receiver) = mpsc::channel();
         input.replacement = Some(receiver);

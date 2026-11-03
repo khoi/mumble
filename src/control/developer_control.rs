@@ -20,7 +20,6 @@ pub enum DeveloperPane {
     Modes,
     History,
     HudLab,
-    Meetings,
     Fun,
     Activity,
 }

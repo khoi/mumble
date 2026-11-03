@@ -38,11 +38,6 @@ pub(super) static VOICE_FILTER_ICON: Icon = Icon {
     view: 24.0,
     body: include_str!("../../assets/icons/voice-filter.svg"),
 };
-static MEETINGS_ICON: Icon = Icon {
-    name: "hex-meetings",
-    view: 24.0,
-    body: include_str!("../../assets/icons/meetings.svg"),
-};
 #[cfg(hex_capture)]
 pub(super) static SCRAWL_ICON: Icon = Icon {
     name: "hex-scrawl",
@@ -62,8 +57,6 @@ pub(super) enum Pane {
     Output,
     /// The old per-app editor, kept for its scenes until it is removed.
     Modes,
-    /// Recorded calls and their settings, or the opt-in (macOS beta).
-    Meetings,
     History,
     /// Annotate (Scrawl's captures inside Hex): the switch, shortcuts,
     /// permission, transcriber, folder, retention, and Scrawl's own app.
@@ -85,7 +78,6 @@ impl Pane {
         Pane::General,
         Pane::Output,
         Pane::Modes,
-        Pane::Meetings,
         Pane::History,
         #[cfg(hex_capture)]
         Pane::Annotate,
@@ -98,7 +90,6 @@ impl Pane {
         let caps = ui.platform.caps;
         match self {
             Pane::Modes | Pane::HudLab | Pane::Activity => false,
-            Pane::Meetings => caps.meetings && meetings::available(ui),
             // On from Labs, or kept by a driver apps already use.
             Pane::VoiceFilter => caps.fun && fun::running(ui),
             #[cfg(hex_capture)]
@@ -113,7 +104,6 @@ impl Pane {
             Pane::Output => tr("Output"),
             Pane::Modes => tr("Modes"),
             Pane::History => tr("History"),
-            Pane::Meetings => tr("Meetings"),
             #[cfg(hex_capture)]
             Pane::Annotate => tr("Annotate"),
             Pane::VoiceFilter => tr("Voice Filter"),
@@ -128,7 +118,6 @@ impl Pane {
             Pane::Output => "nav-output",
             Pane::Modes => "nav-modes",
             Pane::History => "nav-history",
-            Pane::Meetings => "nav-meetings",
             #[cfg(hex_capture)]
             Pane::Annotate => "nav-annotate",
             Pane::VoiceFilter => "nav-voice-filter",
@@ -143,7 +132,6 @@ impl Pane {
             Pane::Output => &OUTPUT_ICON,
             Pane::Modes => &MODES_ICON,
             Pane::History => &HISTORY_ICON,
-            Pane::Meetings => &MEETINGS_ICON,
             #[cfg(hex_capture)]
             Pane::Annotate => &SCRAWL_ICON,
             Pane::VoiceFilter => &VOICE_FILTER_ICON,

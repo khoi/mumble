@@ -7,9 +7,8 @@
 //! Metal device list aborts in `ggml_metal_rsets_free` unless every Metal
 //! buffer was already freed. So Hex drains its own work first, then ends with
 //! `_exit`, which runs none of them. Nothing Hex keeps relies on them: the
-//! drain flushes the event log, and settings, history, and meetings are saved
-//! atomically when they change. A meeting recording at quit keeps its audio
-//! and finishes its transcript at the next launch.
+//! drain flushes the event log, and settings and history are saved
+//! atomically when they change.
 //!
 //! The drain runs on the main thread, so a worker that never stops would hang
 //! quit, logout, and updates. After [`DEADLINE`] the process ends anyway.
@@ -31,18 +30,6 @@ static QUITTING: AtomicBool = AtomicBool::new(false);
 /// drain, such as loading a model, checks this and stops instead.
 pub(crate) fn quitting() -> bool {
     QUITTING.load(Ordering::Acquire)
-}
-
-/// Marks the process as quitting without ending it: the Linux and Windows
-/// apps, which end by returning from `main` once their workers stop.
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn begin_quitting() {
-    QUITTING.store(true, Ordering::Release);
-}
-
-#[cfg(test)]
-pub(crate) fn begin_quitting_for_test() {
-    QUITTING.store(true, Ordering::Release);
 }
 
 /// Work that must finish before the process ends, run once by whichever

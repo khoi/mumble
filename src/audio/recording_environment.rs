@@ -261,7 +261,7 @@ impl RecordingEnvironmentController {
 
     /// A capture session: applies `audio` ("While dictating") until the
     /// session ends. It is not a dictation, so it neither prevents sleep
-    /// nor holds back meeting transcription.
+    /// nor holds back background transcription.
     #[cfg(any(hex_capture, test))]
     pub fn begin_capture(&self, audio: RecordingAudioBehavior) -> RecordingEnvironmentSession {
         self.begin_as(Hold {
@@ -323,7 +323,7 @@ pub fn intentional_recording_active() -> bool {
 static CAPTURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Marks a dictation capture from its press until its clip is submitted, so
-/// background work such as meeting transcription stops starting new jobs
+/// background work such as host-audio transcription stops starting new jobs
 /// before the capture can need the model.
 pub struct CaptureMarker(());
 
@@ -363,12 +363,12 @@ enum AudioBehaviorGuard {
 /// macOS dialog, and a dialog must never open while you dictate.
 fn browser_pause_allowed(
     enabled: bool,
-    authorization: crate::meeting::SystemAudioAuthorization,
+    authorization: crate::audio::system_audio::SystemAudioAuthorization,
 ) -> bool {
     enabled
         && matches!(
             authorization,
-            crate::meeting::SystemAudioAuthorization::Granted
+            crate::audio::system_audio::SystemAudioAuthorization::Granted
         )
 }
 
@@ -396,7 +396,7 @@ impl AudioBehaviorGuard {
                 }
                 let browser = browser_pause_allowed(
                     app_settings::pause_browser_media(),
-                    crate::meeting::system_audio_authorization(),
+                    crate::audio::system_audio::authorization(),
                 )
                 .then(|| browser_media::pause(&mut NativeBrowserAudio::for_pause()))
                 .flatten();
@@ -639,7 +639,9 @@ mod tests {
 
     #[test]
     fn the_browser_pauses_only_with_system_audio_granted() {
-        use crate::meeting::SystemAudioAuthorization::{Denied, Granted, NotDetermined, Unknown};
+        use crate::audio::system_audio::SystemAudioAuthorization::{
+            Denied, Granted, NotDetermined, Unknown,
+        };
         assert!(browser_pause_allowed(true, Granted));
         for authorization in [Denied, NotDetermined, Unknown] {
             assert!(!browser_pause_allowed(true, authorization));

@@ -13,6 +13,24 @@ use std::time::{Duration, Instant};
 
 use scrawl_capture::permissions::{Permission, Status};
 
+unsafe extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+/// Whether macOS currently allows Screen & System Audio Recording.
+pub fn screen_recording_permitted() -> bool {
+    // SAFETY: A CoreGraphics query without arguments or side effects.
+    unsafe { CGPreflightScreenCaptureAccess() }
+}
+
+/// Asks macOS to list Hex under Screen & System Audio Recording. The system
+/// prompts at most once; later requests return the current state.
+pub fn request_screen_recording() -> bool {
+    // SAFETY: A CoreGraphics request without arguments.
+    unsafe { CGRequestScreenCaptureAccess() }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScreenAccess {
     #[default]
@@ -41,7 +59,7 @@ static CACHED: Mutex<Cached> = Mutex::new(Cached {
 /// Never blocks: the preflight, else the last fresh read, starting another
 /// on its own thread when that one is older than [`FRESH_FOR`].
 pub fn screen_access() -> ScreenAccess {
-    if crate::meeting::screen_recording_permitted() {
+    if screen_recording_permitted() {
         return ScreenAccess::Allowed;
     }
     let mut cached = CACHED.lock().unwrap_or_else(|e| e.into_inner());
@@ -74,7 +92,7 @@ pub fn invalidate_screen_access() {
 
 /// Reads it now, blocking for up to the helper's 5 s. Off the UI thread.
 pub fn screen_access_now() -> ScreenAccess {
-    if crate::meeting::screen_recording_permitted() {
+    if screen_recording_permitted() {
         return ScreenAccess::Allowed;
     }
     let access = read();

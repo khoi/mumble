@@ -22,7 +22,7 @@ const MIN_SPEECH_MS: i32 = 160;
 
 /// Speech probability that counts as speech. Silero's default of 0.5 misses
 /// a whisper at -43 dBFS, which the level gate deliberately keeps; 0.4 hears
-/// it and still rejects the silence in a recorded meeting.
+/// it and still rejects the silence in a recorded call.
 pub(crate) const THRESHOLD: f64 = 0.4;
 
 #[cfg_attr(test, allow(dead_code))]
@@ -125,7 +125,7 @@ fn start_download_once() {
                 transcription_models::download_speech_detector(&AtomicBool::new(false))
             {
                 tracing::warn!(%error, "could not download the speech detector");
-                // The next dictation or meeting chunk tries again.
+                // The next dictation tries again.
                 DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
             }
         });

@@ -22,8 +22,7 @@ pub struct LocalTranscriber {
     device_label: String,
     max_audio_samples: Option<usize>,
     stream: Option<transcribe_cpp::StreamOptions>,
-    /// The finest timestamps the model gives, for a capture's or a
-    /// meeting's word times.
+    /// The finest timestamps the model gives, for a capture's word times.
     finest_timestamps: TimestampKind,
     /// The GPU it runs on; `None` on the CPU.
     gpu: Option<transcribe_cpp::Device>,
@@ -459,16 +458,6 @@ impl LocalTranscriber {
             .map(|word| (word.start_ms, word.end_ms, word.text))
             .collect();
         Ok((transcript.text, words))
-    }
-
-    /// One meeting chunk with segment and word timings, padded as dictation
-    /// pads a clip.
-    pub(crate) fn transcribe_segments(
-        &mut self,
-        mut samples: Vec<f32>,
-    ) -> Result<crate::transcription::transcript::Transcript> {
-        crate::dictation::pad_for_parakeet(&mut samples);
-        self.timed(&samples)
     }
 
     /// Text, segments, and words, in chunks the model takes whole.

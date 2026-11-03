@@ -31,7 +31,7 @@ pub(crate) type Model = crate::transcription::local_transcriber::LocalTranscribe
 /// Transcribes a complete 16 kHz clip offline on the engine thread.
 pub(crate) type Offline = Box<dyn FnOnce(&mut Model, Vec<f32>) -> Result<String, String> + Send>;
 
-/// Low-priority work on the model, such as a meeting chunk. It receives
+/// Low-priority work on the model, such as a host-audio clip. It receives
 /// `None` instead of the model when dictation claimed the engine first.
 pub(crate) type Background = Box<dyn FnOnce(Option<&mut Model>) + Send>;
 
@@ -830,7 +830,7 @@ impl TranscriptionEngine {
         }
     }
 
-    /// Makes this the engine that meeting transcription and the local API share.
+    /// Makes this the engine that captures and the local API share.
     pub fn share(self: &Arc<Self>) {
         *SHARED.lock().unwrap_or_else(|error| error.into_inner()) = Arc::downgrade(self);
     }
@@ -869,9 +869,9 @@ impl TranscriptionEngine {
     }
 }
 
-/// Whether a dictation or a meeting records, so an idle model stays loaded:
-/// both hold idle-sleep prevention while they record, and a macOS capture
-/// counts from its press.
+/// Whether a dictation records, so an idle model stays loaded: it holds
+/// idle-sleep prevention while it records, and a macOS capture counts from
+/// its press.
 fn recording() -> bool {
     crate::audio::idle_sleep::held() || dictation_busy()
 }
@@ -1063,7 +1063,7 @@ impl Worker {
 
     /// The next command. With Labs › Unload model when idle on, it unloads
     /// the model once nothing has used it for the chosen time and nothing
-    /// records (a dictation or a meeting); between commands no request runs.
+    /// records; between commands no request runs.
     fn wait(&mut self, commands: &Receiver<Command>) -> Option<Command> {
         loop {
             let Some(after) = crate::labs::unload_idle() else {
@@ -1521,7 +1521,7 @@ mod tests {
     #[test]
     fn quiet_speech_over_steady_noise_is_never_cut_as_a_pause() {
         // #458: -28 dBFS syllables over -35 dBFS noise, too close to the
-        // floor for the meeting detector's 12 dB speech margin.
+        // floor for the pause detector's 12 dB speech margin.
         assert_quiet_speech_is_kept(-28.0, -35.0, 0.0);
         // #841: a quiet built-in microphone, whose speech sits under
         // -55 dBFS throughout.

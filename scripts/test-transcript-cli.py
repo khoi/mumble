@@ -16,7 +16,6 @@ repo = Path(__file__).resolve().parent.parent
 with tempfile.TemporaryDirectory(prefix="hex-transcript-cli-") as directory:
     root = Path(directory)
     shutil.copy(repo / "tests/fixtures/history.json", root / "history.json")
-    shutil.copytree(repo / "tests/fixtures/meetings", root / "meetings")
     (root / "settings.json").write_text('{"history_retention":"forever"}')
     lock = (root / "listener.lock").open("w")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -40,14 +39,7 @@ with tempfile.TemporaryDirectory(prefix="hex-transcript-cli-") as directory:
     assert [entry["id"] for entry in history["entries"]] == [2, 1]
     assert history["version"] == 1
     assert all("raw_text" not in entry for entry in history["entries"])
-    listing = json.loads(run("meetings", "list", "--json"))
-    assert len(listing["meetings"]) == 3 and len(listing["skipped"]) == 1
-    latest = json.loads(run("meetings", "show", "latest", "--json"))
-    assert latest["meeting"]["id"] == "1790001000000-1003"
-    assert latest["meeting"]["status"] == "interrupted"
-    assert run("meetings", "show", "1790000500000-1002", "--md").startswith("# Roadmap review")
-    assert "Roadmap review" in run("meetings", "search", "roadmap")
     assert snapshot() == before
     assert not (root / "logs").exists()
     assert not (root / "local-api.json").exists()
-    print("Release transcript CLI: filters, JSON, meetings, occupied listener lock, no file writes passed")
+    print("Release transcript CLI: filters, JSON, occupied listener lock, no file writes passed")

@@ -35,7 +35,7 @@ pub enum PermissionState {
 pub enum PermissionKind {
     Microphone,
     Accessibility,
-    /// System Audio Recording, asked only when Meetings is on.
+    /// System Audio Recording, asked only for Labs › Also pause the browser.
     SystemAudio,
     /// Screen Recording, asked only from the Scrawl pane or at a first
     /// capture, never in the tour.

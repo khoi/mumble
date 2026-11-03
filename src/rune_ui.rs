@@ -32,11 +32,7 @@ mod icons;
 mod labs;
 mod list_detail;
 mod lists;
-mod live_notes;
 pub(crate) mod live_text;
-pub(crate) mod meeting_capsules;
-mod meetings;
-mod meetings_host;
 mod model_details;
 mod model_import;
 mod models;
@@ -66,9 +62,7 @@ mod vocabulary;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rune::{
-    Anim, AppSpec, Cx, El, Icon, ScrollSpec, TextEdit, Tx, Waker, col, el, icon, row, text,
-};
+use rune::{Anim, AppSpec, Cx, El, Icon, ScrollSpec, Tx, Waker, col, el, icon, row, text};
 
 use crate::app_settings::{AppSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, ModifierSide};
 use crate::desktop::host::{
@@ -99,7 +93,6 @@ pub(crate) fn run_app(
     host: crate::linux::app::HostHandle,
     requests: std::sync::mpsc::Receiver<crate::linux::service::Control>,
     first: Option<crate::linux::service::Activation>,
-    shutdown: &'static std::sync::atomic::AtomicBool,
 ) {
     use crate::linux::service::{Activation, Control};
     rune::set_app_id(crate::linux::portal::APP_ID);
@@ -116,9 +109,6 @@ pub(crate) fn run_app(
     // The capture capsule, picker, and ink.
     let _capture_overlays =
         crate::rune_ui::capture_capsule::feed::CaptureOverlays::install(&mut app);
-    let meetings = crate::meeting::runtime::Meetings::install(&mut app, shutdown)
-        .inspect_err(|error| tracing::error!(%error, "meetings could not start"))
-        .ok();
     let handle = app.handle();
     host.set_window_visible({
         let handle = handle.clone();
@@ -160,11 +150,6 @@ pub(crate) fn run_app(
         })
         .expect("could not start the window request thread");
     app.run();
-    // A recording stops, keeping its audio for the next launch.
-    shutdown.store(true, std::sync::atomic::Ordering::Release);
-    if let Some(meetings) = meetings {
-        meetings.join();
-    }
 }
 
 /// The window as a Rune app whose lifetime the caller chooses, connected to
@@ -355,20 +340,17 @@ fn on_close(ui: &mut Ui, _: &mut Tx) {
     crate::macos_rune::window_closed();
 }
 
-/// Where the menu bar, a meeting, or a `hex window show` sends the window.
+/// Where the menu bar or a `hex window show` sends the window.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Destination {
     Settings,
     /// Settings with the transcription picker open.
     Models,
-    /// The Meetings pane, with a meeting selected when given.
-    Meetings(Option<String>),
     Modes,
     History,
 }
 
-/// Where `hex window show` opens the window. While Meetings is off, its
-/// pane shows the opt-in.
+/// Where `hex window show` opens the window.
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn destination(pane: Option<crate::control::Pane>) -> Destination {
     use crate::control::Pane as Named;
@@ -377,7 +359,6 @@ pub(crate) fn destination(pane: Option<crate::control::Pane>) -> Destination {
         Some(Named::Models) => Destination::Models,
         Some(Named::Modes) => Destination::Modes,
         Some(Named::History) => Destination::History,
-        Some(Named::Meetings) => Destination::Meetings(None),
     }
 }
 
@@ -385,7 +366,6 @@ pub(crate) fn destination(pane: Option<crate::control::Pane>) -> Destination {
 pub(crate) fn show(ui: &mut Ui, destination: Destination, tx: &mut Tx) {
     let pane = match &destination {
         Destination::Settings | Destination::Models => Pane::General,
-        Destination::Meetings(_) => Pane::Meetings,
         Destination::Modes => Pane::Output,
         Destination::History => Pane::History,
     };
@@ -396,13 +376,8 @@ pub(crate) fn show(ui: &mut Ui, destination: Destination, tx: &mut Tx) {
     if pane.shown(ui) {
         ui.select_pane(pane, tx);
     }
-    match destination {
-        Destination::Models => picker::open(ui),
-        Destination::Meetings(Some(id)) => {
-            ui.meetings.view = meetings::View::Recordings;
-            ui.meetings.select(id);
-        }
-        _ => {}
+    if destination == Destination::Models {
+        picker::open(ui);
     }
 }
 
@@ -485,24 +460,6 @@ pub(crate) fn shortcut_rules() -> crate::control::settings::ShortcutRules {
     }
 }
 
-/// A capsule's "Never offer" or "Always record" choice, kept in the window's
-/// live settings so its next save doesn't drop it.
-pub(crate) fn meeting_provider_chosen(
-    ui: &mut Ui,
-    choice: crate::app_settings::MeetingProviderChoice,
-) {
-    crate::app_settings::set_meeting_provider(&mut ui.settings.meetings, choice);
-}
-
-/// The corner the recording capsule was dragged to, kept in the window's live
-/// settings so its next save doesn't move it back.
-pub(crate) fn meeting_corner_moved(
-    ui: &mut Ui,
-    corner: crate::app_settings::MeetingIndicatorCorner,
-) {
-    ui.settings.meetings.recording_indicator_corner = corner;
-}
-
 /// An error from outside the window, such as settings that could not be read
 /// at launch, shown where save errors show.
 #[cfg(target_os = "macos")]
@@ -514,13 +471,6 @@ pub(crate) fn show_error(ui: &mut Ui, error: String) {
 #[cfg(target_os = "macos")]
 pub(crate) fn update_check_asked(ui: &mut Ui) {
     ui.update_asked = true;
-}
-
-/// A meeting recording could not start or finish; the Meetings pane says why.
-pub(crate) fn meeting_failed(ui: &mut Ui, error: String) {
-    ui.meetings.start_pending = false;
-    ui.meetings.stop_pending = false;
-    ui.meetings.runtime_error = Some(error);
 }
 
 /// `hex app -- --snap out.png --scene …`: a headless render of a fixture
@@ -617,10 +567,6 @@ enum Menu {
     HistoryAgainLanguage,
     /// The OpenCode thinking variant.
     Variant,
-    /// The selected meeting's overflow menu.
-    MeetingActions,
-    /// The calendars meeting reminders read.
-    Calendars,
     /// The transformations a mode can add (the Modes pane).
     Transformations,
     /// How long annotations are kept (the Annotate pane).
@@ -628,8 +574,6 @@ enum Menu {
     CaptureRetention,
     /// A settings row's quiet select, by the row's key.
     Pick(&'static str),
-    /// A detected call provider's policy, by its row.
-    Call(usize),
 }
 
 pub(crate) struct Ui {
@@ -693,7 +637,6 @@ pub(crate) struct Ui {
     /// The OS's capabilities and the OS-only state its panes show.
     platform: platform::PlatformState,
     host: platform::PlatformHost,
-    meetings: meetings::MeetingsPane,
     fun: fun::FunPane,
     activity: activity::ActivityPane,
     /// HUD Lab's preset was copied since it last changed.
@@ -755,8 +698,6 @@ impl Ui {
         ui.history = history::HistoryPane::shared(store);
         ui.output = output::OutputPane::shuffled();
         ui.modes.load_personal_commands();
-        ui.platform.developer =
-            crate::dev_build::is_dev_build() && crate::DEVELOPER_FEATURES_ENABLED;
         ui.platform.hud.tuning = crate::rune_hud::dot_scope::lab();
         ui.tour = onboarding::Tour::start(&ui.settings, &ui.platform);
         onboarding_kit::live::open(&mut ui);
@@ -803,7 +744,6 @@ impl Ui {
             first_run: None,
             platform: platform::PlatformState::new(platform::Capabilities::current()),
             host: platform::PlatformHost::Local(Default::default()),
-            meetings: meetings::MeetingsPane::default(),
             fun: fun::FunPane::default(),
             activity: activity::ActivityPane::default(),
             hud_copied: false,
@@ -859,16 +799,7 @@ impl Ui {
         self.error = None;
         self.settings = candidate;
         self.draft_since = None;
-        self.settings_changed();
         true
-    }
-
-    /// Meetings turned off forgets its view: turning it back on lists the
-    /// recordings.
-    fn settings_changed(&mut self) {
-        if !meetings::available(self) {
-            self.meetings.view = meetings::View::Recordings;
-        }
     }
 
     /// The settings with every text field's current text applied.
@@ -989,15 +920,6 @@ impl Ui {
             },
             _ => {}
         }
-        #[cfg(not(target_os = "macos"))]
-        if let platform::PlatformRequest::Meeting(meeting) = &request
-            && matches!(self.host, platform::PlatformHost::Local(_))
-        {
-            if let Err(error) = self.send_meeting(meeting.clone()) {
-                self.error = Some(error);
-            }
-            return;
-        }
         let is_relaunch = request == platform::PlatformRequest::Relaunch;
         match self.host.send(request) {
             // The frame draws right after its actions, before the next poll,
@@ -1010,23 +932,6 @@ impl Ui {
             Err(_) if is_relaunch => self.platform.relaunch_failed = true,
             Err(error) => self.error = Some(error),
         }
-    }
-
-    /// Sends a meeting request to whoever carries it out: on Linux and
-    /// Windows the meetings this window keeps itself, whose host ignores
-    /// meeting requests; elsewhere the OS host.
-    fn send_meeting(&mut self, request: platform::MeetingRequest) -> Result<(), String> {
-        #[cfg(not(target_os = "macos"))]
-        if matches!(self.host, platform::PlatformHost::Local(_)) {
-            let waker = self.modes.waker.clone();
-            let wake = move || {
-                if let Some(waker) = &waker {
-                    waker();
-                }
-            };
-            return self.meetings.local.send(request, wake);
-        }
-        self.host.send(platform::PlatformRequest::Meeting(request))
     }
 
     fn running(&self) -> bool {
@@ -1062,7 +967,6 @@ impl Ui {
                 self.vocabulary.reload(&service.vocabulary);
             }
             self.settings = service.clone();
-            self.settings_changed();
         }
         self.service_settings = Some(service);
         changed
@@ -1164,40 +1068,9 @@ fn on_key(ui: &mut Ui, event: &rune::KeyEvent, tx: &mut Tx) -> bool {
     } else if ui.open.is_some() {
         ui.open = None;
         true
-    } else if ui.meetings.renaming.is_some() || ui.meetings.delete_armed.is_some() {
-        ui.meetings.renaming = None;
-        ui.meetings.delete_armed = None;
-        true
     } else {
         false
     }
-}
-
-/// Linux and Windows: the listing and a chosen transcript folder, from the
-/// meetings the window keeps itself.
-#[cfg(not(target_os = "macos"))]
-fn local_meetings(ui: &mut Ui) -> bool {
-    let mut changed = false;
-    if ui.pane == Pane::Meetings
-        && meetings::available(ui)
-        && let Some(listed) = ui.meetings.local.meetings()
-    {
-        ui.meetings.adopt(listed);
-        changed = true;
-    }
-    match ui.meetings.local.chosen_folder() {
-        Some(Ok(folder)) => {
-            ui.platform.meeting_folder_error = None;
-            ui.update(|settings| settings.meetings.output_folder = Some(folder));
-            changed = true;
-        }
-        Some(Err(error)) => {
-            ui.platform.meeting_folder_error = Some(error);
-            changed = true;
-        }
-        None => {}
-    }
-    changed
 }
 
 fn setup(ui: &mut Ui, waker: Waker) {
@@ -1280,17 +1153,6 @@ fn poll(ui: &mut Ui, clock: f64, tx: &mut Tx) -> bool {
     if login_unknown && ui.platform.login_item.is_some() {
         tx.instant();
     }
-    if ui.pane == Pane::Meetings
-        && meetings::available(ui)
-        && let Some(listed) = ui.host.meetings()
-    {
-        ui.meetings.adopt(listed);
-        changed = true;
-    }
-    #[cfg(not(target_os = "macos"))]
-    if matches!(ui.host, platform::PlatformHost::Local(_)) {
-        changed |= local_meetings(ui);
-    }
     changed |= ui
         .activity
         .poll(ui.platform.activity_log.as_ref(), ui.pane == Pane::Activity);
@@ -1354,7 +1216,6 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
         Pane::Output => (Vec::new(), output::pane(ui, p, cx.is_reduced_motion())),
         Pane::Modes => modes::pane(ui, p, &mut layer),
         Pane::History => history::pane(ui, p, &mut layer),
-        Pane::Meetings => meetings::pane(ui, p, &mut layer),
         #[cfg(hex_capture)]
         Pane::Annotate => (Vec::new(), scrawl::pane(ui, p, &mut layer)),
         Pane::VoiceFilter => (Vec::new(), fun::pane(ui, p)),
@@ -1381,9 +1242,6 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
             } else {
                 ui.pane.title()
             },
-            (ui.pane == Pane::Meetings && !ui.labs_open)
-                .then(|| meetings::view_switch(ui, p))
-                .flatten(),
             actions,
         ))
         .child(body);
@@ -1427,9 +1285,9 @@ fn window_focused(ui: &mut Ui, focused: bool, tx: &mut Tx) {
     }
 }
 
-/// The title bar of the content panel: the title, a view switch that stays
-/// beside it, and the pane's actions on the right.
-fn pane_header(p: Paint, title: &str, switch: Option<El>, actions: Vec<El>) -> El {
+/// The title bar of the content panel: the title, and the pane's actions on
+/// the right.
+fn pane_header(p: Paint, title: &str, actions: Vec<El>) -> El {
     title_bar(row())
         .key("pane-header")
         .h(52.0)
@@ -1444,7 +1302,6 @@ fn pane_header(p: Paint, title: &str, switch: Option<El>, actions: Vec<El>) -> E
                 .shrink()
                 .truncate(),
         )
-        .children(switch.map(|switch| switch.ml(8.0)))
         .child(el().key("header-spacer").grow(1.0))
         .children(actions)
 }

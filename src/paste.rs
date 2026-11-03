@@ -28,7 +28,6 @@ pub struct Paster {
 #[derive(Clone, Copy)]
 pub enum PasteMode {
     Continue,
-    Standalone,
     /// Labs › Copy dictation only: the text goes to the clipboard as an
     /// ordinary entry and nothing is pasted, typed, or restored.
     CopyOnly,
@@ -235,9 +234,10 @@ impl Paster {
             return self.copy_only(text, commit);
         }
         let revision = self.activity.revision();
-        let continuation = self.continuation.as_ref().filter(|continuation| {
-            !matches!(mode, PasteMode::Standalone) && continuation.revision == revision
-        });
+        let continuation = self
+            .continuation
+            .as_ref()
+            .filter(|continuation| continuation.revision == revision);
         let text = match continuation {
             Some(continuation) => join(&continuation.inserted, text),
             // Read as the paste commits, so the toggle applies at once.
@@ -251,9 +251,6 @@ impl Paster {
                 || Ok(()),
                 commit,
                 |()| {
-                    if matches!(mode, PasteMode::Standalone) {
-                        self.continuation = None;
-                    }
                     tracing::debug!("typing instead of pasting into Chromium 155 or 156");
                     keyboard::type_text(&text)?;
                     if crate::labs::keep_on_clipboard() {
@@ -269,9 +266,9 @@ impl Paster {
                 },
             )?;
         } else {
-            self.paste_through_clipboard(&text, mode, commit)?;
+            self.paste_through_clipboard(&text, commit)?;
         }
-        self.continuation = (!matches!(mode, PasteMode::Standalone)).then_some(Continuation {
+        self.continuation = Some(Continuation {
             revision,
             inserted: text,
         });
@@ -297,12 +294,7 @@ impl Paster {
         )
     }
 
-    fn paste_through_clipboard(
-        &mut self,
-        text: &str,
-        mode: PasteMode,
-        commit: impl FnOnce() -> bool,
-    ) -> Result<()> {
+    fn paste_through_clipboard(&mut self, text: &str, commit: impl FnOnce() -> bool) -> Result<()> {
         let generation = commit_prepared_paste(
             || {
                 let restore = self
@@ -335,9 +327,6 @@ impl Paster {
             },
             commit,
             |(mut restore, previous, previous_change_count)| {
-                if matches!(mode, PasteMode::Standalone) {
-                    self.continuation = None;
-                }
                 // Read as the paste commits, so the toggle applies at once.
                 let keep = crate::labs::keep_on_clipboard();
                 if let Err(error) = write_clipboard_text(&self.clipboard, text, !keep) {

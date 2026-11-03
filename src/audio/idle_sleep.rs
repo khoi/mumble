@@ -25,8 +25,7 @@ pub fn prevent_sleep() -> Option<PreventSleep> {
     })
 }
 
-/// Whether Hex records now (a dictation past its hold, or a meeting): some
-/// guard is alive.
+/// Whether Hex records now (a dictation past its hold): some guard is alive.
 pub fn held() -> bool {
     HELD.load(Ordering::Acquire) > 0
 }

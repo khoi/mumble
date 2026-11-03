@@ -10,8 +10,8 @@
 //! inference): its audio waits in a bounded backlog and catches up after. A
 //! window whose stream dictation closed, or any window on a model that
 //! cannot stream, is transcribed offline as one foreground request once
-//! dictation is idle: after the dictation already sent, before meeting
-//! chunks, and never inside a dictation stream.
+//! dictation is idle: after the dictation already sent, before other
+//! background work, and never inside a dictation stream.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};

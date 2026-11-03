@@ -386,8 +386,8 @@ fn render(engine: &mut HexMicEngine, out: &mut [f32]) {
 /// One microphone stream's connection to Hex Microphone. Every capture stream
 /// has one, but only the dictation listener's current stream switches it on
 /// (`CaptureFeedSwitch`): the ring has a single producer, and a second stream
-/// on the same microphone, such as a meeting recording's, would interleave a
-/// duplicate of every callback into it.
+/// on the same microphone would interleave a duplicate of every callback into
+/// it.
 pub struct CaptureFeed {
     enabled: Arc<AtomicBool>,
     resampler: Option<LinearResampler>,
@@ -1452,12 +1452,12 @@ mod tests {
     }
 
     #[test]
-    fn a_meeting_stream_on_the_same_microphone_does_not_double_the_feed() {
+    fn a_second_stream_on_the_same_microphone_does_not_double_the_feed() {
         let listener = switched_on_feed(48_000);
-        let (meeting, meeting_switch) = capture_feed(48_000);
-        assert!(!meeting_switch.is_on(), "streams start switched off");
+        let (second, second_switch) = capture_feed(48_000);
+        assert!(!second_switch.is_on(), "streams start switched off");
 
-        let result = simulate_pass_through(&mut [listener, meeting], 512, 256, 10.0);
+        let result = simulate_pass_through(&mut [listener, second], 512, 256, 10.0);
 
         assert_eq!(result.underflows, 0);
         assert_eq!(result.overflows, 0);

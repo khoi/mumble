@@ -395,8 +395,8 @@ fn load<'a>(
 /// Runs `work` on the dictation engine's loaded model when it is the GGUF
 /// model `selection` asks for, so the app never holds a second copy for host
 /// audio. `None` when there is no engine (a direct-child service) or it holds
-/// another model, or when dictation stays busy for `wait`. Like meeting
-/// chunks, it starts only while no dictation is capturing or transcribing.
+/// another model, or when dictation stays busy for `wait`. It starts only
+/// while no dictation is capturing or transcribing.
 fn with_shared_model<R: Send + 'static>(
     selection: &TranscriptionSelection,
     canceled: &Arc<AtomicBool>,

@@ -31,8 +31,8 @@ pub struct Output {
 pub enum ControlCli {
     /// Show what the running Hex is doing.
     ///
-    /// Recording, meeting, model, features, permissions, window, version,
-    /// pid, and memory footprint.
+    /// Recording, model, features, permissions, window, version, pid, and
+    /// memory footprint.
     Status {
         #[command(flatten)]
         output: Output,
@@ -44,7 +44,7 @@ pub enum ControlCli {
     },
     /// Quit Hex.
     ///
-    /// Refused while a meeting or dictation is in progress unless --force.
+    /// Refused while a dictation is in progress unless --force.
     Quit {
         /// Quit even while recording; the recording is lost.
         #[arg(long)]
@@ -126,19 +126,6 @@ pub enum ControlCli {
     /// it in the running Hex (`hex history clear --yes`).
     #[command(args_conflicts_with_subcommands = true)]
     History(crate::control::transcript_cli::HistoryArgs),
-    /// Read and search recorded meetings without starting the app; record
-    /// and stop them in the running Hex.
-    Meetings {
-        #[command(subcommand)]
-        command: crate::control::transcript_cli::MeetingsCommand,
-    },
-    /// Serve recorded meetings to agents over MCP (stdio). Read-only.
-    Mcp {
-        /// Read meetings from this folder instead of Application Support, such
-        /// as a mirrored copy on another computer.
-        #[arg(long)]
-        meetings_dir: Option<std::path::PathBuf>,
-    },
     /// Manage the ~/.config/hex personal transformations workspace.
     Commands {
         #[command(subcommand)]
@@ -194,7 +181,7 @@ pub enum SettingsCommand {
         #[command(flatten)]
         output: Output,
     },
-    /// One setting's value, or every setting under a prefix (`meetings`).
+    /// One setting's value, or every setting under a prefix (`labs`).
     Get {
         key: String,
         #[command(flatten)]
@@ -518,8 +505,6 @@ pub fn run(command: ControlCli) -> u8 {
             ..
         }) => clear_history(yes, output),
         ControlCli::History(args) => report(crate::control::transcript_cli::history(&args)),
-        ControlCli::Meetings { command } => meetings(command),
-        ControlCli::Mcp { meetings_dir } => report(mcp(meetings_dir)),
         ControlCli::Commands { command } => report(match command {
             CommandsCommand::Init => crate::personal_commands::initialize_workspace()
                 .map(|workspace| println!("{}", workspace.display())),
@@ -659,38 +644,6 @@ fn report(result: color_eyre::Result<()>) -> u8 {
         Ok(()) => 0,
         Err(error) => fail(&format!("{error:#}")),
     }
-}
-
-/// `hex meetings`: record, stop, and copy in the running Hex; the rest
-/// read the meetings folder here.
-fn meetings(command: crate::control::transcript_cli::MeetingsCommand) -> u8 {
-    use crate::control::transcript_cli::MeetingsCommand;
-    match command {
-        MeetingsCommand::Record { title, output } => {
-            send(ControlCommand::MeetingRecord { title }, output)
-        }
-        MeetingsCommand::Stop { output } => send(ControlCommand::MeetingStop, output),
-        MeetingsCommand::CopyLast { output } => send(ControlCommand::MeetingCopyLast, output),
-        command => report(crate::control::transcript_cli::meetings(&command)),
-    }
-}
-
-/// `hex mcp`: logs to stderr only (stdout carries MCP messages) and touches
-/// no app state.
-fn mcp(meetings_dir: Option<std::path::PathBuf>) -> color_eyre::Result<()> {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("HEX_MCP_LOG")
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
-        )
-        .init();
-    let root = match meetings_dir {
-        Some(directory) => directory,
-        None => crate::meeting::root()?,
-    };
-    crate::meeting::mcp::run(root)
 }
 
 /// `hex annotate` (alias `hex capture`).
@@ -1417,16 +1370,14 @@ mod tests {
             memory_footprint_bytes: Some(412_000_000),
             ..Default::default()
         };
-        report.meeting.state = "recording".into();
-        report.meeting.title = Some("Design sync".into());
-        report.meeting.elapsed_seconds = Some(3723);
-        report.features.meetings = true;
+        report.features.release_microphone_while_idle = true;
+        report.features.history_retention = "week".into();
         let text = human_status(&report);
         assert!(text.starts_with("Hex 2.3.1 (pid 42, 412 MB)\n"));
-        assert!(text.contains("Meeting      recording “Design sync” for 1:02:03\n"));
+        assert!(text.contains("Features     release mic while idle on, history week\n"));
         assert!(text.ends_with("Labs         none\n"));
-        report.labs = vec!["live-text".into(), "meetings".into()];
-        assert!(human_status(&report).ends_with("Labs         live-text, meetings\n"));
+        report.labs = vec!["live-text".into(), "history-stats".into()];
+        assert!(human_status(&report).ends_with("Labs         live-text, history-stats\n"));
     }
 
     #[test]

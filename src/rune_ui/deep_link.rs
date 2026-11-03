@@ -20,11 +20,10 @@ pub(crate) enum Target {
 }
 
 /// The main panes a `hex://settings/<pane>` link names.
-const PANES: [(&str, Pane); 5] = [
+const PANES: [(&str, Pane); 4] = [
     ("general", Pane::General),
     ("output", Pane::Output),
     ("history", Pane::History),
-    ("meetings", Pane::Meetings),
     ("voice-filter", Pane::VoiceFilter),
 ];
 
@@ -112,8 +111,8 @@ mod tests {
             Some(Ok(Target::Labs(Some("live-text".into()))))
         );
         assert_eq!(
-            parse("hex-test://labs/meetings", "hex-test"),
-            Some(Ok(Target::Labs(Some("meetings".into()))))
+            parse("hex-test://labs/playground", "hex-test"),
+            Some(Ok(Target::Labs(Some("playground".into()))))
         );
     }
 

@@ -2,17 +2,15 @@
 //! and the requests they make of it.
 //!
 //! The panes never call macOS or Windows APIs. Permissions, the login item,
-//! the meetings store, and the Hex Microphone driver reach them as plain data
+//! and the Hex Microphone driver reach them as plain data
 //! in [`PlatformState`], and every action they take goes out as a
 //! [`PlatformRequest`] through [`PlatformHost`]. Linux scenes and tests feed
 //! preview data and record the requests, so macOS and Windows surfaces render
 //! and are tested on Linux; a native host fills the same data on its own OS.
 
-use super::meetings::Meeting;
 use crate::audio::hex_microphone::{
     DemoPlaybackTrack, DemoSnapshot, DemoSourceKind, HexMicrophoneStatus, TunedFilterConfig,
 };
-use crate::calendar::{CalendarAccess, CalendarInfo, CallProvider};
 use crate::desktop::login_item::{LoginItemResult, LoginItemStatus};
 use crate::desktop::onboarding::{
     Input, PermissionAction, PermissionKind, PermissionState, SetupStatus,
@@ -30,12 +28,6 @@ pub(super) enum Os {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Capabilities {
     pub(super) os: Os,
-    /// Meeting recording and its pane, with the recordings and their
-    /// settings (beta, in Labs).
-    pub(super) meetings: bool,
-    /// Calendar meeting reminders: the Calendar card under Meetings
-    /// (macOS, EventKit).
-    pub(super) calendar: bool,
     /// Privacy permissions gate dictation (macOS).
     pub(super) permissions: bool,
     pub(super) launch_at_login: bool,
@@ -67,8 +59,6 @@ pub(super) struct Capabilities {
 impl Capabilities {
     pub(super) const LINUX: Self = Self {
         os: Os::Linux,
-        meetings: true,
-        calendar: false,
         permissions: false,
         launch_at_login: true,
         dock_icon: false,
@@ -84,8 +74,6 @@ impl Capabilities {
 
     pub(super) const MACOS: Self = Self {
         os: Os::Macos,
-        meetings: true,
-        calendar: true,
         permissions: true,
         launch_at_login: true,
         dock_icon: true,
@@ -101,8 +89,6 @@ impl Capabilities {
 
     pub(super) const WINDOWS: Self = Self {
         os: Os::Windows,
-        meetings: true,
-        calendar: false,
         permissions: false,
         launch_at_login: true,
         dock_icon: false,
@@ -131,92 +117,6 @@ impl Capabilities {
                 && crate::keyboard_input_sources::available(),
             ..os
         }
-    }
-}
-
-/// What the Calendar card shows; the host reads it off the main thread.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct CalendarView {
-    pub(super) access: CalendarAccess,
-    pub(super) calendars: Vec<CalendarInfo>,
-    /// The next meetings from the included calendars, once connected.
-    pub(super) upcoming: Vec<UpcomingMeeting>,
-    /// Connect calendar was pressed and macOS is asking.
-    pub(super) connecting: bool,
-    pub(super) error: Option<String>,
-}
-
-impl CalendarView {
-    /// A connected calendar with three meetings coming up, for scenes.
-    pub(super) fn preview() -> Self {
-        let calendar = |id: &str, title: &str, source: &str| CalendarInfo {
-            id: id.into(),
-            title: title.into(),
-            source: source.into(),
-        };
-        let meeting = |title: &str, when: &str, provider| UpcomingMeeting {
-            title: title.into(),
-            when: when.into(),
-            provider,
-        };
-        Self {
-            access: CalendarAccess::FullAccess,
-            calendars: vec![
-                calendar("work", "Work", "kit@anoma.ly"),
-                calendar("home", "Home", "iCloud"),
-                calendar("birthdays", "Birthdays", "Other"),
-            ],
-            upcoming: vec![
-                meeting(
-                    "Design sync",
-                    "Today · 2:30 PM",
-                    Some(CallProvider::GoogleMeet),
-                ),
-                meeting("Rune review", "Today · 4:00 PM", Some(CallProvider::Zoom)),
-                meeting("1:1 with Dax", "Tomorrow · 10:00 AM", None),
-            ],
-            connecting: false,
-            error: None,
-        }
-    }
-}
-
-/// One upcoming meeting as Settings lists it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct UpcomingMeeting {
-    pub(super) title: String,
-    /// "Today · 2:30 PM", already localized.
-    pub(super) when: String,
-    pub(super) provider: Option<CallProvider>,
-}
-
-/// What the Calendar card asks the host for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CalendarRequest {
-    /// Ask macOS for full calendar access, then mark the calendar connected.
-    Connect,
-    /// System Settings › Privacy & Security › Calendars.
-    OpenPrivacySettings,
-}
-
-/// Whether Apple Intelligence can write meeting notes, as
-/// `apple_intelligence::Availability` reports it.
-// Only the macOS host reports the states fixtures do not show.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum NotesAvailability {
-    #[default]
-    Available,
-    DeviceNotEligible,
-    NotEnabled,
-    ModelNotReady,
-    UnsupportedSystem,
-    Unknown,
-}
-
-impl NotesAvailability {
-    pub(super) fn is_available(self) -> bool {
-        self == Self::Available
     }
 }
 
@@ -282,7 +182,7 @@ pub(super) struct PlatformState {
     /// host clears retired Hex bundle IDs' stale TCC rows once in the
     /// background.
     pub(super) permissions_shown: Vec<PermissionKind>,
-    /// Screen & System Audio Recording, for meetings.
+    /// Screen & System Audio Recording, for Labs › Also pause the browser.
     pub(super) system_audio: bool,
     /// `None` while the login item worker checks, or when it is unavailable.
     pub(super) login_item: Option<LoginItemStatus>,
@@ -293,11 +193,6 @@ pub(super) struct PlatformState {
     /// answer replaces it.
     pub(super) login_item_requested: Option<bool>,
     pub(super) hex_microphone: Option<HexMicrophoneStatus>,
-    pub(super) notes: NotesAvailability,
-    /// A meeting folder that could not be revealed or chosen.
-    pub(super) meeting_folder_error: Option<String>,
-    /// The Calendar card's access, calendars, and next meetings.
-    pub(super) calendar: CalendarView,
     /// The tour's relaunch failed; the person must reopen Hex.
     pub(super) relaunch_failed: bool,
     /// The desktop's paste permission where Hex pastes through the
@@ -309,9 +204,6 @@ pub(super) struct PlatformState {
     /// A scene's state: [`Self::setup_status`] reports `permissions` on
     /// every OS rather than asking this computer.
     preview: bool,
-    /// Developer builds: keeps Meetings available without opt-in in debug builds
-    /// (`crate::DEVELOPER_FEATURES_ENABLED` on a native host).
-    pub(super) developer: bool,
     /// macOS 27 lists Accessibility as "Device Control and Data Access"
     /// (`permission_guide::list_name`); the permission rows use that name.
     pub(super) accessibility_renamed: bool,
@@ -377,14 +269,10 @@ impl PlatformState {
             login_item_error: None,
             login_item_requested: None,
             hex_microphone: None,
-            notes: NotesAvailability::Available,
-            meeting_folder_error: None,
-            calendar: CalendarView::default(),
             relaunch_failed: false,
             paste: None,
             clipboard_unrestorable: false,
             preview: false,
-            developer: false,
             accessibility_renamed: false,
             tuning: TunedFilterConfig::default(),
             demo: None,
@@ -548,31 +436,16 @@ impl PlatformState {
     }
 }
 
-/// A meeting action the pane asks the meetings runtime for.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum MeetingRequest {
-    Start,
-    Stop,
-    Rename { id: String, title: String },
-    Trash(String),
-    Summarize(String),
-    Reveal(String),
-    RevealFolder,
-    ChooseFolder,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum PlatformRequest {
     /// Request the microphone or open the System Settings guide.
     Permission(PermissionAction),
-    /// Screen & System Audio Recording, for meetings.
+    /// Screen & System Audio Recording, for Labs › Also pause the browser.
     SystemAudio,
     SetLaunchAtLogin(bool),
     OpenLoginItemSettings,
     InstallHexMicrophone,
     UninstallHexMicrophone,
-    Meeting(MeetingRequest),
-    Calendar(CalendarRequest),
     /// Quit and reopen Hex so macOS applies new permissions.
     Relaunch,
     /// Apply this tuning to the live Hex Microphone filter
@@ -659,9 +532,6 @@ pub(super) trait NativeHost {
     fn send(&mut self, request: PlatformRequest) -> Result<(), String>;
     /// Copies fresh state in; true when anything shown changed.
     fn poll(&mut self, state: &mut PlatformState) -> bool;
-    /// The meetings store, newest first, when it changed since the last
-    /// call. Asked only while the Meetings pane shows.
-    fn meetings(&mut self) -> Option<Result<Vec<Meeting>, String>>;
     /// What the tour hears from the runtime: practice dictation outcomes
     /// while `practicing`, and a shortcut listener that failed to start.
     fn tour_inputs(&mut self, practicing: bool) -> Vec<Input>;
@@ -731,13 +601,6 @@ impl PlatformHost {
         }
     }
 
-    pub(super) fn meetings(&mut self) -> Option<Result<Vec<Meeting>, String>> {
-        match self {
-            Self::Native(host) => host.meetings(),
-            _ => None,
-        }
-    }
-
     pub(super) fn tour_inputs(&mut self, practicing: bool) -> Vec<Input> {
         match self {
             Self::Native(host) => host.tour_inputs(practicing),
@@ -787,7 +650,7 @@ fn scrawl_request(request: ScrawlRequest) {
 #[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 enum Difference {
-    /// Belongs to one OS's own pattern (the Dock, TCC, EventKit).
+    /// Belongs to one OS's own pattern (the Dock, TCC).
     OsPattern(&'static str),
     /// Can't be done there as policy stands.
     Impossible(&'static str),
@@ -806,10 +669,6 @@ impl Difference {
 
 #[cfg(test)]
 const DIFFERENCES: &[(&str, Difference)] = &[
-    (
-        "calendar",
-        Difference::OsPattern("EventKit; there is no cross-platform calendar source"),
-    ),
     (
         "permissions",
         Difference::OsPattern("only macOS gates dictation on privacy permissions (TCC)"),
@@ -849,11 +708,9 @@ const DIFFERENCES: &[(&str, Difference)] = &[
 impl Capabilities {
     /// Every capability by name. Destructuring makes a new capability a
     /// compile error here until it is named.
-    pub(super) fn fields(self) -> [(&'static str, bool); 13] {
+    pub(super) fn fields(self) -> [(&'static str, bool); 11] {
         let Self {
             os: _,
-            meetings,
-            calendar,
             permissions,
             launch_at_login,
             dock_icon,
@@ -867,8 +724,6 @@ impl Capabilities {
             keyboard_model_switching,
         } = self;
         [
-            ("meetings", meetings),
-            ("calendar", calendar),
             ("permissions", permissions),
             ("launch_at_login", launch_at_login),
             ("dock_icon", dock_icon),

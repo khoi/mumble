@@ -207,9 +207,6 @@ pub fn open(event_path: PathBuf, shutdown: &'static AtomicBool, start_hidden: bo
     // The capture capsule, picker, and ink.
     let _capture_overlays =
         crate::rune_ui::capture_capsule::feed::CaptureOverlays::install(&mut app);
-    let meetings = crate::meeting::runtime::Meetings::install(&mut app, shutdown)
-        .inspect_err(|error| tracing::error!(%error, "meetings could not start"))
-        .ok();
     let (requests, receiver) = mpsc::channel();
     let shared = Arc::new(Shared::default());
     RUNTIME
@@ -259,10 +256,6 @@ pub fn open(event_path: PathBuf, shutdown: &'static AtomicBool, start_hidden: bo
     shutdown.store(true, Ordering::Relaxed);
     drop(requests);
     let _ = runtime.join();
-    // A recording stops, keeping its audio for the next launch.
-    if let Some(meetings) = meetings {
-        meetings.join();
-    }
     drop(local_api);
     drop(tray);
     Ok(())
@@ -284,7 +277,6 @@ fn run_runtime(
     tray: Option<&rune::Tray>,
 ) {
     let mut tray_view = None;
-    let mut tray_meetings = None;
     indicator.set_position(settings.indicator_position);
     let hud = indicator.clone();
     let mut host =
@@ -325,11 +317,9 @@ fn run_runtime(
                 wake();
             }
         }
-        let meetings = crate::meeting::runtime::tray_state();
         if let Some(tray) = tray
-            && (changed || tray_view.is_none() || tray_meetings != meetings)
+            && (changed || tray_view.is_none())
         {
-            tray_meetings = meetings;
             let view = tray_view_for(&published);
             if tray_view.as_ref() != Some(&view) {
                 tray.set_tooltip(view.tooltip());
@@ -546,19 +536,16 @@ impl crate::control::host::Host for WindowsControl {
 
 /// What the tray shows for what the runtime published.
 fn tray_view_for(published: &Published) -> TrayView {
-    TrayView {
-        meetings: crate::meeting::runtime::tray_state(),
-        ..TrayView::new(
-            published.listener.running,
-            published.state,
-            &published.update_status,
-            crate::desktop::tray_menu::model_menu_entries(
-                &published.settings,
-                published.transcription.preparing.is_some(),
-                crate::transcription::models::is_installed,
-            ),
-        )
-    }
+    TrayView::new(
+        published.listener.running,
+        published.state,
+        &published.update_status,
+        crate::desktop::tray_menu::model_menu_entries(
+            &published.settings,
+            published.transcription.preparing.is_some(),
+            crate::transcription::models::is_installed,
+        ),
+    )
 }
 
 /// Gives the window the executable's embedded icon (resource 1, see
@@ -673,25 +660,6 @@ fn create_tray(window: rune::AppHandle<Ui>) -> Result<rune::Tray> {
         rune::TrayEvent::Menu(id) => match TrayCommand::from_id(&id) {
             Some(TrayCommand::Show) => window.open(),
             Some(TrayCommand::Quit) => window.quit(),
-            Some(
-                command @ (TrayCommand::RecordMeeting
-                | TrayCommand::StopMeeting
-                | TrayCommand::CopyLastMeeting),
-            ) => {
-                use crate::meeting::MeetingRequest;
-                let result = match command {
-                    TrayCommand::RecordMeeting => {
-                        crate::meeting::runtime::request(MeetingRequest::Start { title: None })
-                    }
-                    TrayCommand::StopMeeting => {
-                        crate::meeting::runtime::request(MeetingRequest::Stop)
-                    }
-                    _ => crate::meeting::runtime::copy_last_transcript(),
-                };
-                if let Err(error) = result {
-                    tracing::warn!(%error, ?command, "the tray action failed");
-                }
-            }
             Some(command) => {
                 let Some(runtime) = runtime() else { return };
                 let published = runtime.published();
@@ -713,11 +681,7 @@ fn create_tray(window: rune::AppHandle<Ui>) -> Result<rune::Tray> {
                         };
                         Request::Desktop(action)
                     }
-                    TrayCommand::Show
-                    | TrayCommand::Quit
-                    | TrayCommand::RecordMeeting
-                    | TrayCommand::StopMeeting
-                    | TrayCommand::CopyLastMeeting => return,
+                    TrayCommand::Show | TrayCommand::Quit => return,
                 };
                 let _ = runtime.send(request);
             }
