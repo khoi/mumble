@@ -109,11 +109,11 @@ one (quit it first).
 
 The socket is owner-only in Hex's data directory, with same-user peer
 credentials, versioned bounded frames, bounded queues, and I/O deadlines. It is
-not a network API or the macOS embedded transcription SDK service. It carries
+not a network API. It carries
 `Activate` and `Status`. The `hex` control
 commands reach Hex through its local API's `POST /control`; dictation
 commands go straight from there to the listener, never through the window.
-The local API's `/dictations` (the TypeScript SDK's `hex.dictation`) also
+The local API's `/dictations` also
 records on the listener while Hex is listening, as on macOS: one capture at a
 time, so a client's dictation and the shortcut never end each other.
 

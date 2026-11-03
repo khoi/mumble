@@ -86,7 +86,7 @@ Prepare local models                      // separate network dependency
 
 The website shows the pinned macOS version and platform requirements beside its
 download links. App mirrors use explicit `v…` release tags (`app-v…` through 2.3.1) rather than GitHub's
-repository-wide latest release, which may refer to the SDK. Builds on the release
+repository-wide latest release. Builds on the release
 service update from `https://anoma.ly/release` (docs/releasing.md); the 2.3.1
 feeds, appcast, and the legacy `r2.dev` endpoint stay frozen for installed
 clients. Hosting does not guarantee access through every corporate policy.
@@ -325,7 +325,7 @@ checked. Both families, on silence or noise, often return the prompt verbatim
 (Qwen3-ASR 0.6B did on 3 s of silence and of noise). A segment whose text
 equals the prompt after normalization (case, ASCII punctuation, spelled-out
 digits; commas, semicolons and line breaks separate words) is removed, in
-dictation and the local API alike. The filter needs at least two
+dictation and Transcribe again alike. The filter needs at least two
 terms, so dictating the one listed name still pastes it; speech that contains
 a term among other words is kept, and so is a repeat of only some terms.
 Checks: `prompt_echo_is_dropped`, `speech_containing_the_hints_is_kept`,
@@ -338,7 +338,7 @@ said, such as "Sous-titrage Société Radio-Canada" from Cohere Transcribe in
 French after a trailing pause (#1141). Every GGUF run and live stream drops a
 known credit only when it is the very end of the text (letters and digits
 compared, case and punctuation ignored), with its segment and words, in
-dictation and the local API alike; the same words elsewhere stay.
+dictation and Transcribe again alike; the same words elsewhere stay.
 The list is in
 [transcription/subtitle_credits.rs](../../src/transcription/subtitle_credits.rs).
 Checks: `a_trailing_subtitle_credit_is_removed`,
@@ -614,7 +614,7 @@ Settings picker > Every model > Downloaded row   // setup.delete-model; macOS
 ```
 
 Deletion takes the shared model-directory download lock without waiting, so it
-cannot race a Settings, menu-bar, or local API download. The menu bar drops a
+cannot race a Settings or menu-bar download. The menu bar drops a
 deleted model because it reads installation state when it builds the menu. Linux
 Settings does not offer deletion: the service owns model files and has no delete
 request yet.
@@ -1955,13 +1955,7 @@ Both Linux CI triggers include `tests/**`, and the
 layout evidence.
 
 ```ts
-TypeScript SDK + local service             // macOS, Linux, Windows
-├── Caller records audio -> Explicit helper -> Raw transcription
-│   └── Linux, Windows -> No packaged helper; command: hex service --embedded
-├── Caller streams audio -> Running app's /streams -> Partials, segments, final
-│   └── Dictation first; uses the loaded model only (docs/streams.md)
-├── Running app's /transcriptions -> Listener's engine when it holds the model
-│   └── Otherwise the service's own copy of the requested model
+Local API dictation (/dictations)          // macOS, Linux
 ├── Running desktop capture API -> Separate microphone ownership protocol
 │   ├── No silence gate                  // model output, unlike hotkey dictation;
 │   │                                     // only recognition-hint echoes are dropped
@@ -1970,55 +1964,21 @@ TypeScript SDK + local service             // macOS, Linux, Windows
 │   │   ├── Client's dictation records -> shortcut starts and ends nothing
 │   │   ├── Lapsed lease or owner's cancel -> only that dictation is dropped
 │   │   └── Microphone lost -> finish answers microphone-lost (no kept clip)
-│   └── Windows, hex service -> serviceCapture false, 404 service-capture-unavailable
-└── Distribution
-    ├── SDK 0.3.0 -> Published
-    └── Turnkey signed helper -> Unfinished
+│   └── Windows -> serviceCapture false, 404 service-capture-unavailable
+└── Text -> The owner's /finish; nothing pastes
 ```
 
 Linux and Windows serve the same local API from the running app
-([linux/app.rs](../../src/linux/app.rs), [windows/rune.rs](../../src/windows/rune.rs))
-and from `hex service [--embedded]`; a failed start only logs, and Hex runs on
-without it. On Linux, the embedded service answered `/health`,
-`/capabilities`, `/models`, and transcribed a WAV with Parakeet Unified
-English on the Vulkan iGPU (October 30). The running app's shared-engine path,
-`/streams` on a live Linux or Windows listener, and anything on Windows beyond
-`cargo xwin clippy` (x64) are unverified.
+([linux/app.rs](../../src/linux/app.rs), [windows/rune.rs](../../src/windows/rune.rs));
+a failed start only logs, and Hex runs on without it.
 
 Linux `/dictations` (#981) shares the macOS HTTP contract and the owner,
 lease, and level logic in [dictation/service.rs](../../src/dictation/service.rs);
 the listener ([linux/dictation.rs](../../src/linux/dictation.rs)) records it
 without a hold threshold or release tail. Unit tests cover ownership, lease
 expiry, busy refusal beside a shortcut capture, and the HTTP round trip
-(`local_api` tests now run on Linux). A live Linux microphone run through the
-SDK is unverified.
-
-The [SDK guide](../../sdk/typescript/README.md),
-[service contract](../specs/local-transcription-service.md), and
-[SDK tests](../../sdk/typescript/test) distinguish those paths. Helper-only service
-mode is not a physical hotkey/microphone test. Embedded/packaged service smokes
-now expect API 2, matching service/SDK compatibility checks. Helper packaging
-requires an explicit signing team and notarization profile, with the same
-Developer ID identity validation as the app; identity fixtures do not establish
-a signed helper distribution. Low-level blocking-peek and
-FIN/half-close limitations in [local_api.rs](../../src/local_api.rs) must not be
-generalized to every SDK cancellation path.
-
-Live streams (`/streams`, [contract](../streams.md)) are exercised by fake
-engines only: `transcription/stream` tests cover windows, partials, the
-backlog during dictation, preemption and offline fallback, the lease, cancel,
-and busy; `local_api::streams` tests cover routes, auth, and bounds; and
-`transcription/engine` tests cover yielding streams closed by dictation. No
-real-model or live-app stream has been run.
-
-Model progress and dictation levels share bounded SSE framing in
-[sse.ts](../../sdk/typescript/src/sse.ts). In-memory
-[SDK regressions](../../sdk/typescript/test/sse.test.ts) cover transport-chunk
-independence, line/event limits, callback cancellation, reader cleanup, and
-bounded level observations. A CR-delimited terminal event is also checked with
-an open response body, so completion does not depend on EOF or subsequent data.
-These checks do not establish live service or
-microphone behavior.
+(`local_api` tests now run on Linux). A live Linux microphone run through
+`/dictations` is unverified.
 
 ## Developer And Prototype Surfaces
 

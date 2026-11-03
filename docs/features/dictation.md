@@ -884,7 +884,7 @@ it: `HEX_STREAM_LIVE_TEXT=0` gives the same text.
 `PauseCap` now feeds a dictation stream only the first 2.5 s and last 0.3 s of
 each pause (20 ms frames the pause segmenter calls not speech); the
 clip and its offline fallback keep every sample, and "finished live stream"
-logs `pauses_dropped_ms`. `/streams` is unchanged. Check:
+logs `pauses_dropped_ms`. Check:
 `a_dictation_stream_hears_only_the_ends_of_long_pauses` (synthetic audio, a
 fake stream). Not re-measured on a real model here; ElliottH's Metal replays
 went from 18/36 to 0/36 lost words for 6–14 s gaps of silence or steady noise.
@@ -1086,9 +1086,9 @@ Source: `finish_dictation` in [recognition.rs](../../src/recognition.rs).
 The silence gate stops models from hallucinating closing phrases such as "thank
 you" on an empty hold ([#108](https://github.com/anomalyco/hex/issues/108)). It
 covers hotkey and voice-delimited captures on macOS, and the Linux
-hotkey loop. The local API's programmatic dictation and host-audio transcription
-are deliberately left ungated: they skip both silence checks, and only output
-that repeats the vocabulary prompt (Whisper, Qwen3-ASR) is dropped there.
+hotkey loop. The local API's programmatic dictation is deliberately left
+ungated: it skips both silence checks, and only output that repeats the
+vocabulary prompt (Whisper, Qwen3-ASR) is dropped there.
 The threshold is conservative, so speech is not dropped; a noisy room, the start
 tone, or a key click can lift a capture above it. Those captures then go to the
 Silero speech detector ([transcription/speech_detector.rs](../../src/transcription/speech_detector.rs)),

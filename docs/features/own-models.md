@@ -111,8 +111,7 @@ Picker opens, or onboarding starts -> one scan (found_models::scan)   // setup.f
 `hex model list` scans too and shows each model's source: `download`, `hex`,
 `imported`, or `found: owner/name@abcdef1`; a compatible file not yet used is
 listed as `custom-<first 16 hex of its blob>` with `(not tested by Hex)`, and
-`hex model use <that id>` checks it in full and uses it in place. The local
-API's `/models` and the SDK's `ModelInfo.source` carry the same field.
+`hex model use <that id>` checks it in full and uses it in place.
 
 ## Onboarding Choice
 

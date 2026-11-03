@@ -7,13 +7,6 @@ x86_64 Linux (i3/X11 and compatible wlroots Wayland compositors) betas provide
 hotkey dictation, Modes, History, the shared Rune window, and signed user-local
 updates. Nix packaging for
 Linux is implemented and awaiting supported-host validation before release.
-The authenticated local transcription service now implements discovery,
-direct-child embedding, model preparation, and bounded host-audio transcription;
-`@kitlangton/hex@0.3.0` publishes ready transcribers through Promise and Effect
-entrypoints. Local Electron capture and native transcription have been exercised;
-signed helper packaging and a signed first-consumer integration remain. Follow the
-[embedded desktop delivery plan](docs/plans/typescript-sdk.md); Apple Silicon
-macOS is the proposed first target, not a cross-platform availability promise.
 
 ## Validate The Rune Desktop App
 
@@ -218,15 +211,6 @@ Settings for users whose saved model is no longer recommended for their
 language, explaining how to switch. Language routing already keeps their model
 and lists it in the picker ([plan](docs/plans/language-recommendations.md)); the
 hint never switches or downloads anything itself.
-
-## Shared Engine Service
-
-Later, not started. Move the engine into a launchd service
-(`anomaly.hex.engine`) serving the same `/streams` and `/transcriptions` API;
-the Hex UI becomes a client. Today the running app serves
-[`/streams`](docs/streams.md) on dictation's loaded model, with dictation
-first; the service keeps that contract, so stream clients such as Seer don't
-change.
 
 ## Deliberate Deferrals
 

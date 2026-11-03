@@ -192,8 +192,7 @@ Hex never refreshes or writes either sign-in: Claude Code and Codex renew
 their own tokens (Claude's last about eight hours, Codex's about ten days),
 so an expired one falls back until its app runs again. Both endpoints are
 the apps' private ones, reached with their identities, and may change or
-refuse without notice. Host-audio transcription
-(`/transcriptions`, `/streams`) and Transcribe again stay on Hex's model.
+refuse without notice. Transcribe again stays on Hex's model.
 Everything goes through the computer's proxy: Codex's upload through
 `net`'s agent, both WebSockets through `net::tunnel` (an HTTP proxy's
 CONNECT). Tungstenite logs nothing below warnings whatever `RUST_LOG` asks,

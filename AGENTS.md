@@ -84,8 +84,9 @@ substitute for source inspection or a second roadmap.
 - `dictation`, `dictation/diagnostics`: warm pre-roll, growable capture, 16 kHz
   local-transcription resampling, and owner-only diagnostic WAV retention when
   `HEX_RETAIN_DICTATION_AUDIO` is set.
-- `transcription/pause_segmenter`: pure 16 kHz pause detection that cuts
-  `/streams` audio into transcription windows.
+- `transcription/pause_segmenter`: pure 16 kHz speech and quiet frame
+  classification against an adaptive noise floor, behind a dictation stream's
+  cut pauses and the growing release tail.
 - `dictation/audio`: the authoritative microphone timeline, lazy stream
   lifecycle, recording owner, exact shortcut boundaries, recovery handoff,
   and disposable bounded command audio projection.
@@ -151,16 +152,15 @@ substitute for source inspection or a second roadmap.
   whole-clip runs, and (macOS) model loads and switches. The capture owns its
   `LiveStream` and hands it to the finished clip; finishing returns a
   `PendingTranscript` whose wait enforces the stream deadline and falls back to
-  the whole clip. It also runs background work (local API host audio) that
-  yields to any dictation request sent before it starts. The
+  the whole clip. It also runs background work (History's Transcribe again)
+  that yields to any dictation request sent before it starts. The
   listener shares its engine (`TranscriptionEngine::share`) on every OS;
   `transcription::engine::dictation_busy` is the press-to-paste capture state
   on macOS, and on Linux and Windows only the engine's dictation streams and
-  finishes, so a host clip can start during a CPU-only capture's hold. With
-  Labs › Unload model when idle on, its worker unloads the GGUF model after
-  the chosen idle time when nothing records (`audio::idle_sleep::held`) and reloads
-  it before the next command that needs it; the parked model still counts as
-  held, so callers never load a second copy.
+  finishes. With Labs › Unload model when idle on, its worker unloads the GGUF
+  model after the chosen idle time when nothing records
+  (`audio::idle_sleep::held`) and reloads it before the next command that
+  needs it.
 - `transcription/preparation`: application-owned model preparation shared by
   Settings and the menu bar on macOS and by the Windows runtime, with one
   worker, latest-choice pending admission, cancellation fences, and an
@@ -180,30 +180,17 @@ substitute for source inspection or a second roadmap.
   per-file cache keyed by path, size, mtime, and file ID), exact catalog
   matches by pinned SHA-256 blob name, adopted catalog records in
   `models/found/`, and the GPU memory estimate.
-- `transcription/service`: bounded host-audio admission, hostile WAV validation,
-  normalization, cancellation, and inference. In the app, clips up to 30 s run
-  on the dictation engine's model when it is the one requested; otherwise the
-  service loads its own (`WarmTranscriber` on macOS, `transcription::local_transcriber::WarmLocal`
-  on Linux and Windows), released after a long clip when the engine holds it.
-- `transcription/stream`: live `/streams` transcription of another app's
-  pushed audio on the engine's loaded model: pause-cut windows fed through
-  yielding engine streams that any dictation request closes, a bounded
-  backlog held while dictation is busy, offline fallback windows, the lease,
-  and one live stream at a time.
-- `local_api`: authenticated loopback discovery or direct-child endpoint
-  handoff, bounded HTTP parsing, model preparation progress, and raw
-  transcription routes, the `/streams` routes (contract:
-  [`docs/streams.md`](docs/streams.md)), plus the always-on authenticated
+- `local_api`: authenticated loopback discovery, bounded HTTP parsing,
+  `GET /health` and `GET /capabilities`, the always-on authenticated
   `POST /control`, and `GET /profile/vitals` (process footprint and CPU from
   Rune's `procwatch`, sampled by `macos_rune`; debug builds also count the heap
   and report the `speech.model_weights` gauge from `parakeet`). The running
-  app serves it on every OS, as does `hex service [--embedded]`; the discovery
-  file is `local-api.json` in the data folder (mode 0600 on Unix, the per-user
-  `%APPDATA%` ACL on Windows). `/dictations` (`local_api::dictation`) runs on
+  app serves it on every OS; the discovery file is `local-api.json` in the
+  data folder (mode 0600 on Unix, the per-user `%APPDATA%` ACL on Windows). `/dictations` (`local_api::dictation`) runs on
   the macOS recognition loop and the Linux listener, sharing the protocol,
-  owner tokens, lease, and levels in `dictation::service`; on Windows and
-  `hex service` it answers `service-capture-unavailable`, and off macOS
-  `/profile/vitals` answers 503.
+  owner tokens, lease, and levels in `dictation::service`; on Windows it
+  answers `service-capture-unavailable`, and off macOS `/profile/vitals`
+  answers 503.
   `/control` carries the `hex` control commands on every OS (`control`).
 - `control`: the release `hex` control surface on every OS: the versioned
   `ControlRequest`/`ControlReply` protocol, the settings registry behind
@@ -215,8 +202,6 @@ substitute for source inspection or a second roadmap.
   adapter (`linux::app::LinuxControl`, `windows::rune::WindowsControl`);
   `macos_rune::control` is macOS's host. What an OS can't do answers
   `unsupported` at runtime. Contract: `docs/cli.md`.
-- `sdk/typescript`: Promise and Effect v4 host wrappers for direct-child
-  lifecycle, authenticated model preparation, and host-audio transcription.
 - `control/developer_control`: the typed debug-only command/reply protocol the local
   API uses to drive the running app from `hex dev`.
 - `paste`: clipboard insertion, continuation joins, and generation-safe
@@ -449,8 +434,6 @@ substitute for source inspection or a second roadmap.
 - `durable`: crash-safe writes on every OS (`write`, `sync_file`,
   `sync_directory`). Windows flushes only through a writable handle and
   cannot open a directory, so file syncs and directory syncs go through it.
-- `dictation_activity`: whether dictation is capturing or transcribing, so
-  the local API yields, on every OS.
 - `microphone_activity`: permission-light observation, on macOS only, of
   which apps use the microphone (CoreAudio processes), for Labs › Also pause
   the browser, the Hex Microphone status, and browser processes. No samples
@@ -624,9 +607,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   never block authoritative audio capture. Their queues remain bounded.
 - Dictation audio leaves the computer only through Labs › Cloud
   transcription (off by default) and only for dictations (shortcut,
-  `hex dictation`, `/dictations`); host-audio transcription and Transcribe
-  again stay local. A dictation streams from
-  the hold threshold (Toggle on Linux and Windows: the press; Linux
+  `hex dictation`, `/dictations`); Transcribe again stays local. A dictation
+  streams from the hold threshold (Toggle on Linux and Windows: the press; Linux
   `/dictations`: its start), so short taps and chords send nothing, but a
   dictation discarded later has already sent what it recorded. Nothing pastes before the final text,
   and a stream or clip without text is transcribed on Hex's model.
@@ -668,8 +650,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   stream holds the model's compute lease. Streams run only on GPU devices
   (Metal, Vulkan); models that cannot stream transcribe the whole clip after
   release. Labs › Cloud transcription's streams go to Claude or Codex
-  instead, on any device. Dictation is never cut at pauses; `/streams` audio
-  is.
+  instead, on any device. Dictation is never cut at pauses.
 - Starting a new capture never cancels accepted dictation work. Pending jobs
   preserve submission-order output while capture remains immediately available.
 - Completing or pasting an older job must not reconcile or finish a newer
@@ -1058,36 +1039,6 @@ CoreAudio formats, AppleScript details, or event serialization.
 
 ## Development
 
-### TypeScript SDK Releases
-
-The public TypeScript SDK is `@kitlangton/hex` in `sdk/typescript`. The first
-release, `0.1.0`, was bootstrapped manually; subsequent user-facing SDK changes
-must include a Changeset under `sdk/.changeset/` unless preparing an initial
-unpublished package. Run package commands from the `sdk` workspace root.
-
-Before release, run:
-
-```sh
-cd sdk
-bun install --frozen-lockfile
-cd typescript
-bun run check
-bun run test
-bun run build
-npm pack --dry-run
-```
-
-When exports or packaging change, install the packed tarball in a clean consumer
-and import both `@kitlangton/hex` and `@kitlangton/hex/effect`. The release
-workflow is `.github/workflows/release-typescript.yml`; npm trusted publishing
-authorizes `anomalyco/hex` and that exact workflow filename for `npm publish`.
-The workflow uses npm trusted publishing without requesting a Sigstore
-provenance bundle.
-Use the configured Changesets release command (`cd sdk && bun run release`), not
-direct `npm publish`, after the bootstrap release. Pending changesets on `dev`
-keep a version pull request open into `dev`; the workflow publishes only when
-`production` is fast-forwarded to an unpublished SDK version.
-
 ```sh
 ./scripts/setup.sh
 ./scripts/setup-parakeet.sh
@@ -1104,7 +1055,6 @@ scripts/check history  # fmt, then only matching tests
 git diff --check
 ./scripts/test-app-identity.sh # macOS only
 ./scripts/test-install-linux-release.sh # x86_64 or aarch64 Linux
-cd sdk/typescript && bun run check && bun run test && bun run build
 ```
 
 New, unproven, user-requested, and externally contributed features
@@ -1184,8 +1134,7 @@ and old clients. The 2.3.1 feeds and appcast at `https://anoma.ly/hex/files`
 (and Kit's `downloads.hex.kitlangton.dev`/`.com`, which must keep redirecting
 there) stay frozen. GitHub app releases use `v<VERSION>` tags (`app-v…`
 through 2.3.1); each stable one is created as GitHub's Latest release
-(`--latest=true`, stable only), and SDK releases (`release-typescript.yml`)
-are created with `--latest=false` so they never take the badge. Nothing
+(`--latest=true`, stable only). Nothing
 downloads through GitHub's `releases/latest` redirect. Never overwrite a published artifact with different bytes.
 `https://anoma.ly/hex` (in-repo `site/`) is the only Hex website. One
 `site/cloudflare.config.ts` defines the production Worker `hex-production-site` (anoma.ly/hex,
@@ -1199,7 +1148,7 @@ workflow updates the Homebrew cask. `bun run --cwd site check:downloads` fails u
 serves a file; every deploy runs it. Verify the live links afterwards.
 The Rust app is named `Hex`, packaged as `Hex.app`,
 with bundle identifier `anomaly.hex` (deliberately not reverse-DNS) and executable
-`hex`; its SDK helper is `anomaly.hex.service` and the virtual microphone driver
+`hex`; its virtual microphone driver is
 `anomaly.hex.microphone.driver`. Releases through 2.3.1 were `com.kitlangton.hex2`,
 signed by Kit's team `QC99C9JE59`; macOS treats `anomaly.hex` as a new app (fresh
 permissions, login item, and preferences domain), while the `hex` Application

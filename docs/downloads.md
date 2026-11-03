@@ -38,9 +38,8 @@ and updater routes.
 
 The release workflow uploads every file to the release service (stored by
 hash, never replaced), then the release, then mirrors the files to the GitHub
-release (verified byte for byte). App tags remain separate from TypeScript SDK
-tags. The stable app release is GitHub's Latest release (the repository badge);
-SDK releases are created with `--latest=false` and never take it. Still, do not
+release (verified byte for byte). The stable app release is GitHub's Latest
+release (the repository badge). Still, do not
 use GitHub's generic `releases/latest` redirect for an app download: links
 name the release service or an explicit `v<version>` tag.
 

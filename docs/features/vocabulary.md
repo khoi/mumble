@@ -37,9 +37,9 @@ Transcription (Parakeet: RNN-T and TDT, Underdog Bark and Nemotron 3.5 ASR too) 
 │   default; labs.md) -> off: no run takes the list; the sheet says so, and
 │   rewriting and search still use it
 ├── Every run and live stream reads the list and the boost at its start:
-│   dictation, the local API
+│   dictation, Transcribe again
 ├── First 64 terms (the engine's cap) and their spellings; empty or Off -> unchanged
-├── Whole-clip run on an RNN-T model (Parakeet unified): the local API,
+├── Whole-clip run on an RNN-T model (Parakeet unified): Transcribe again,
 │   dictation that falls back to the whole clip
 │   └── The greedy words stand; where the audio could also spell a term, the
 │       decoder follows the term alongside them, and the term replaces them
@@ -57,8 +57,8 @@ Transcription (Parakeet: RNN-T and TDT, Underdog Bark and Nemotron 3.5 ASR too) 
 
 Context prompt (Whisper incl. ivrit.ai, Qwen3-ASR, QwenCleo)  // vocabulary.prompt-transcription; transcription::gguf_session::with_vocabulary
 ├── Always on (not Labs): replaced the per-model Recognition hints box (#129)
-├── Every whole-clip run reads the list at its start: dictation, the local
-│   API; live streams run without it
+├── Every whole-clip run reads the list at its start: dictation, Transcribe
+│   again; live streams run without it
 ├── "Term, Term, …": the first terms in list order, at most 64, as many as
 │   fit 500 characters (Whisper: its prompt slot holds 223 tokens and trims
 │   an overlong one from the front) or 1,000 (Qwen3-ASR's system message)
@@ -92,7 +92,7 @@ A mode's own vocabulary                  // vocabulary.modes; DictationMode::voc
 ├── OpenCode rewriting -> every OS, the mode chosen for the dictation
 └── Transcription -> macOS dictation only: the mode of the app and page last
     seen by the context monitor (≤ 0.5 s old) when the stream or whole-clip run
-    starts; the local API, Linux, and Windows hear with the shared list
+    starts; Transcribe again, Linux, and Windows hear with the shared list
 
 OpenCode rewriting (Modes)               // vocabulary.prompt
 └── Prompt gains "Vocabulary (spell these exactly when the speaker means them):

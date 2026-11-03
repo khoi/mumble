@@ -279,13 +279,6 @@ That checks every Rust path, including Rune, wgpu's DX12 and Vulkan
 backends, and the Windows modules; it compiles C build scripts (ring) for
 the target but never links, builds transcribe.cpp, or runs anything.
 
-## Local Transcription Service
-
-Not available on Windows in this build. The `windows-shell` branch generalized
-the authenticated local API (`service` and `service --embedded`) across
-platforms, but `dev` has since reshaped it for macOS; porting it onto that
-version is follow-up work.
-
 ## macOS Parity
 
 The target is product and visual parity with macOS, using native Windows

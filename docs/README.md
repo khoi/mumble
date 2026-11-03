@@ -10,8 +10,6 @@ override shipped behavior.
 - [`linux.md`](linux.md): Linux X11 and native Wayland beta requirements and installation.
 - [`nix.md`](nix.md): Nix packaging, development, and per-user autostart.
 - [`../ios/README.md`](../ios/README.md): build and test the iOS prototype.
-- [`../sdk/typescript/README.md`](../sdk/typescript/README.md): use the public
-  TypeScript transcription SDK with an explicitly supplied native helper.
 
 ## Engineering Reference
 
@@ -30,8 +28,6 @@ override shipped behavior.
   command contract and remaining lifecycle work.
 - [`plans/quickjs.md`](plans/quickjs.md): why and how configs run in embedded
   QuickJS instead of Bun, with size and latency measurements.
-- [`specs/local-transcription-service.md`](specs/local-transcription-service.md):
-  implemented macOS local-service protocol and lifecycle guarantees.
 
 ## Architecture Decisions And Active Plans
 
@@ -45,8 +41,6 @@ override shipped behavior.
   macOS, Windows, and Linux share one window and one settings file.
 - [`plans/swift-app-handoff.md`](plans/swift-app-handoff.md): manual download
   handoff from Swift, without data import or automatic replacement.
-- [`plans/typescript-sdk.md`](plans/typescript-sdk.md): published SDK status,
-  remaining signed-helper packaging, and first-consumer validation.
 - [`plans/linux.md`](plans/linux.md): Linux X11/Wayland validation and later capability
   slices.
 

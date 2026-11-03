@@ -105,7 +105,6 @@ release so users re-grant permissions once:
 
 ```ts
 app            // com.kitlangton.hex2               -> anomaly.hex
-SDK helper     // com.kitlangton.hex.service        -> anomaly.hex.service
 mic driver     // com.kitlangton.hex.microphone.driver -> anomaly.hex.microphone.driver
 mic UIDs       // com.kitlangton.hex.microphone[.sink] -> anomaly.hex.microphone[.sink]
 test build     // com.kitlangton.hex2.test          -> anomaly.hex.test
