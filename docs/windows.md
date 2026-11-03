@@ -186,13 +186,12 @@ The `hex` control commands ([docs/cli.md](cli.md)) drive the running tray app
 as they do on macOS: `status`, `start`, `quit`, `restart`, `dictation
 start|stop|cancel|toggle` (with `stop --print`), `paste-last`, `settings`,
 `model`, `window`, `vocabulary`, `history clear`, `check-for-updates`,
-`launch-at-login` (the Run key), `onboarding reset`, `logs`, and `commands
-init|check`, `annotate`, `meetings record|stop|copy-last`, `history`, and
-`mcp`. They reach it through its local API (`local-api.json` in
+`launch-at-login` (the Run key), `onboarding reset`, `logs`, `commands
+init|check`, `annotate`, and `history`. They reach it through its local API (`local-api.json` in
 `%APPDATA%\hex` and the bearer-authenticated `POST /control`). Dictation commands go
 to the listener's own loop as a shortcut press would, and `annotate`
-start, stop, cancel, and status wait for its capture host. `history`,
-`meetings`, and `mcp` work as on macOS. `hex restart`
+start, stop, cancel, and status wait for its capture host. `history` works
+as on macOS. `hex restart`
 quits, waits for the drain, and starts `hex app --hidden` again.
 
 ## Custom Transformations
@@ -318,7 +317,6 @@ current-user startup registry, UI Automation, and Windows capture APIs.
 | Managed installer with Start Menu integration and clean uninstall | Implemented as `.github/release/install-windows.ps1`; it creates the self-updating versions layout, and updates retarget the managed shortcut and Launch-at-login entry |
 | First-run onboarding | Implemented; a fresh install picks a dictation language, downloads its recommended model with live progress, and starts listening only once setup is recorded — the shared first-run story, with a Microphone page only while the privacy switch is off and the practice game on the real shortcut |
 | Activity pane with the live session and recent transcripts | Implemented in developer builds; the shared read-only pane |
-| Developer Meetings, live drafts, and meeting paste | Missing |
 | Local transcription API and public TypeScript SDK host lifecycle on Windows | Missing; see Local Transcription Service |
 | Streaming finish with whole-clip fallback | Implemented on GPU devices with Parakeet Unified English |
 
@@ -342,9 +340,7 @@ The Windows listener preserves physical press/release timestamps, keeps audio
 capture off the transcription and paste worker, and restores the previous
 clipboard only when no newer clipboard change supersedes it.
 `check-windows` builds and tests the optimized MSVC release for x64 and ARM64
-in Release's check and stable channels; pull requests only compile x64. The remaining code
-parity slice is the developer-only Meetings surface after the physical matrix
-is green. Shared
+in Release's check and stable channels; pull requests only compile x64. Shared
 first-run onboarding, complete OpenCode mode rewriting controls, and the bounded
 TypeScript transformation host already ship. Windows releases are built for
 x64 and ARM64 by

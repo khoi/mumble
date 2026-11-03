@@ -49,10 +49,6 @@ override shipped behavior.
   remaining signed-helper packaging, and first-consumer validation.
 - [`plans/linux.md`](plans/linux.md): Linux X11/Wayland validation and later capability
   slices.
-- [`plans/meeting-live-transcription.md`](plans/meeting-live-transcription.md):
-  evaluation of Apple SpeechTranscriber vs Moonshine for live meeting drafts.
-- [`plans/granola-import.md`](plans/granola-import.md): research on importing
-  historical Granola meetings into `hex mcp`.
 
 When a plan disagrees with `AGENTS.md` about shipped behavior, update the plan.
 

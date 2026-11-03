@@ -1,7 +1,7 @@
 # `hex` control CLI
 
-The control commands drive the one running Hex: start or stop a dictation or a
-meeting, change any setting, switch models, open the window, quit, or read its
+The control commands drive the one running Hex: start or stop a dictation,
+change any setting, switch models, open the window, quit, or read its
 status. They are meant for agents and scripts as much as people, so every
 command takes `--json`, is idempotent, and exits with a stable code.
 
@@ -18,8 +18,8 @@ CLI; `hex status --json` lists the OS's `capabilities`. Today that is
 playground stories (`window story`) outside macOS and the local `model`
 tools on macOS.
 
-The read-only `hex history` and `hex meetings list|show|chapters|search` commands, and
-`hex mcp`, read files rather than the running Hex; see `docs/transcript-cli.md`.
+The read-only `hex history` command reads files rather than the running Hex;
+see `docs/transcript-cli.md`.
 
 ## Commands
 
@@ -27,20 +27,15 @@ The read-only `hex history` and `hex meetings list|show|chapters|search` command
 hex
 ├── status                         what Hex is doing (see Status below)
 ├── start                          open Hex if it isn't running (macOS Hex.app, else `hex app --hidden`); wait until it answers
-├── quit [--force]                 refused while a meeting or dictation is active, or unconfirmed
+├── quit [--force]                 refused (`busy`) while a dictation records or transcribes, or unconfirmed
 ├── restart [--force]              quit and reopen (opens Hex when it isn't running)
 ├── dictation start|stop|toggle
 │   ├── stop --print               print the transcript instead of pasting it (below)
 │   └── start|toggle --raw         paste the transcript as heard, skipping the Output steps
 ├── paste-last                     paste the last dictation (Option-Shift-V); refused while recording
-├── meetings
-│   ├── record [--title T]         as the menu bar's Record Meeting; needs meetings.enabled
-│   ├── stop                       Stop & Transcribe
-│   ├── copy-last                  copy the last meeting transcript to the clipboard
-│   └── list | show | search       read-only (docs/transcript-cli.md)
 ├── settings
 │   ├── list                       every setting: key, value, kind, choices, writable, about
-│   ├── get <key|prefix>           one setting, or every key under a prefix (`meetings`)
+│   ├── get <key|prefix>           one setting, or every key under a prefix (`labs`)
 │   └── set <key> <value>
 ├── model
 │   ├── list                       every model, its languages and size, installed or not
@@ -56,7 +51,7 @@ hex
 │   ├── init                       create ~/.config/hex (local, no running Hex needed)
 │   └── check                      validate ~/.config/hex/hex.config.ts transformations
 ├── window
-│   ├── show [settings|models|modes|history|meetings]
+│   ├── show [settings|models|modes|history]
 │   ├── hide                       close the window; Hex stays in the menu bar
 │   └── story <story> [--variant V] [--play]  the playground (Labs): open a story
 ├── onboarding reset (alias restart)  replay the first run now; every OS (below)
@@ -112,8 +107,6 @@ transcribed, pasted, or saved to History, and dictations already transcribing
 finish. With nothing recording it answers `unchanged`. In Toggle mode the
 cancel shortcut (`cancel_hotkey`, Escape by default) does the same; on Wayland,
 bind `hex dictation cancel` to a key in the desktop instead (#786, #1022).
-`meetings cancel` doesn't exist because Hex has no way to discard a
-meeting recording.
 
 `onboarding reset` (or `onboarding restart`) opens the window on the
 first-run onboarding at once, as on a new install, for trying it again, on
@@ -199,11 +192,6 @@ capsule's ⇧⏎ does. Its reply says what became of it (`Sent to …`,
 Scrawl's `route --explain` (`--explain` is accepted); `--ask-jev` asks Jev
 again, one network call. An unknown capture is refused with `not-found`.
 
-A CLI-started meeting is the same recording the menu bar starts: the menu-bar
-state, the recording capsule, and Stop & Transcribe all apply to it.
-`meetings record` replies once the recording has started (or after 8 s);
-`meetings stop` replies once transcription has begun.
-
 ## Exit codes
 
 ```ts
@@ -237,15 +225,14 @@ transcription and `/streams`, but answer `/control` with
   `504 control-timeout`. Bad or missing tokens get `401` like every other
   route.
 
-## Wire format (version 4)
+## Wire format (version 5)
 
 Requests are flat objects tagged by `command` (kebab-case):
 
 ```json
-{"version": 4, "command": "meeting-record", "title": "Design sync"}
-{"version": 4, "command": "settings-set", "key": "sound_effects", "value": "off"}
-{"version": 4, "command": "dictation", "action": "start"}
-{"version": 4, "command": "dictation", "action": "stop", "print": true}
+{"version": 5, "command": "settings-set", "key": "sound_effects", "value": "off"}
+{"version": 5, "command": "dictation", "action": "start"}
+{"version": 5, "command": "dictation", "action": "stop", "print": true}
 ```
 
 ```ts
@@ -253,7 +240,6 @@ status | quit {force} | restart {force}
 dictation {action, print?}                       action: start | stop | toggle | cancel;
                                                  print (stop only) answers `transcript`
 paste-last
-meeting-record {title?} | meeting-stop | meeting-copy-last
 settings-get {key?} | settings-set {key, value}
 model-list | model-use {model, language?} | model-install {model, language?} | model-cancel
 window-show {pane?} | window-hide | window-story {story, variant?, play}
@@ -272,28 +258,28 @@ no wire form. `history-clear` has no confirmation field: the CLI asks for
 Replies are tagged by `status`:
 
 ```json
-{"version": 4, "status": "done", "message": "Recording “Design sync”; …", "changed": true}
-{"version": 4, "status": "error", "code": "feature-off", "message": "Meetings are off; …"}
-{"version": 4, "status": "settings", "settings": [{"key": "sound_effects", "value": true,
+{"version": 5, "status": "done", "message": "Quitting Hex", "changed": true}
+{"version": 5, "status": "error", "code": "feature-off", "message": "Annotate is off; …"}
+{"version": 5, "status": "settings", "settings": [{"key": "sound_effects", "value": true,
   "kind": "bool", "writable": true, "about": "Play recording and error tones"}]}
-{"version": 4, "status": "models", "models": [{"id": "parakeet_v3", "name": "…",
+{"version": 5, "status": "models", "models": [{"id": "parakeet_v3", "name": "…",
   "languages": ["en", "…"], "size": "…", "installed": true, "selected": true,
   "streams": true, "vocabulary": "bias", "supports_recognition_hints": false}]}
-{"version": 4, "status": "vocabulary", "entries": [{"term": "OpenCode",
+{"version": 5, "status": "vocabulary", "entries": [{"term": "OpenCode",
   "sounds_like": ["open code"]}, {"term": "Rune"}]}
-{"version": 4, "status": "scrawl-capture", "changed": true, "state": "idle",
+{"version": 5, "status": "scrawl-capture", "changed": true, "state": "idle",
   "bundle": "…/captures/1792933491953.scrawl", "elapsed_ms": null,
   "finishing": ["…/captures/1792933491953.scrawl"], "last": null}
-{"version": 4, "status": "scrawl-captures", "captures": [{"id": "1792933491953.scrawl",
+{"version": 5, "status": "scrawl-captures", "captures": [{"id": "1792933491953.scrawl",
   "bundle": "…", "created_at_ms": 1792933491953, "duration_ms": 4000, "mode": "window",
   "app": "Brave", "words": 12, "sent_to": {"session": "ses_…", "title": "Hex"},
   "queued": false}]}
-{"version": 4, "status": "scrawl-capture-detail", "id": "…", "…": "the list's fields",
+{"version": 5, "status": "scrawl-capture-detail", "id": "…", "…": "the list's fields",
   "window_title": "…", "transcript": "…", "note": null, "missing_transcript": null,
   "marks": 2, "keyframes": 3, "video": "…/video.mp4", "audio": null,
   "contact_sheet": "…/contact-sheet.jpg"}
-{"version": 4, "status": "scrawl-capture-route", "explanation": "Capture   …"}
-{"version": 4, "status": "transcript", "text": "Ship it."}
+{"version": 5, "status": "scrawl-capture-route", "explanation": "Capture   …"}
+{"version": 5, "status": "transcript", "text": "Ship it."}
 ```
 
 `done.changed` is `false` when the command found things already so ("Already
@@ -305,15 +291,13 @@ recording", "The window isn't open"). Setting `kind` is one of `bool`,
 
 ```json
 {
-  "version": 4, "status": "status",
+  "version": 5, "status": "status",
   "app_version": "2.3.1", "pid": 31708, "memory_footprint_bytes": 412000000,
   "listener": {"running": true, "status": "Listening"},
   "capture": {"state": "idle", "recording": null, "pending_jobs": 0},
-  "meeting": {"state": "recording", "title": "Design sync", "elapsed_seconds": 723},
   "model": {"id": "parakeet_v3", "name": "…", "language": "en", "installed": true,
             "preparing": null, "downloaded_bytes": 0, "error": null},
-  "features": {"meetings": true, "release_microphone_while_idle": false,
-               "history_retention": "week"},
+  "features": {"release_microphone_while_idle": false, "history_retention": "week"},
   "permissions": {"ready": true, "microphone": "ready", "accessibility": "ready",
                   "transcription_model": true},
   "window": {"open": false, "pane": null},
@@ -328,9 +312,8 @@ listener.shortcuts  Wayland portal only: [{"name": "Dictation", "trigger": "Supe
                     granted (changed in its settings or not); trigger null when it refused one
 capture.state       idle | recording | transcribing | unknown (the listener didn't answer or stopped)
 capture.recording   dictation | service | null
-meeting.state       idle | starting | recording | transcribing
 permissions.*       ready | needs-request | needs-settings | needs-restart
-window.pane         settings | modes | history | meetings | …
+window.pane         settings | modes | history | …
 update              current | checking | available | unavailable
 ```
 
@@ -353,9 +336,8 @@ not-found              no such capture, or it has no scrawl.json yet
 unknown-model          no such model id (`hex model list`)
 model-unavailable      an imported model that is missing, changed, or behind its Labs toggle
 not-installed          `model use` on a model that isn't downloaded (`hex model install`)
-feature-off            the command needs an opt-in that is off (Meetings)
+feature-off            the command needs an opt-in that is off (Annotate, the playground)
 not-ready              Hex is waiting for setup (permissions or the dictation model)
-meeting-active         quit/restart while a meeting records (pass --force)
 busy                   something is in progress (recording, transcribing, a full queue),
                        or the listener couldn't confirm it's idle
 discarded              `stop` dropped the clip: no audio yet, or silent; nothing transcribes
@@ -418,7 +400,7 @@ observe input-source changes or show these controls.
   a key on an external keyboard. It acts only while
   `labs.second_dictation_shortcut` is on (`hex labs on
   second-dictation-shortcut`) and shares no key with another shortcut.
-- `json` settings (modes, meeting providers, excluded calendars) take the JSON
+- `json` settings (modes, keyboard model mappings, capture routing) take the JSON
   value the file stores.
 - `ui_language` takes `en`, `pl`, `zh` (Simplified Chinese), `zh-Hant`
   (Traditional Chinese), `ja`, `de`, `es`, `uk`, `pt`, `fr`, or `none`
@@ -441,14 +423,8 @@ observe input-source changes or show these controls.
   or `notch`: the capsule's flow after a capture, prototypes to compare). Both
   capture shortcuts need a key, and `capture.enabled on` needs both free; on
   a Mac whose Paste Last is still ⌥⇧V, rebind one of the two first.
-- `meetings.retention` is `day`, `week`, `month`, `forever`, or `none` (the
-  default: meetings recorded since the default began are kept 24 hours, and
-  older ones stay until you choose). Hex moves meetings that ended longer
-  ago than that to the Trash at launch and hourly, Meetings on or off, and
-  `hex meetings` and `hex mcp` no longer list them.
 - `transcription.model` and `transcription.language` are read-only here: use
-  `hex model use`. `transcription_recents` and `meetings.calendar.connected`
-  are read-only (connecting a calendar asks macOS for access from Settings).
+  `hex model use`. `transcription_recents` is read-only.
 
 `recording_audio_behavior` also accepts `duck` (Lower audio): macOS and Linux
 lower the default output, Windows lowers other apps' audio sessions.
@@ -461,13 +437,7 @@ Writable keys: `release_microphone_while_idle`,
 `shortcut_mode`, `dictation_hotkey`, `paste_last_hotkey`, `raw_dictation_hotkey`,
 `second_dictation_hotkey`, `labs.second_dictation_shortcut`, `labs.standalone_special_keys`, `show_dock_icon`, `vocabulary_boost`,
 `dictation_processing.default_mode`, `dictation_processing.modes`,
-`history_retention`, `meetings.enabled`,
-`meetings.output_folder`, `meetings.summarize_with_apple_intelligence`,
-`meetings.summarize_with_opencode`,
-`meetings.show_recording_indicator`, `meetings.recording_indicator_corner`,
-`meetings.retention`, `meetings.providers`, `meetings.calendar.excluded_calendars`,
-`meetings.calendar.remind`, `meetings.calendar.lead_minutes`,
-`experimental.hex_microphone`, `experimental.hex_microphone_mode`,
+`history_retention`, `experimental.hex_microphone`, `experimental.hex_microphone_mode`,
 `experimental.hex_microphone_comfort_noise`,
 `experimental.hex_microphone_strength`, `enable_on_launch`,
 `paste_with_shift`, `ui_language`, `indicator_position`, `updates.channel`.
@@ -484,11 +454,14 @@ fails when a new persisted setting has no key here.
 
 ## Compatibility
 
-`CONTROL_VERSION` is 4. A change that breaks a request or reply shape
+`CONTROL_VERSION` is 5. A change that breaks a request or reply shape
 increments it; adding a command, an optional request field, or a reply field
 does not. A `hex` from a different version gets `version-mismatch`; use the
 `hex` inside the running Hex.app, or restart Hex after updating. Version 2
 removed `permissions.input_monitoring` from the status reply; version 3 removed
 `voice-action` and `features.voice_action`; version 4 removed `commands-retry`,
 `settings-set.confirm`, `window-show` `commands`, `capture.recording` `voice`,
-`features.commands`, and `features.command_model`.
+`features.commands`, and `features.command_model`; version 5 removed
+`meeting-record`, `meeting-stop`, `meeting-copy-last`, `window-show`
+`meetings`, the status reply's `meeting` and `features.meetings`, and the
+`meeting-active` error.

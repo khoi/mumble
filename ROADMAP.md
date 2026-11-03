@@ -2,11 +2,10 @@
 
 Hex ships the macOS product loop: configurable hold-to-talk local dictation,
 optional context-aware OpenCode post-processing, a Metal HUD, bounded paste
-workers, settings, and a signed app bundle. Meetings (beta) is a
-persisted opt-in (`meetings.enabled`, default off). Windows (x64 and ARM64) and
+workers, settings, and a signed app bundle. Windows (x64 and ARM64) and
 x86_64 Linux (i3/X11 and compatible wlroots Wayland compositors) betas provide
 hotkey dictation, Modes, History, the shared Rune window, and signed user-local
-updates; they do not yet include meetings. Nix packaging for
+updates. Nix packaging for
 Linux is implemented and awaiting supported-host validation before release.
 The authenticated local transcription service now implements discovery,
 direct-child embedding, model preparation, and bounded host-audio transcription;
@@ -18,12 +17,12 @@ macOS is the proposed first target, not a cross-platform availability promise.
 
 ## Validate The Rune Desktop App
 
-The window, menu-bar and tray hosts, HUDs, meeting capsules, and onboarding now
+The window, menu-bar and tray hosts, HUDs, and onboarding now
 run only on Rune (GPUI is gone). Linux has been run in a real session; macOS
 has been compiled, tested, and launched without being seen on screen; Windows
 has only been cross-compiled. Before releasing `dev`, a person runs each
 OS through the checklist in [the Rune port plan](docs/plans/rune-ui.md#needs-a-person-to-look), including
-the Windows x64 and ARM64 tray app, the macOS HUD and meeting capsules, and
+the Windows x64 and ARM64 tray app, the macOS HUD, and
 shortcut capture on every OS. Restore application icons in the Modes picker
 (removed with GPUI) on Rune's raster images, and add native file dialogs on
 macOS and Windows.
@@ -44,9 +43,8 @@ owns Microphone, Accessibility, and Automation permissions.
 
 Later, split features from settings into two windows (Kit, 2026-10-24; deferred
 in favour of the one-window feature-owned panes): the Hex window keeps what you
-use, History and Meetings recordings, and a separate Settings window (⌘, and
-the menu bar's Settings…) holds General, Modes,
-Meetings settings, and Experiments.
+use, such as History, and a separate Settings window (⌘, and the menu bar's
+Settings…) holds General, Modes, and Experiments.
 
 Microphone selection, idle-safe live switching, unavailable-device fallback,
 sound-effect volume, application/browser-host processing modes, and the native
@@ -87,8 +85,7 @@ beta on a compatible compositor with physical portal shortcuts, the `hex`
 commands bound in a desktop without the portal, microphone, foreground paste,
 click-through HUD, and window close leaving the process running while `hex quit`
 drains and exits. See [`docs/plans/linux.md`](docs/plans/linux.md). Add
-context, meetings, or broader Wayland support only as explicit later capability
-slices.
+context or broader Wayland support only as explicit later capability slices.
 
 macOS, Windows, and Linux now share one window and one `settings.json` (see
 [`docs/plans/shared-desktop-ui.md`](docs/plans/shared-desktop-ui.md)). Remaining
@@ -165,8 +162,7 @@ The microphone and dictation model remain warm by default. The shipped
 `Release when idle` microphone option opens the device on shortcut press, removes
 pre-roll, and adds first-capture latency. `Do nothing` is the default
 recording-audio behavior. Idle-sleep prevention is automatic and scoped to
-intentional dictation and active meeting capture rather than persisted as a
-user setting.
+intentional dictation rather than persisted as a user setting.
 
 Add end-of-speech detection only if it preserves explicit Send, Cancel, and
 locked-capture controls.
@@ -205,8 +201,7 @@ terms rather than Brave-specific types.
 
 Add one real second browser adapter before extracting a generalized adapter
 framework. Candidate implementations include Chromium-family AppleScript,
-Safari AppleScript, browser extensions, or Accessibility APIs. Diagnose Slack
-Huddle detection separately from generic browser context. Capture failures
+Safari AppleScript, browser extensions, or Accessibility APIs. Capture failures
 already log a warning and invalidate the cached context. Surface context age and
 failure health in the UI rather than relying only on diagnostics.
 
@@ -214,46 +209,6 @@ Keep installed-application discovery lazy. Opening Settings must not recursively
 scan application bundles or rasterize their icons; start that work only after
 the user opens `Add application`, and verify ordinary startup requests no
 Downloads, Calendar, or other unrelated TCC access.
-
-## Complete Meeting Lifecycle Recovery
-
-Add EventKit correlation for titles and reminders, explicit input-device
-selection, structured capture-gap observations, active-WAV repair, and resumable
-final transcription. Status, final-publication recovery, the call-ended prompt,
-and the menu-bar recording state already exist; do not replace them.
-
-Search over titles, notes, and final transcripts, scrolling, and follow-live
-are implemented. Echo suppression is tuned on one real speaker-mode call
-(`hex meeting echo <dir>`); validate it on more rooms, volumes, and
-headphones, and record capture arrival times so offline replays need no
-`--microphone-offset-ms`.
-
-Acoustic echo cancellation (Voice Processing IO) was evaluated and deferred:
-it would replace ScreenCaptureKit's raw microphone with an AVAudioEngine or
-`kAudioUnitSubType_VoiceProcessingIO` input, which ducks other audio, switches
-Bluetooth headsets to the low-quality call profile, applies its own gain and
-noise suppression to the transcribed track, runs a second voice processor
-beside the call app's, and drops ScreenCaptureKit's shared capture clock. Revisit
-only if signal-level suppression proves insufficient, with a per-device opt-in.
-
-`hex mcp` serves meetings to agents read-only over stdio (full-text BM25
-with stemming and fuzzy matching, transcripts, stored notes). Next: on-device
-semantic search only when full-text misses real paraphrased queries
-(NaturalLanguage embeddings through a Swift bridge, cached under
-`~/Library/Caches/hex/meeting-index`), EventKit attendees in
-`list_meetings`, and a one-shot Granola CSV import
-([granola-import.md](docs/plans/granola-import.md)). Keep it a CLI subcommand;
-the npm-package guidance above applies only to a developer-control wrapper.
-
-Give durable transcript entries stable identities so live-to-final reconciliation,
-incremental UI refresh, and meeting-delta paste can advance without rereading
-broad history. Keep `You` and `Them` source labels and the recoverable rolling
-transcript when final transcription fails.
-
-Add end-to-end coverage for voice-triggered start/stop, shutdown during capture,
-forced final-transcription failure, and live provider detection. Evaluate
-synchronized playback, echo annotation, summarization, and person-level
-diarization only against real meeting recordings.
 
 ## Recommend Better Models To Existing Users
 

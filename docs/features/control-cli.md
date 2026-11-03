@@ -4,14 +4,14 @@
 Agent or terminal                                  // control.cli; every OS
 ├── One tree and protocol over the local API's POST /control on every OS;
 │   OS can't do it -> unsupported at runtime, exit 1
-├── hex status [--json] -> Listener, capture, meeting, model, features,
+├── hex status [--json] -> Listener, capture, model, features,
 │   permissions, window, update, version, pid, memory
 │   └── Hex not running -> exit 3, "Hex is not running; run `hex start`"
 ├── hex start -> Already running: nothing | else open Hex.app (Linux and
 │   Windows: a detached `hex app --hidden`), wait ≤ 20 s
 │   └── The caller's HEX_* variables -> open --env (values never logged)
 ├── hex quit | restart [--force]
-│   ├── Meeting or dictation in progress, no --force -> refused, exit 1
+│   ├── Dictation recording or transcribing, no --force -> busy, exit 1
 │   ├── Listener didn't answer, no --force -> busy (it might be recording)
 │   └── restart -> reopens with the running Hex's HEX_* variables (macOS);
 │       Linux unit -> systemctl restart; else waits for the drain, then start
@@ -36,10 +36,6 @@ Agent or terminal                                  // control.cli; every OS
 ├── hex paste-last -> pastes the last dictation
 │   ├── Setup gates the listener -> not-ready
 │   └── Recording or shortcut gesture in progress -> busy (menu bar: nothing)
-├── hex meetings record [--title] | stop | copy-last
-│   ├── Meetings off -> feature-off; recording shows in the menu bar and HUD
-│   │   exactly like a menu-bar recording
-│   └── No meetings cancel: Hex cannot discard a recording
 ├── hex settings list | get <key|prefix> | set <key> <value>
 │   ├── The window's save, then ReloadSettings -> live, no restart
 │   ├── Unknown key, bad value, read-only key -> refused, nothing written
@@ -57,7 +53,6 @@ Agent or terminal                                  // control.cli; every OS
 │       devices, check, transcribe run here (macOS: unsupported)
 ├── hex window show [pane] | hide
 │   ├── settings -> the General pane (status window.pane stays "settings")
-│   ├── meetings pane with Meetings off -> the pane's opt-in card
 │   └── story <story> [--variant V] [--play] -> a playground story, as a
 │       hex://story link opens (labs.md); playground off -> feature-off
 ├── hex history clear --yes -> without --yes refused before Hex is asked
@@ -72,18 +67,16 @@ read commands talks only to the running Hex; none of them launch Hex. Every OS r
 the local API's owner-only discovery file and the bearer-authenticated
 `POST /control` route. Commands dispatch before logging and the instance lock on every OS,
 so they never compete with the running app for its files. Opt-ins stay
-explicit settings: no command turns Meetings on as a side effect.
+explicit settings: no command turns an opt-in on as a side effect.
 
 On Linux and Windows `control::host::answer` carries every command out through
 the OS's adapter (`linux::app::LinuxControl`, `windows::rune::WindowsControl`):
 dictation and paste-last go to the listener's own queue (Windows: the same
 hotkey loop, as a toggle press would), settings save and reload as the
 window's do, and `settings set` refuses a key whose capability the OS lacks
-(`settings list` marks it "not on this OS"). `meetings record|stop|copy-last`
-go to the meeting recorder (`meeting/runtime`) as the tray's items do;
-`window story` answers `unsupported`; Windows sends every `annotate`
-command to the running Hex. `hex history`, `hex meetings list|show|search`, and
-`hex mcp` read files on every OS.
+(`settings list` marks it "not on this OS"); `window story` answers
+`unsupported`; Windows sends every `annotate` command to the running Hex.
+`hex history` reads files on every OS.
 
 Sources: [control.rs](../../src/control.rs) (protocol, status, quit rules),
 [control/host.rs](../../src/control/host.rs) (the Linux and Windows host),
@@ -111,7 +104,7 @@ cover the stop replies and the paste-last refusal; `control::tests::cancel_parse
 covers `cancel` and its flags; local API's
 `control_requests_are_authenticated_versioned_and_typed` covers authentication,
 bounds, and error codes; `tests::control_commands_parse_beside_the_read_commands`
-covers parsing next to `history` and `meetings`; `control::host::tests` cover
+covers parsing next to `history`; `control::host::tests` cover
 the quit refusal, printing stops, and runtime `unsupported` replies;
 `linux::tests` parse the shared tree beside Linux's own commands;
 `rune_ui::platform::parity_tests` fail when a capability differs across OSes
@@ -129,7 +122,5 @@ on a Windows PC.
 Gaps: no command has run against a live app; the unit checks substitute the
 host. The control loop's start/stop wiring (tone timing, recording behavior)
 has no end-to-end test. A CLI volume change does not preview a tone as the window does. Onboarding
-permission prompts, calendar connection, and meeting deletion or renaming have
-no command. Linux and Windows dictation through the CLI has not run with a
-microphone, and meeting recording through the CLI has not run on Linux or
-Windows.
+permission prompts have no command. Linux and Windows dictation through the
+CLI has not run with a microphone.

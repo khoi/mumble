@@ -22,10 +22,9 @@ GitHub wraps each artifact in a zip; unzip it first.
 The test app is **Hex Test.app** (bundle ID `anomaly.hex.test`),
 ad-hoc signed and never checks for updates. Its own name and bundle ID let it sit
 beside a released `Hex.app` without touching that app's permissions, login
-item, or updates. It also keeps its own data: settings, models, History, and
-meetings live in `~/Library/Application Support/hex-test`, personal commands in
-`~/.config/hex-test`, and meeting Markdown in `~/Documents/Hex Test Meetings`,
-so it starts with onboarding and never reads or changes the installed Hex's
+item, or updates. It also keeps its own data: settings, models, and History
+live in `~/Library/Application Support/hex-test` and personal commands in
+`~/.config/hex-test`, so it starts with onboarding and never reads or changes the installed Hex's
 data. Both apps listen to the same shortcut and microphone, so run one at a
 time.
 

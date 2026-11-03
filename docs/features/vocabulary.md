@@ -37,10 +37,10 @@ Transcription (Parakeet: RNN-T and TDT, Underdog Bark and Nemotron 3.5 ASR too) 
 │   default; labs.md) -> off: no run takes the list; the sheet says so, and
 │   rewriting and search still use it
 ├── Every run and live stream reads the list and the boost at its start:
-│   dictation, meetings, captures, the local API
+│   dictation, captures, the local API
 ├── First 64 terms (the engine's cap) and their spellings; empty or Off -> unchanged
-├── Whole-clip run on an RNN-T model (Parakeet unified): meetings, captures,
-│   the local API, dictation that falls back to the whole clip
+├── Whole-clip run on an RNN-T model (Parakeet unified): captures, the local
+│   API, dictation that falls back to the whole clip
 │   └── The greedy words stand; where the audio could also spell a term, the
 │       decoder follows the term alongside them, and the term replaces them
 │       only when its score plus the boost per term piece beats theirs at the
@@ -57,8 +57,8 @@ Transcription (Parakeet: RNN-T and TDT, Underdog Bark and Nemotron 3.5 ASR too) 
 
 Context prompt (Whisper incl. ivrit.ai, Qwen3-ASR, QwenCleo)  // vocabulary.prompt-transcription; transcription::gguf_session::with_vocabulary
 ├── Always on (not Labs): replaced the per-model Recognition hints box (#129)
-├── Every whole-clip run reads the list at its start: dictation, meetings,
-│   captures, the local API; live streams run without it
+├── Every whole-clip run reads the list at its start: dictation, captures,
+│   the local API; live streams run without it
 ├── "Term, Term, …": the first terms in list order, at most 64, as many as
 │   fit 500 characters (Whisper: its prompt slot holds 223 tokens and trims
 │   an overlong one from the front) or 1,000 (Qwen3-ASR's system message)
@@ -92,19 +92,15 @@ A mode's own vocabulary                  // vocabulary.modes; DictationMode::voc
 ├── OpenCode rewriting -> every OS, the mode chosen for the dictation
 └── Transcription -> macOS dictation only: the mode of the app and page last
     seen by the context monitor (≤ 0.5 s old) when the stream or whole-clip run
-    starts; meetings, captures, the local API, Linux, and Windows hear with
-    the shared list
+    starts; captures, the local API, Linux, and Windows hear with the shared
+    list
 
 OpenCode rewriting (Modes)               // vocabulary.prompt
 └── Prompt gains "Vocabulary (spell these exactly when the speaker means them):
     term (may be transcribed as a, b); …" before the foreground application
 
-Live meeting chapters (experiment live-chapters)  // vocabulary.chapters
-└── Chapter passes and the boundary pass start with "Names and terms that may
-    appear: a, b, …" (first 30 terms, no spellings), read on each call
-
 Search                                   // vocabulary.search
-├── hex meetings search, MCP search_transcripts, hex history --search
+├── hex history --search
 ├── Query word = a one-word term, fuzzy on
 │   ├── Its "sounds like" spellings, or the term as two words -> 0.5 (like a prefix)
 │   └── A word that sounds like it (≥2 consonant sounds, ≤ half the letters changed,
@@ -117,9 +113,8 @@ The list lives in `settings.json` as `vocabulary`, each entry a plain term
 spellings as a plain string. `hex vocabulary list --json` keeps the object form.
 It is written only when non-empty, so older files load unchanged and are not
 rewritten. Terms are unique ignoring case; at most 500 terms, 64 characters
-each, and 16 spellings per term. Read-only commands (`hex history`,
-`hex meetings`, `hex mcp`) read the field straight from the file and never load
-or migrate settings.
+each, and 16 spellings per term. The read-only `hex history` reads the field
+straight from the file and never loads or migrates settings.
 
 Short names with few consonant sounds (Rune, Dax) would sound like too many
 words, so search finds their mis-transcriptions only through "sounds like"
@@ -136,15 +131,14 @@ Provisional defaults, each changed in one place:
 ```ts
 hex vocabulary listed in --help          // control/cli.rs: add #[command(hide = true)] to hide it
 Prompt wording                           // dictation/processor.rs: vocabulary_lines
-Chapter prompt wording                   // meeting/chapters.rs: vocabulary_line
-Short-name rule                          // meeting/query.rs: SOUND_ALIKE_MIN_CONSONANTS
+Short-name rule                          // history/search.rs: SOUND_ALIKE_MIN_CONSONANTS
 Suggested terms                          // dictation/vocabulary.rs: SUGGESTED
 Boost strengths (nats per term piece)    // dictation/vocabulary.rs: VocabularyBoost::nats
 ```
 
 Sources: [dictation/vocabulary.rs](../../src/dictation/vocabulary.rs),
 [rune_ui/vocabulary.rs](../../src/rune_ui/vocabulary.rs),
-[meeting/query.rs](../../src/meeting/query.rs) (`vocabulary_aliases`,
+[history/search.rs](../../src/history/search.rs) (`vocabulary_aliases`,
 `sounds_alike`), [dictation/processor.rs](../../src/dictation/processor.rs)
 (`vocabulary_lines`), and [control.rs](../../src/control.rs)
 (`edit_vocabulary`).
@@ -165,7 +159,7 @@ folding hints, boost names);
 `sounds_like_spellings_and_split_words_alias_a_term`,
 `vocabulary_never_pulls_in_common_words`, and
 `sound_alikes_need_two_consonant_sounds_and_few_changes` in
-[meeting/query_tests.rs](../../src/meeting/query_tests.rs);
+[history/search.rs](../../src/history/search.rs);
 `prompt_names_vocabulary_terms_and_their_mistranscriptions`;
 `vocabulary_edits_report_whether_they_changed_the_list` and the request round
 trip in control.rs; `vocabulary_lists_terms_with_their_spellings` in

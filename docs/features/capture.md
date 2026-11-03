@@ -536,12 +536,11 @@ The on-screen picker                     // capture.picker (capture_capsule/pick
     until they arrive
 
 Hex's own windows                        // capture.own-windows
-├── Chrome (the capsule, ink, picker, HUDs, meeting capsules: Hex's named
+├── Chrome (the capsule, ink, picker, HUDs: Hex's named
 │   windows and any of its windows above the normal level) -> never recorded,
 │   never in the window log, never the target, clicks on it not logged
 │   ├── Other recorders -> the capsule, picker, and ink are left out
-│   │   (sharingType none) while shown; the dictation HUD and meeting
-│   │   capsules show
+│   │   (sharingType none) while shown; the dictation HUD shows
 │   │   └── Hidden -> ordered out of every Space once the hide finishes,
 │   │       before sharingType returns to readOnly; prewarming keeps the
 │   │       surface ready but leaves no invisible panel ordered in. This
@@ -556,7 +555,7 @@ Hex's own windows                        // capture.own-windows
 │       stale fade completions and setting changes. Its native `spaces_probe`
 │       checks this process's WindowServer ordering. A native Hex smoke on
 │       2026-11-02 failed before the pin bump and passed after it: capsule,
-│       Screen/Area picker, ink, dictation HUD and meeting capsule show and
+│       Screen/Area picker, ink, and dictation HUD show and
 │       leave no onscreen window after hiding. This used isolated test state,
 │       without recording. Mission Control's actual thumbnail report and
 │       third-party recording exclusion remain unverified
@@ -597,7 +596,7 @@ hex capture start                        // capture.start; needs a listening Hex
 └── Already recording -> unchanged, same bundle
 
 While it records                         // capture.audio
-├── Dictation and meetings work as usual on the same audio
+├── Dictation works as usual on the same audio
 ├── Sink full (collector stalled) -> capture audio dropped as a gap, dictation untouched
 └── Microphone gap or recovery -> the gap is recorded, positions stay on the clock
 
@@ -625,7 +624,7 @@ hex capture stop                         // capture.stop
 └── In the background, on one capture-finish thread, one capture at a time:
     ├── 16 kHz audio with its start offset and gaps -> SealedCapture::finish
     ├── Words: 30 s chunks, each a foreground job on the dictation engine's model,
-    │   after queued dictation, before meeting chunks; waits while dictation records
+    │   after queued dictation, before host-audio clips; waits while dictation records
     │   or transcribes; never interrupts a live stream
     ├── Word times moved earlier by the model's measured lag (Parakeet Unified
     │   English: starts −280 ms, −520 ms after a ≥ 250 ms pause; ends −195 ms);

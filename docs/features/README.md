@@ -19,13 +19,12 @@ Hex                                      // macOS release
 ├── Use the result                       // paste, paste-last, History
 ├── Adjust behavior                      // shortcut, microphone, recording preferences
 ├── Process text                         // Output tab + context-selected Modes
-├── Opt in                               // Meetings: off by default
+├── Opt in                               // Labs: off by default
 ├── Recover                              // prove the next attempt works
 └── Maintain the app                     // menu bar, login, updates, quit
 ```
 
-[Dictation](dictation.md), [Meetings](meetings.md), and [Recovery](recovery.md)
-have detailed maps.
+[Dictation](dictation.md) and [Recovery](recovery.md) have detailed maps.
 Agents can [read retained transcripts](transcript-cli.md) and
 [control the running app](control-cli.md) with the release CLI.
 [Labs](labs.md) is one switch, on by default, for every unfinished feature.
@@ -328,7 +327,7 @@ checked. Both families, on silence or noise, often return the prompt verbatim
 (Qwen3-ASR 0.6B did on 3 s of silence and of noise). A segment whose text
 equals the prompt after normalization (case, ASCII punctuation, spelled-out
 digits; commas, semicolons and line breaks separate words) is removed, in
-dictation, meetings, and the local API alike. The filter needs at least two
+dictation, captures, and the local API alike. The filter needs at least two
 terms, so dictating the one listed name still pastes it; speech that contains
 a term among other words is kept, and so is a repeat of only some terms.
 Checks: `prompt_echo_is_dropped`, `speech_containing_the_hints_is_kept`,
@@ -341,7 +340,7 @@ said, such as "Sous-titrage Société Radio-Canada" from Cohere Transcribe in
 French after a trailing pause (#1141). Every GGUF run and live stream drops a
 known credit only when it is the very end of the text (letters and digits
 compared, case and punctuation ignored), with its segment and words, in
-dictation, meetings, and the local API alike; the same words elsewhere stay.
+dictation, captures, and the local API alike; the same words elsewhere stay.
 The list is in
 [transcription/subtitle_credits.rs](../../src/transcription/subtitle_credits.rs).
 Checks: `a_trailing_subtitle_credit_is_removed`,
@@ -576,7 +575,7 @@ the active layout to themselves, with no general protocol (IBus and Fcitx report
 input-method engines, not the compositor's layout), so Wayland is unavailable. Source changes cancel
 obsolete automatic work but keep manual preparation until a mapped choice is
 due. An unmapped source cancels only automatic work. This reuses the shared model
-selection, recording/stream fallback, and meeting-engine behavior; it adds no
+selection, recording/stream fallback, and shared-engine behavior; it adds no
 recording-time routing, model cache, or notifications.
 
 Sources: observers for [macOS](../../src/keyboard_input_sources/macos.rs),
@@ -654,7 +653,7 @@ Labs > Second dictation shortcut (macOS, off)   // labs.md; issue 627
 
 Labs > Unload model when idle (off; 5/15/30/60 min, default 15)   // labs.md; transcription/engine
   -> nothing used the model that long and nothing records -> the model unloads
-  -> next press, meeting chunk, or API request -> reloads first; audio waits, nothing lost
+  -> next press, capture, or API request -> reloads first; audio waits, nothing lost
 ```
 
 The [detailed map](dictation.md) covers timing, successive captures, output
@@ -715,8 +714,8 @@ latency measurement.
 
 ```ts
 Sidebar                                  // settings.nav
-├── General, Output, History, then each feature that is on: Meetings and
-│   Voice Filter (Labs toggles), Annotate, Playground (Labs, an item)
+├── General, Output, History, then each feature that is on: Voice Filter
+│   (a Labs toggle), Annotate, Playground (Labs, an item)
 └── Labs -> one flat page of toggles, each off by default; hex://labs/<feature> opens it at a row (labs.md)
     // Command-1…9 follow the panes' order (labs::order)
 
@@ -751,10 +750,7 @@ General                                  // settings
 │   │       │   the stream is marked so WirePlumber never remembers the move. A Bluetooth
 │   │       │   default chosen while Hex's stream is open is followed until the next open
 │   │       ├── No other usable input (or lid closed, Bluetooth only) -> the Bluetooth default
-│   │       ├── A saved Bluetooth mic or `--device` is always used as named
-│   │       └── Dictation only: meeting recording keeps the Bluetooth default, which
-│   │           a call app on the headset is using (#1086;
-│   │           a_meeting_keeps_the_bluetooth_default_a_call_uses)
+│   │       └── A saved Bluetooth mic or `--device` is always used as named
 │   ├── Saved device missing -> System default stands in, value names it
 │   │   ├── Row says "SHURE MV7 isn't connected; using your Mac's input"
 │   │   ├── Menu keeps "SHURE MV7" checked with a faint "not connected"
@@ -855,10 +851,10 @@ one second, preserving balance and silent channels, then restore on finish,
 cancel, or orderly shutdown. Changes apply to the next capture. The stop tone
 waits for restoration. A manually changed volume after settling is left alone;
 a newly selected output device is not lowered. Fixed-volume devices and outputs
-whose channel balance cannot be safely restored are left unchanged. Meetings do
-not acquire this dictation environment. Linux lowers the default sink's
-channels through `pactl` (one volume through `wpctl` without it), so Hex's own
-tones are lowered too and the stop tone waits, as on macOS. Windows lowers
+whose channel balance cannot be safely restored are left unchanged. Linux
+lowers the default sink's channels through `pactl` (one volume through `wpctl`
+without it), so Hex's own tones are lowered too and the stop tone waits, as on
+macOS. Windows lowers
 every other app's audio session instead, leaving Hex's tones at full volume;
 sessions that start while recording are left alone.
 
@@ -922,7 +918,7 @@ The browser pause runs after the AppleScript players and only when System Audio
 Recording is reported granted (an unknown answer skips it, because the tap would
 open the macOS dialog mid-dictation). macOS 15.4 and later no longer tell other apps
 what is playing, so Hex hears the browsers through a private process tap
-(aggregate `anomaly.hex.browser-tap.<pid>`, apart from the meeting tap) and sends
+(aggregate `anomaly.hex.browser-tap.<pid>`) and sends
 play only after it saw the browser go silent right after its own pause. The
 sequence checks in [audio/browser_media.rs](../../src/audio/browser_media.rs) run on fakes:
 `a_confirmed_pause_is_resumed`, `two_sounding_tabs_never_get_play`,
@@ -1068,7 +1064,7 @@ Website context per OS: macOS reads no page at all until something uses it: a
 mode chosen by website, an OpenCode rewrite (its prompt names the site), or a
 script transformation (it receives the address)
 (`dictation::config::reads_browser`), so dictation's page reads never prompt
-without one (Meetings and media pause still ask browsers when on). Otherwise
+without one (media pause still asks browsers when on). Otherwise
 it asks the front tab of Safari, Orion, Chrome,
 Brave, Edge, Arc, Vivaldi, Opera, Helium, and Chromium over AppleScript (one
 Automation prompt per browser; a refusal keeps the application context) and
@@ -1116,13 +1112,6 @@ Update to repair saved selections automatically. For older builds, the workaroun
 is to quit Hex, remove the `.app` suffix from
 `dictation_processing.modes[].applications` in `settings.json`, then relaunch.
 
-## Record Meetings
-
-[Meetings (beta)](meetings.md) maps the opt-in (the Meetings pane's card, then
-Meetings › Settings), call detection and the
-focus-free offer, menu-bar recording state, rolling transcription, echo
-suppression, and the Markdown copy in the user's transcript folder.
-
 ## Experimental: Hex Microphone And Voice Filter
 
 ```ts
@@ -1147,7 +1136,7 @@ or the driver installed; off, the pane is hidden  // fun.hex-microphone; macOS, 
 │       ├── Dual waveform -> You vs Call hears with highlighted dictation span
 │       └── Explicit playback -> Play what call hears | Play your voice
 ├── Live microphone capture -> Raw audio to Hex transcription (unmodified)
-│   ├── Source -> Hex's dictation microphone (System default follows the OS default, never Hex Microphone itself), never a meeting's second stream
+│   ├── Source -> Hex's dictation microphone (System default follows the OS default, never Hex Microphone itself)
 │   ├── Lock-free ring -> 48 kHz virtual sink (macOS IOProc; Linux 11 ms blocks into a one-page pipe) -> Raised-cosine fade on intentional hold
 │   │   └── Not dictating -> bit-exact pass-through; non-48 kHz inputs resample continuously
 │   └── Ring underflows/overflows -> process.log each minute while an app reads it, and on sink stop
@@ -1163,7 +1152,7 @@ and [rune_ui/fun.rs](../../src/rune_ui/fun.rs). Checks:
 `all_nine_modes_render_finite_and_expected_levels`,
 `raised_cosine_fade_has_no_step_discontinuity`,
 `ring_buffer_transfers_samples_and_handles_underflow_and_overflow`,
-`a_meeting_stream_on_the_same_microphone_does_not_double_the_feed`,
+`a_second_stream_on_the_same_microphone_does_not_double_the_feed`,
 `a_callback_larger_than_the_latency_cap_passes_through_whole`,
 `resampling_is_continuous_across_callbacks`,
 `only_the_listeners_current_input_feeds_hex_microphone`,
@@ -1196,9 +1185,9 @@ Cancellation / interruption / failure    // recovery
   -> Next capture succeeds               // this is the proof, not a cleared error
 
 Menu bar and Settings                    // maintenance
-├── Icon -> 18 pt monochrome Hex mark template (recording variant + elapsed time)
-│   └── Labs > Hide menu bar icon (off, #1064) -> hidden unless a meeting is under
-│       way; shortcuts keep working; Finder or Spotlight reopen -> Settings (labs.md)
+├── Icon -> 18 pt monochrome Hex mark template
+│   └── Labs > Hide menu bar icon (off, #1064) -> hidden; shortcuts keep working;
+│       Finder or Spotlight reopen -> Settings (labs.md)
 ├── Settings / Paste Last -> Reachable with Dock icon hidden
 ├── Launch at Login -> macOS owns registration state
 ├── Check for Updates -> The updater (maintain.updates); opens the window, whose
@@ -1294,7 +1283,7 @@ Space switched back to that one. `macos_rune` gives the window
 Space instead. No automated check covers Spaces; it needs a native check with
 two desktops.
 
-Checks in [meeting/watcher.rs](../../src/meeting/watcher.rs):
+Checks in [macos_rune/tests.rs](../../src/macos_rune/tests.rs):
 `dockless_startup_stays_quiet_only_when_setup_and_menu_bar_are_ready` and
 `dock_visible_startup_always_opens_the_app` cover the startup decision. The
 Dock/Finder reopen Apple event and the status item's `OpenSettings` bypass it.
@@ -1412,10 +1401,8 @@ update from an older supported build.
 
 ```ts
 Configuration profile forces a key in anomaly.hex     // maintain.managed-locks
-├── DisableMeetings -> no detection, recording, transcription, or notes;
-│   hex meetings and hex mcp still read existing meetings
 ├── DisableAnnotate -> Annotate off
-├── DisableOpenCodeProcessing -> no mode rewrites, meeting notes, or capture sends
+├── DisableOpenCodeProcessing -> no mode rewrites or capture sends
 ├── DisableTransforms -> no transforms; the hex.config.ts host never starts
 ├── RestrictTransformsToLoopback -> transforms on; fetch reaches loopback only
 │   (resolved addresses, every redirect, no proxy); exec/execFile refused
@@ -1761,7 +1748,7 @@ as it is because the managed install layout, updater, shortcut, and login entry
 use it. The workaround is to hide the entry in Discord's Registered Games
 ([Windows guide](../windows.md#known-issues)). No check covers it.
 
-No Windows Meetings or local transcription API. See the
+No Windows local transcription API. See the
 [Windows guide](../windows.md) for the parity table, streaming notes, and
 release flow; [check-windows](../../.github/workflows/check-windows.yml) builds,
 lints, and tests x64 and builds and tests ARM64 on every pull request. Physical
@@ -1780,7 +1767,7 @@ The install kind comes from `updater/linux.rs`. The 2026-10-23 apollo
 observation (a staged update and the sidebar button) predates the release
 service and is not evidence for it.
 
-No Linux meetings. Wayland shortcuts need either the desktop's GlobalShortcuts portal
+Wayland shortcuts need either the desktop's GlobalShortcuts portal
 or the user's own keybindings for the `hex` commands; Hex reads no input
 devices. Click-through and a physical portal or keybinding press still need
 native evidence. Its [smoke](../../scripts/test-wayland-paste.sh) explicitly
@@ -2041,7 +2028,6 @@ microphone behavior.
 
 ```ts
 macOS debug runtime                      // not release navigation
-├── Meetings -> Always available; release builds need the Meetings opt-in (its pane's card or Meetings › Settings)
 ├── Activity / HUD Lab / hex dev -> Observation and developer controls
 └── HUD Lab in release -> Only in the playground (Labs › Playground)
 
@@ -2057,26 +2043,20 @@ Linux `hex` -> the Linux window on Rune, in the Hex process // dev.rune-ui
 ├── Model and application searches: Up/Down highlight, Enter picks it
 ├── Not yet: right-click delete
 └── macOS/Windows surfaces as scenes too (Capabilities + preview data):
-    Meetings (Recordings | Settings, opt-in card), Voice Filter,
-    HUD Lab, Activity, permission rows, Launch at login, Dock icon, shortcut
+    Voice Filter, HUD Lab, Activity, permission rows, Launch at login, Dock icon, shortcut
     sides, the permissions page
 macOS `hex app` -> one menu-bar process, Rune window // dev.rune-ui-macos
 ├── rune::App on the main thread: accessory, windowless unless setup/onboarding/Dock icon open it
 ├── Same AppKit loop: status item, updater, Hex/File/Window menu, Dock reopen event, the HUD pump (16 ms timer; the HUD itself is a Rune overlay)
 ├── Runtime thread: model preparation (menu bar: installed only), starts the listener once setup is ready
-├── Listener, meeting controller, local API: their own threads
+├── Listener, local API: their own threads
 ├── macos_host: AppKit event monitor records chords (Option, Fn); NativeHost does permissions,
-│   login item, Hex Microphone, meeting start/stop/rename/trash/reveal, relaunch
-├── Meetings pane lists the store through meeting::query (1 s rescan, sent only when changed);
-│   a controller failure shows in the pane; rune::FileDialogs (file_dialog) chooses the
-│   meetings folder and Modes' "Choose a file…" .app
+│   login item, Hex Microphone, relaunch
+├── rune::FileDialogs (file_dialog) chooses Modes' "Choose a file…" .app
 ├── First run: practice dictations from the listener's event log; a listener that failed to start
 ├── Sidebar and pane header move the window (Rune El::window_drag; the title bar is transparent)
 ├── While the window shows, its poll re-checks timed state every 250 ms (Rune Tx::wake_after); close hides it (Dock policy restored)
 ├── ⌘Q / menu-bar Quit / Ctrl-C quit and join
-├── Meeting capsules: Rune interactive overlays (offer, call ended, ready, recording
-│   with Copy new (N) / Copy all of the in-call transcript; compact until hovered,
-│   dragged to any corner)
 └── Modes app icons: Finder's icon (NSWorkspace) in the picker, chips, and mode rows
 Windows `hex app` -> one tray process, Rune window // dev.rune-ui-windows
 ├── Runtime thread owns WindowsDesktopHost (listener, model preparation, OpenCode, transformations, updater)
@@ -2091,8 +2071,7 @@ iOS prototype -> Record/transcribe/copy and keyboard handoff
 Unmerged Windows / deferred features -> Not part of this map
 ```
 
-Sources: [meeting.rs](../../src/meeting.rs),
-[meeting/watcher.rs](../../src/meeting/watcher.rs),
+Sources: [macos_rune.rs](../../src/macos_rune.rs),
 [control/developer_control.rs](../../src/control/developer_control.rs),
 `SCENES` in [rune_ui.rs](../../src/rune_ui.rs), [iOS guide](../../ios/README.md).
 iOS physical-device proof and temporary-WAV failure cleanup remain gaps;
@@ -2106,10 +2085,7 @@ clear, copy; Modes add/delete, corrections, transformations (drag reorder saves 
 on release), application conflicts, a chosen file joining the mode, arrow
 keys in the model and application searches; the picker's ChooseModel/CancelModel; setup's download; draft
 saves; and, from macOS/Windows preview data, each OS's panes and rows, Launch
-at login, permission warnings, the
-Meetings opt-in card and Settings view,
-Meetings select,
-search, copy, rename, start/stop, two-step trash, and the overflow menu, and
+at login, permission warnings, and
 the macOS tour's permissions, practice, and relaunch; Voice Filter's
 experiment gate, modes, sliders, and demo requests, HUD Lab's indicator requests, Activity, and shortcut
 sides) and compare 62 offscreen
@@ -2127,17 +2103,13 @@ service saved a new mode and a correction. See
 `-D warnings` and the macOS unit tests (including `macos_host`'s chord
 capture), and a debug `hex app` with an isolated data root started, showed
 its 980×760 window (CGWindowList; `lsappinfo`: Foreground while open),
-answered `hex dev status/show/hud`, and quit cleanly on Ctrl-C, also with
-the meeting fixtures copied into its data root and the Meetings pane shown.
-`macos_host`'s tests cover the meeting feed over `tests/fixtures/meetings`
-(order, recovery to Interrupted, turns and pauses, no resend when unchanged)
-and the practice feed over a written event log. After GPUI's removal the
-same host built with a local Command Line Tools stub passed clippy and all
-648 macOS tests on hailmary (2026-10-22); it was not launched again. Those
-builds stub the HUD's Metal shader and Apple Intelligence (Xcode is missing),
-so the HUD failed to load its shader there; window contents (including the
-Meetings list and the practice step), dragging the window, the folder
-panel, the status item, reopen, shortcut capture, and Sparkle have not been
+answered `hex dev status/show/hud`, and quit cleanly on Ctrl-C.
+`macos_host`'s tests cover the practice feed over a written event log. After
+GPUI's removal the same host built with a local Command Line Tools stub passed
+clippy and all 648 macOS tests on hailmary (2026-10-22); it was not launched
+again. Those builds stub the HUD's Metal shader (Xcode is missing), so the HUD
+failed to load its shader there; window contents (including the practice
+step), dragging the window, the open panel, the status item, reopen, shortcut capture, and Sparkle have not been
 seen or exercised, and no screenshot could be taken over SSH.
 
 `dev.rune-ui-windows` lives in [windows/rune.rs](../../src/windows/rune.rs) and
@@ -2148,11 +2120,10 @@ transcribe.cpp build stubbed out, last after GPUI's removal on 2026-10-22); it
 has never run on Windows, and no test covers it. It replaces the GPUI app
 earlier Windows releases shipped.
 
-`each_os_lists_only_the_panes_it_can_run` and
-`developer_panes_show_only_in_developer_builds` in
-[rune_ui/tests/panes.rs](../../src/rune_ui/tests/panes.rs) check pane
-availability from the capabilities, the developer flag, and the Meetings
-opt-in; they do not exercise native navigation clicks.
+`each_os_lists_only_the_panes_it_can_run` in
+[rune_ui/tests/panes.rs](../../src/rune_ui/tests/panes.rs) checks pane
+availability from the capabilities; it does not exercise native navigation
+clicks.
 
 Scenes and tests use fixture state (`Service::Fixture`, `PlatformHost::Fixture`):
 requests are recorded, never performed. They do not establish native device
@@ -2160,12 +2131,8 @@ discovery or installed-app behavior.
 
 `default_paste_hotkeys_follow_build_capabilities` in
 [app_settings.rs](../../src/app_settings.rs) checks the production default runtime
-and settings projections: Paste Last remains available in both build profiles;
-meeting paste is present in debug or after the Meetings opt-in. `meeting_paste_is_only_active_in_developer_builds`
-in [suppression.rs](../../src/suppression.rs) checks the corresponding constructed
-hotkey event, including ordinary-chord discard in release. These replace an
-unconditional debug-only expectation and a test-only copy of the reservation rule;
-they do not establish native keyboard delivery or meeting insertion.
+and settings projections: Paste Last is available in both build profiles. It
+does not establish native keyboard delivery.
 
 `structural_event_equality_preserves_serialized_identity` in
 [desktop/events.rs](../../src/desktop/events.rs) covers Activity's full-event equality across

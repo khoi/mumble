@@ -598,7 +598,7 @@ Release or locked finishing press                     // dictate.release-tail
   -> Wait for audio through release + 200 ms (POST_RELEASE_TAIL)
      ├── Arrives -> Clip ends exactly at release + 200 ms
      └── Stream stalls/fails -> Finish within tail + 100 ms with what arrived
-  -> Not short taps, voice controls, programmatic stop, or meetings
+  -> Not short taps, voice controls, or programmatic stop
   -> Linux and Windows wait the same tail; Linux ends at the release it observes
      (an X11 key release, a portal Deactivated, or `hex dictation stop`)
   -> A press inside the tail starts after the old clip finishes, with its own pre-roll
@@ -694,8 +694,8 @@ passed, so a release followed only by the tone waits until then and keeps
 200 ms. The release event stays exact. The macOS audio owner and the Linux
 and Windows loops (`ReleaseWait`) wait at most the base tail plus 100 ms, or
 700 ms once speech grows it; a lost microphone finishes with what arrived.
-Escape, short taps, voice controls, programmatic stops, and meetings still
-get no tail. Checks in dictation.rs:
+Escape, short taps, voice controls, and programmatic stops still get no
+tail. Checks in dictation.rs:
 `a_word_said_through_the_release_keeps_the_tail_open_until_it_ends`,
 `a_release_after_the_speech_keeps_the_base_tail_without_waiting_longer`,
 `speech_that_carries_on_stops_the_tail_at_its_cap`, and
@@ -882,7 +882,7 @@ it: `HEX_STREAM_LIVE_TEXT=0` gives the same text.
 
 **Mitigation, October 29, 2026 (#338's diagnosis, by ElliottH):** the engine's
 `PauseCap` now feeds a dictation stream only the first 2.5 s and last 0.3 s of
-each pause (20 ms frames the meeting pause detector calls not speech); the
+each pause (20 ms frames the pause segmenter calls not speech); the
 clip and its offline fallback keep every sample, and "finished live stream"
 logs `pauses_dropped_ms`. `/streams` is unchanged. Check:
 `a_dictation_stream_hears_only_the_ends_of_long_pauses` (synthetic audio, a
@@ -892,7 +892,7 @@ Limit: noise that rises mid-dictation counts as speech for up to about 10 s,
 so that pause is not cut.
 
 **Fixed October 30, 2026 (issue 458):** over steady background noise, speech
-only about 8 dB louder than the room missed the meeting detector's 12 dB
+only about 8 dB louder than the room missed the pause segmenter's 12 dB
 speech margin, so the whole dictation counted as one pause and the stream
 heard only its first 2.5 s ("This in a test on the" for a 17 s clip over
 −35 dBFS noise). `PauseCap` now cuts only frames within 4 dB of the noise
@@ -918,7 +918,7 @@ the stream and relied on the fallback. Its level was measured with the DC
 offset included, which the dictation silence gate already removes; a steady
 offset louder than the speech pins every frame to the noise floor.
 `SpeechFrames` now removes each 20 ms frame's mean before measuring, for the
-pause cap and the meeting pause detector alike. Check:
+pause cap and the pause segmenter alike. Check:
 `quiet_speech_over_steady_noise_is_never_cut_as_a_pause` (now also −50 dBFS
 speech over −58 dBFS noise on a −26 dBFS DC offset; synthetic, a fake
 stream). The DC offset is inferred from the reporter's logs (clips that pass
@@ -927,7 +927,7 @@ the −50 dBFS silence gate yet read as quiet), not measured on the device.
 **Fixed November 3, 2026 (issue 1101):** a short last phrase after a pause of
 about 1 s could be missing from the paste while the clip held it: the stream
 finalized without it, and a stream with text was never retranscribed.
-`PauseCap` now records where each speech frame (the meeting detector's 12 dB
+`PauseCap` now records where each speech frame (the pause segmenter's 12 dB
 margin) the stream heard ends, and after finalizing compares that with the
 end of the stream's last token. At least 300 ms of speech more than 400 ms
 past the text makes the stream unusable, so the whole clip is transcribed

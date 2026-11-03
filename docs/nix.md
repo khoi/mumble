@@ -140,7 +140,7 @@ journalctl --user -u hex.service
       shortcut_mode = "toggle";
       sound_effect_volume = 0.4;
       paste_with_shift = true;
-      "meetings.enabled" = true;
+      "labs.live_text" = true;
     };
   };
 }

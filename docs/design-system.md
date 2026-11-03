@@ -1,6 +1,6 @@
 # Hex Design System
 
-Hex's window, meeting capsules, transcription picker, and onboarding are
+Hex's window, Annotate capsule, transcription picker, and onboarding are
 drawn with [Rune](https://github.com/anomalyco/rune) in OpenCode's design
 language:
 
@@ -35,7 +35,7 @@ by a Rune overlay's compositor on every OS, hand-tuned in HUD Lab.
    beside it; never keep two helpers for the same job.
 3. **One accent per screen.** The kit's contrast button
    (`ButtonKind::Primary`) marks at most one action per screen: the thing the
-   person came to do. A meeting capsule is its own screen. States are not
+   person came to do. A capsule is its own screen. States are not
    actions: an ongoing state (recording, an available update) is a Secondary
    button with a `status_dot`. `ButtonKind::Danger` is for destructive and
    armed confirmations only; success colours mark ready and live states only.
@@ -80,7 +80,7 @@ These live in [`rune_ui/controls.rs`](../src/rune_ui/controls.rs) and
 | Short message under a control | `note` |
 | Text entry saved when typing pauses | `text_field` |
 | Keyboard highlight in a search popover | `Highlight` |
-| List + detail (Commands, Meetings, History) | `list_detail`: `list_column` (search over the rows, on the title's edge, no divider) and `item` rows (no hover fill, time on the right, a hover action in its place via `row_action`), grouped by `group`; the selected item in `body`'s raised card with `card_header`, `card_title`, `meta_text`, `ghost_icon` actions, `card_scroll`, and `facts`; `empty_state` for nothing to show |
+| List + detail (Commands, History) | `list_detail`: `list_column` (search over the rows, on the title's edge, no divider) and `item` rows (no hover fill, time on the right, a hover action in its place via `row_action`), grouped by `group`; the selected item in `body`'s raised card with `card_header`, `card_title`, `meta_text`, `ghost_icon` actions, `card_scroll`, and `facts`; `empty_state` for nothing to show |
 | List + detail (Activity) | `split` with `list_row`, `group_label`, `detail_header`, `detail_title`, `section_label`, `fact` |
 | Keyboard-selectable list (sidebar, list + detail, picker languages) | `source_list` around rows made with `list_row` or `source_item` |
 | Nothing to show, errors | `message`, `placeholder`, `error_panel` |
@@ -90,16 +90,16 @@ These live in [`rune_ui/controls.rs`](../src/rune_ui/controls.rs) and
 Pane-specific pieces stay in their pane module: the listener card and model
 cards in [`rune_ui/settings.rs`](../src/rune_ui/settings.rs) and
 [`rune_ui/picker.rs`](../src/rune_ui/picker.rs), the onboarding pieces in
-[`rune_ui/onboarding_kit`](../src/rune_ui/onboarding_kit.rs), and the capsules in
-[`rune_ui/meeting_capsules.rs`](../src/rune_ui/meeting_capsules.rs).
+[`rune_ui/onboarding_kit`](../src/rune_ui/onboarding_kit.rs), and the Annotate
+capsule in [`rune_ui/capture_capsule`](../src/rune_ui/capture_capsule/mod.rs).
 `platform::Capabilities` decides which panes and rows exist on each OS; a
 missing capability omits the row instead of imitating it.
 
 ## Copy
 
 - Sentence case for every label, button, title, and section label:
-  "Open settings", "Stop & transcribe", "Permissions needed". Proper nouns keep
-  their capitals: Hex, OpenCode, Apple Intelligence, Finder, Zoom.
+  "Open settings", "Check for updates", "Permissions needed". Proper nouns keep
+  their capitals: Hex, OpenCode, Finder.
 - One product name: "Hex", in copy, comments, and docs alike. `HEX_*`
   environment variables are identifiers, not copy.
 - Use "…" (one character) for ellipses, for both progress ("Saving…") and for
@@ -115,7 +115,7 @@ missing capability omits the row instead of imitating it.
   Developer-only panes (Activity, HUD Lab) stay English.
 - Exception: native macOS menus (`macos_rune/status_item.rs` and the app menu in
   `macos_rune.rs`) follow the macOS title-case convention ("Check for
-  Updates…", "Paste Last Dictation", "Stop & Transcribe").
+  Updates…", "Paste Last Dictation", "Show Hex in Screen Recordings").
 
 ## Verification
 
@@ -139,5 +139,5 @@ On a machine without a GPU, render on lavapipe with
 tests run only on Linux; from a Mac, dispatch `check-linux.yml` on the branch
 and take its `golden-actual` artifact. Look at every changed image and commit
 it with the change that caused it. A scene is a fixture, not native end-to-end
-proof: the meeting capsules and the HUD have no scene, and the real window,
+proof: the HUD has no scene, and the real window,
 overlays, and input still need a person on each OS.

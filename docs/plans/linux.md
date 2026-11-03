@@ -20,8 +20,8 @@ The Linux beta keeps its contracts explicit:
 | Insertion | Clipboard plus Ctrl-V, with a Ctrl-Shift-V terminal setting |
 | UI | One process: the Rune window on demand and a Rune overlay HUD (layer-shell on Wayland, override-redirect on X11); a StatusNotifierItem tray icon when a tray host exists |
 
-The beta does not claim voice commands, application or browser context,
-meetings, or universal Wayland support. Wayland needs `wl-copy`, `wtype`, and
+The beta does not claim voice commands, application or browser context, or
+universal Wayland support. Wayland needs `wl-copy`, `wtype`, and
 compatible compositor protocols; shortcuts come from the GlobalShortcuts portal
 or from the user's compositor keybindings running `hex` commands.
 There is no hidden XWayland or privileged injection fallback. See
@@ -89,31 +89,7 @@ Only begin this slice when command parity is a product priority. Add:
 Keep browser-host commands unavailable until a real browser adapter provides
 the active URL. Never infer a URL from a window title.
 
-### 3. Add Manual PipeWire Meetings
-
-Manual meeting recording precedes automatic detection. Capture two explicit
-sources:
-
-1. The selected or default microphone source.
-2. The monitor of the selected or default output sink.
-
-Each callback must provide source, presentation timestamp, monotonic arrival
-timestamp, sample rate, and mono float samples. Reuse the existing bounded WAV
-writers, live drafts, gap accounting, manifests, recovery, and atomic final
-publication.
-
-Handle route replacement, Bluetooth profile changes, clock alignment, queue
-pressure, and Hex feedback appearing in the output monitor. Route loss must
-produce a visible gap or failure rather than silent corruption.
-
-### 4. Add Metadata-Only Meeting Offers
-
-After manual capture is reliable, observe PipeWire registry nodes and active
-links without recording samples. Normalize process and media metadata into the
-existing meeting-candidate model. Detection remains offer-only and never starts
-recording automatically.
-
-### 5. Expand Wayland Only With Explicit Capabilities
+### 3. Expand Wayland Only With Explicit Capabilities
 
 The implemented beta takes shortcuts from the GlobalShortcuts portal, or from
 `hex` commands the user binds in the compositor, plus compositor-provided
@@ -134,7 +110,7 @@ the portal and the `hex` commands are the one general contract. If appliance
 parity is ever required, decide on an approved helper separately and do not
 build a general-purpose root daemon.
 
-### 6. Validate Distribution Channels Deliberately
+### 4. Validate Distribution Channels Deliberately
 
 The app-managed updater owns only the user-local direct-install layout. Nix owns
 its packaged installation and optional user service; a future Arch package must
@@ -150,9 +126,7 @@ Do not fork these modules by platform:
 - transcription models, inference, processing, ordering, and cancellation;
 - command grammar and pure resolution;
 - event schema and bounded projections;
-- paste continuation and clipboard restoration state transitions;
-- meeting manifests, locking, WAV writing, transcript publication, and
-  recovery.
+- paste continuation and clipboard restoration state transitions.
 
 Platform adapters own native handles, permissions, and cleanup. Do not create
 one application-wide `Platform` trait.
@@ -163,8 +137,6 @@ one application-wide `Platform` trait.
 | --- | --- | --- |
 | X11 commands | Target action executor | Automation plugin registry |
 | Foreground context | Private provider behind `ContextMonitor` | Browser framework before a browser adapter |
-| PipeWire meetings | Capture session emitting existing packet facts | Generic media graph |
-| PipeWire detection | Metadata-only microphone activity source | Sample capture for detection |
 | Native Wayland | Runtime X11/Wayland capability selection | XWayland presented as native support |
 | Privileged parity | Minimal versioned helper protocol | General-purpose root daemon |
 | Additional packaging | One concrete channel and ownership rule | Universal package abstraction |
@@ -194,8 +166,6 @@ implementation assumptions.
 | Browser, terminal, editor, Electron insertion | Required | Required | Capability-dependent |
 | Application context | Required | Required when shipped | Capability-dependent |
 | Desktop window and settings | Required | Required | Required |
-| Manual two-track meeting | Required in developer builds | Required when shipped | Required when shipped |
-| Offer-only meeting detection | Required in developer builds | Required when shipped | Required when shipped |
 | Shutdown and route-loss recovery | Required | Required | Required |
 
 ## Risks
@@ -205,8 +175,6 @@ implementation assumptions.
 | Generic Wayland parity is not a stable contract | Critical | Publish one constrained contract |
 | Native Wayland insertion is compositor-controlled | High | Validate `wl-copy`/`wtype` on compatible compositors; broader portal/libei or approved-helper support needs separate validation |
 | Foreground and browser context lack universal APIs | High | EWMH first; add a real browser adapter later |
-| PipeWire output monitoring includes Hex feedback | High | Suppress feedback or construct a filtered capture graph |
-| PipeWire metadata varies by package format | Medium | Build identity rules from observed fixtures |
 | Packaging multiplies native dependencies | Medium | Keep one distro and channel until validated |
 
 ## Recorded Decisions
@@ -214,8 +182,8 @@ implementation assumptions.
 - Target x86_64 Arch Linux rolling on i3/X11.
 - Ship through a signed user-local direct-install channel.
 - Require automatic insertion and a key-containing shortcut.
-- Exclude meetings; scope native Wayland to compatible wlroots protocols rather
-  than claiming every compositor. Shortcuts use the GlobalShortcuts portal or
+- Scope native Wayland to compatible wlroots protocols rather than claiming
+  every compositor. Shortcuts use the GlobalShortcuts portal or
   user-bound `hex` commands, never raw input devices.
 - Keep package-manager and app-managed update ownership separate.
 - Do not install a privileged helper for the X11 contract.

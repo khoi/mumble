@@ -61,9 +61,7 @@ Backups are never automatically removed. On Linux, the running Hex checks
 `settings.json` every two seconds and adopts an edit made outside the window
 (by hand or by an agent), so its modes reach the listener and the next save
 keeps it (#970); macOS and Windows still read it only at launch or through
-`hex settings set`. Unchosen `meetings.retention` is
-written as an absent key, so older builds with a non-optional retention still
-read the file; existing `null` values also load in the current build.
+`hex settings set`.
 
 Source and checks: [settings persistence](../../src/app_settings/persistence.rs)
 and its [tests](../../src/app_settings/persistence/tests.rs): old-shape retention,

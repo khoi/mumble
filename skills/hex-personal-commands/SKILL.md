@@ -27,7 +27,7 @@ engine. There is no package to install and no build step.
 4. Use `defineHexConfig` from `@hex/commands` and declare pure `transformations`
    entries (`{ id, name, description?, transform(text, context) }`).
 5. Transformations must be selected in the mode's Transformations section.
-   They run after mode corrections and optional AI rewriting, not for meetings.
+   They run after mode corrections and optional AI rewriting.
 6. Run `hex commands check` (macOS) after editing. It loads the config as Hex
    does and prints what it registers or the error with file, line, and column.
    Optionally type-check with `npx -y -p typescript tsc` in `~/.config/hex`. A

@@ -18,11 +18,9 @@ setup again.
 
 ```ts
 Feature             Pane  Toggle (settings.json, hex settings)   On: what it does
-├── Meetings (beta) yes   meetings.enabled             (macOS)   Meetings joins the sidebar: call detection, recording, transcripts
 ├── Voice Filter    yes   experimental.hex_microphone  (macOS, Linux) Voice Filter joins the sidebar; feeds the Hex Microphone (macOS driver, Linux PipeWire source)
 ├── Playground      yes   labs.playground                        a Playground sidebar item and ⇧⌘D open the story browser
 ├── Live text       no    labs.live_text                         provisional words beside the HUD while dictating
-├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Cloud transcription no labs.cloud_transcription + labs.cloud_transcription_provider (claude/codex, default claude)
 │                                        a dictation goes to Claude or Codex through their apps' sign-in first; Hex's model on any failure
@@ -39,7 +37,6 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Spoken formatting no labs.spoken_formatting      spoken "new line"/"line break", "new paragraph", "open/close quote" become line breaks and quotation marks; Spanish "nuevo párrafo", "nueva línea", "abre/cierra comillas", … too (#630, #1040)
 ├── Spoken symbols  no    labs.spoken_symbols          spoken "hashtag", "underscore", "comma", … become symbols joined to their words: "#release", "my_variable", "done, thanks"; Spanish "arroba", "guion bajo", "coma", … too (#678, #1040)
 ├── Remove filler words no labs.filler_words          um, umm, uh, uhh, erm, er, ah leave dictations, with no model (#631)
-├── Subtitle export no    labs.subtitle_export         (macOS)   hex meetings show --srt|--vtt writes a meeting as timed subtitles (#633)
 ├── Second dictation shortcut no labs.second_dictation_shortcut + second_dictation_hotkey (macOS)
 │                                        another shortcut dictates like the main one (#627); General shows its recorder while on
 ├── Smart spacing   no    labs.smart_spacing           (macOS)   a dictation pasted right after a word gets one leading space (#632)
@@ -53,16 +50,12 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Dictation stats no    labs.history_stats           History shows a summary of retained dictations; hex history stats prints it (#790)
 ├── Copy recent dictations no labs.recent_dictations (macOS) the menu bar's Copy Recent Dictation submenu copies one of the last five dictations (#877)
 ├── Skip long pauses no    labs.skip_pauses             (Linux, Windows) a whole-clip dictation run hears only the head and tail of each long pause (#899)
-├── Stop when the call ends no labs.stop_when_call_ends (macOS) a recording Hex started on its own stops 30 s after its call app leaves the microphone and goes quiet (#835)
 ├── Fix results in Output no labs.output_fixes           Output's Try card offers Vocabulary and Fix this, which copies an agent prompt naming the wrong result (#989)
 ├── Model in use first no labs.picker_active_first     the speech model picker shows the model in use first: Compare's first column, Every model's first row (#1019)
 ├── Use model files where they are no labs.model_in_place the picker adds a model file without copying it, so accounts can share one (#941)
 ├── Downloaded models only no labs.picker_downloaded   the picker's All speech models view can show only downloaded models, with the space Hex's copies take (#1018)
 ├── Keep recordings no    labs.keep_recordings         History entries keep their dictation audio; Transcribe again runs it through another installed model (#1032)
-├── Hide menu bar icon no labs.hide_menu_bar_icon      (macOS) the menu-bar icon hides while no meeting is under way; shortcuts keep working, reopening Hex shows Settings (#1064)
-├── Movable meeting capsules no labs.movable_meeting_capsules (macOS) panel capsules (Meeting transcript ready, Recording automatically, offers, reminders) drag to another corner and show in the last one, shared with the recording capsule (#1093)
-├── Choose meeting summary model no labs.meeting_summary_model + meetings.opencode_model (macOS)
-│                                        OpenCode meeting notes use exactly that provider/model, no fallback; Meetings › Settings › Advanced shows its field (#1107)
+├── Hide menu bar icon no labs.hide_menu_bar_icon      (macOS) the menu-bar icon hides; shortcuts keep working, reopening Hex shows Settings (#1064)
 ├── Restore clipboard on GNOME no labs.gnome_clipboard_restore (Linux) on a Wayland desktop without data-control (GNOME), a paste snapshots and restores
 │                                        the clipboard through XWayland, only while this user's Xwayland already runs; never starts it (#1111)
 └── Terminal paste  no    paste_with_shift             (Windows) paste with Ctrl+Shift+V (#477/#478; Linux keeps it in General)
@@ -72,7 +65,7 @@ Settings › Labs                          // labs.page
 ├── Opened by a link (macOS) -> hex://labs opens this page; hex://labs/<feature> also scrolls to the
 │   feature's row (centred) and pulses it for ~1.4 s (layer_02 fill, then back); it never turns the
 │   feature on. An unknown or absent name -> the page opens and process.log notes it. hex://settings/<pane>
-│   (general, output, history, meetings, voice-filter) opens a main pane; one Hex doesn't show -> General.
+│   (general, output, history, voice-filter) opens a main pane; one Hex doesn't show -> General.
 │   Links over 2048 bytes are ignored; a test build's scheme is hex-test://
 ├── One row per feature this OS has -> press flips it, saved at once
 │   ├── A pane feature on -> its pane is a normal top-level sidebar item; off -> hidden entirely
@@ -102,15 +95,13 @@ Every toggle applies at once, from the window or `hex labs on|off` (issue
 plate is always installed (prewarmed only when Live text is on at launch);
 the window always attaches the playground with Rune's own ⇧⌘D off, and its
 sidebar item, ⇧⌘D, the macOS View menu, and story links open it only while
-the toggle is on. Live chapters are read when a recording starts. Nothing
-starts at launch for a feature that is off. Limit: the macOS window's fixed
-size is chosen when it is created, so it becomes resizable for the
-playground only after Hex restarts.
+the toggle is on. Nothing starts at launch for a feature that is off. Limit:
+the macOS window's fixed size is chosen when it is created, so it becomes
+resizable for the playground only after Hex restarts.
 
 Gate a Labs feature where its work starts (the worker, thread, or capture),
-not only where its UI appears: `labs::live_text()`, `labs::live_chapters()`,
-`labs::playground()`, `labs::vocabulary_biasing()`,
-`app_settings::meetings_enabled()`, or `app_settings::hex_microphone_enabled()`.
+not only where its UI appears: `labs::live_text()`, `labs::playground()`,
+`labs::vocabulary_biasing()`, or `app_settings::hex_microphone_enabled()`.
 Add a new feature to `labs::Feature` (name, settings key, description, audience), give
 it a row in `rune_ui/labs.rs` and a `hex settings` key, and default it off.
 When a feature graduates, remove it from Labs.
@@ -126,10 +117,10 @@ Unload model when idle (`unload-idle`, issue 442 from @theoneand33): while
 on, its row shows "Unload after" (5, 15, 30, or 60 minutes; default 15).
 `transcription/engine`'s worker unloads a loaded GGUF model once no command
 has reached it for that long and nothing records (`audio::idle_sleep::held()`: a
-dictation past its hold or a meeting; a macOS capture from its press via
+dictation past its hold; a macOS dictation capture from its press via
 `dictation_busy`), freeing its RAM and VRAM; between commands no request
 runs. Apple Speech stays loaded. The unloaded model still counts as held
-(`TranscriptionEngine::holds`), so dictation, meetings, and the local API send
+(`TranscriptionEngine::holds`), so dictation, captures, and the local API send
 their work to the engine as before, and the worker reloads it before the
 first command that needs it: audio fed meanwhile waits in the queue, so
 nothing recorded is lost. A capture's stream opens after the reload and
@@ -201,7 +192,7 @@ Hex never refreshes or writes either sign-in: Claude Code and Codex renew
 their own tokens (Claude's last about eight hours, Codex's about ten days),
 so an expired one falls back until its app runs again. Both endpoints are
 the apps' private ones, reached with their identities, and may change or
-refuse without notice. Meetings, captures, host-audio transcription
+refuse without notice. Captures, host-audio transcription
 (`/transcriptions`, `/streams`), and Transcribe again stay on Hex's model.
 Everything goes through the computer's proxy: Codex's upload through
 `net`'s agent, both WebSockets through `net::tunnel` (an HTTP proxy's
@@ -267,7 +258,7 @@ the transcript as an ordinary clipboard entry (no nspasteboard.org transient
 markers), drops any earlier snapshot and pending restore
 (`ClipboardRestore::keep`), and ends the continuation, so the next dictation
 is not joined to it. History and Paste last dictation update as for a paste,
-and Paste last dictation and meeting pastes still paste. Off, output is
+and Paste last dictation still pastes. Off, output is
 exactly as before. Checks:
 `a_copy_only_dictation_is_left_on_the_clipboard_with_nothing_to_restore` in
 [paste.rs](../../src/paste.rs) (macOS only);
@@ -290,7 +281,7 @@ periods, and spaces the model puts around a command go with it ("Hello. New
 line. Next" becomes "Hello.\nNext"). Words such as "newline", "new liner",
 "lineal", or "comillas" alone stay as they are. English and Spanish phrases
 are recognized whatever the Language setting is (#1040); other languages
-are not covered yet. Dictate without processing, meetings, and live text are
+are not covered yet. Dictate without processing and live text are
 unchanged, and with the toggle off processing is exactly as before. Checks:
 the tests in [dictation/spoken_formatting.rs](../../src/dictation/spoken_formatting.rs);
 `spoken_formatting_is_its_own_bit_and_off_by_default` in
@@ -318,7 +309,7 @@ next ("done comma thanks" → "done, thanks"). The longer Spanish phrase wins
 spaces the model puts around a spoken symbol go with it. Words such as
 "commas", "comas", "guiones", "hashtags", "slashed", or "colonel" stay as
 they are. Other languages are not covered yet (#1040), and the word list is fixed (no per-user symbol
-sets yet). Dictate without processing, meetings, and live text are
+sets yet). Dictate without processing and live text are
 unchanged, and with the toggle off processing is exactly as before. Checks:
 the tests in [dictation/spoken_symbols.rs](../../src/dictation/spoken_symbols.rs);
 `spoken_symbols_is_its_own_bit_and_off_by_default` in
@@ -340,8 +331,8 @@ only, so "umbrella", "ahead", "error", "Uhura", "uh-huh", and "ER" stay. The
 comma or ellipsis that comes with a filler goes too, the spaces around it
 close up, no space is left before punctuation, a capitalised filler that
 started a sentence passes its capital to the next word ("Um, so I think"
-becomes "So I think"), and line breaks stay. Dictate without processing,
-meetings, and live text are unchanged, and with the toggle off processing is
+becomes "So I think"), and line breaks stay. Dictate without processing and
+live text are unchanged, and with the toggle off processing is
 exactly as before. Checks: the tests in
 [dictation/filler_words.rs](../../src/dictation/filler_words.rs);
 `filler_words_is_its_own_bit_and_off_by_default` in
@@ -350,25 +341,6 @@ exactly as before. Checks: the tests in
 [panes.rs](../../src/rune_ui/tests/panes.rs). Not yet observed: a real
 dictation with the toggle on; the Labs page goldens need regenerating on
 Linux with the new row.
-
-Subtitle export (`subtitle-export`, issue 633, macOS like Meetings; its row
-shows wherever Meetings does): while on, `hex meetings show <id> --srt` or
-`--vtt` writes the meeting's transcript as SubRip or WebVTT subtitles, one cue
-per transcript entry (speaker turn) labelled You or Them, timed by the entry's
-offsets from the meeting's start rather than word timings, and limited by
-`--from`/`--to` or `--chapter` as the other outputs are
-([transcript-cli.md](../transcript-cli.md)). The gate,
-`labs::subtitle_export()`, is read where the command starts: off, `--srt` and
-`--vtt` fail naming `hex labs on subtitle-export` before any meeting is read,
-and every other output is exactly as before. There is no export button in the
-window yet. Checks:
-`subtitles_render_speaker_turns_as_srt_and_vtt_cues` and
-`subtitles_follow_the_range_and_need_the_labs_toggle` in
-[control/transcript_cli_tests.rs](../../src/control/transcript_cli_tests.rs);
-`subtitle_export_is_its_own_bit_and_off_by_default` in
-[labs.rs](../../src/labs.rs). Not yet observed: a real meeting exported and
-loaded in a player; the Labs page goldens need regenerating on Linux with the
-new row.
 
 Second dictation shortcut (`second-dictation-shortcut`, issue 627, macOS):
 for a Globe/Fn shortcut on the laptop keyboard and another key on an
@@ -383,7 +355,7 @@ carry it, so the event tap suppresses its keys and the listener
 (`recognition::Hotkeys`) runs a second shortcut machine with the dictation
 shortcut's Hold/Toggle, double-tap lock, and double-tap-only settings. It
 dictates and pastes with processing, as the dictation shortcut does; Paste
-last and meeting paste still come only from the main machine. The shortcut
+last still comes only from the main machine. The shortcut
 that starts a capture finishes or cancels it, and the other stands down
 until its keys lift while it records. Turning the toggle off or clearing the
 binding mid-capture cancels that capture. Off, nothing is matched,
@@ -712,7 +684,7 @@ A clip in which no frame rose above the noise floor is left whole, as the
 stream does for #841. The job deadline, History's duration, and the silence
 discard still use the full clip; process.log adds a `skipped long pauses
 before whole-clip transcription` line with `pauses_dropped_ms`. macOS,
-streams, meetings, captures, and the local API are unchanged, and off the
+streams, captures, and the local API are unchanged, and off the
 clip is passed through untouched. Checks:
 `skipping_pauses_cuts_a_whole_clips_long_pauses_to_their_ends`,
 `skipping_pauses_leaves_short_pauses_and_quiet_only_clips_whole`, and
@@ -722,31 +694,6 @@ clip is passed through untouched. Checks:
 Not yet observed: a real dictation with the toggle on in Hex (the reporter
 measured their own branch on an i5-8259U); the Labs page goldens need
 regenerating on Linux with the new row.
-
-Stop when the call ends (`stop-when-call-ends`, issue 835, macOS like
-Meetings; its row shows wherever Meetings does, in macOS builds): for an
-Always record call that keeps recording after hang-up. The gate,
-`labs::stop_when_call_ends()`, is read on each pass of the meeting
-controller (`poll_recording` in
-[meeting/watcher.rs](../../src/meeting/watcher.rs)), and only for a recording
-Hex started on its own. While on, the call app counts as present while it
-holds the microphone or any of its Core Audio processes has output running
-(`microphone_activity::application_running_output`), since WhatsApp keeps
-the microphone while muted and closes both on hang-up. Once both are off for
-about 3 s, the "left the call" capsule says "Hex stops recording in 30 s
-unless you keep recording."; Keep recording sends
-`ControllerCommand::KeepRecording`, which drops the stop for this absence, and
-the call app coming back drops it too. After 30 s (`AUTO_STOP_GRACE`,
-`AutoStop` in [meeting/detection.rs](../../src/meeting/detection.rs)) the
-controller stops the recording as Stop & Transcribe does and logs it. Manual,
-offered, and calendar recordings never stop, and off, nothing reads the
-output and the capsule and controller are exactly as before. Not built: the
-leave-call button as a signal, per-app rules, and holding off while the
-network is down. Checks: `stop_when_call_ends_is_its_own_bit_and_off_by_default`
-in [labs.rs](../../src/labs.rs) and the auto-stop checks listed in
-[meetings.md](meetings.md#record). Not yet observed: a real WhatsApp, Zoom,
-or Teams call on a Mac with the toggle on; the row renders only in macOS
-builds, so no golden changes.
 
 Fix results in Output (`output-fixes`, issue 989, every OS): for a Try
 result in Settings › Output that comes out wrong. While on, the Try card
@@ -884,77 +831,16 @@ who only use the shortcut and want the menu-bar space back. The status item
 stays installed and is only hidden (`NSStatusItem` `setVisible`), so
 dictation, the shortcuts, and the listener are unchanged. The gate,
 `labs::hide_menu_bar_icon()`, is read when the item is installed and on each
-menu-bar refresh (`status_item::update_meeting`, about twice a second), so
-turning it on or off applies at once. A meeting starting, recording, or
-transcribing brings the icon back, so a recording stays visible and
-stoppable from the menu bar, and it hides again once the meeting ends; an
-Annotate capture keeps its own capsule and doesn't bring it back. With the
+menu-bar refresh (`status_item::update_visibility`, about twice a second), so
+turning it on or off applies at once. An Annotate capture keeps its own
+capsule and doesn't bring the icon back. With the
 Dock icon off too, a launch stays quiet, and opening Hex again from Finder
 or Spotlight (the reopen Apple event) opens Settings, which has Quit Hex.
 Off, the icon is exactly as before. Checks:
-`a_hidden_icon_comes_back_while_a_meeting_is_under_way` in
-[macos_rune/status_item.rs](../../src/macos_rune/status_item.rs) (macOS
-only); `hide_menu_bar_icon_is_its_own_bit_and_off_by_default` in
+`hide_menu_bar_icon_is_its_own_bit_and_off_by_default` in
 [labs.rs](../../src/labs.rs). Not yet observed: the icon hiding on a real
 Mac, or macOS restoring an item's remembered visibility; the row renders
 only in macOS builds, so no golden changes.
-
-Movable meeting capsules (`movable-meeting-capsules`, issue 1093, macOS
-like Meetings; its row shows wherever Meetings does, in macOS builds): for
-panel capsules that sit over another app's window controls or toolbar. The
-gate, `labs::movable_meeting_capsules()`, is read each time a panel capsule
-shows (`MeetingCapsules::show_panel` in
-[rune_ui/meeting_capsules.rs](../../src/rune_ui/meeting_capsules.rs)). While
-on, the panel (offer, reminder, left the call, Meeting transcript ready,
-Recording automatically) opens in the saved
-`meetings.recording_indicator_corner` and its body drags like the recording
-capsule's: it follows the pointer, snaps to the corner nearest its centre
-(measured with its own width) on release, and saves that corner, which the
-recording capsule then uses too. A press on a button still presses it, and a
-cancelled drag (Escape) goes back without saving. Off, the panel opens in
-the top right and doesn't drag, exactly as before. Not built: clicks passing
-through the panel outside its buttons. Checks:
-`a_released_panel_snaps_by_its_own_size`,
-`each_corner_places_the_panel_at_its_edges`, and
-`only_a_movable_panel_drags` in
-[rune_ui/meeting_capsules.rs](../../src/rune_ui/meeting_capsules.rs);
-`movable_meeting_capsules_is_its_own_bit_and_off_by_default` in
-[labs.rs](../../src/labs.rs). Not yet observed: a drag on a real Mac; the
-row renders only in macOS builds, so no golden changes.
-
-Choose meeting summary model (`meeting-summary-model`, issue 1107, macOS
-like Meetings; its row shows wherever Meetings does, in macOS builds): for
-choosing which OpenCode provider and subscription writes meeting notes.
-
-```ts
-Meetings › Settings › Advanced, Summarize with OpenCode on   // labs.meeting-summary-model
-├── Toggle off -> no field; notes try Hex's ranked fast models, as before
-└── Toggle on -> "Summary model" field, placeholder provider/model, saved on Return or Save
-    ├── meetings.opencode_model, only for meeting notes (titles, summaries, live
-    │   chapters written by OpenCode); left out of settings.json while empty
-    ├── Set, e.g. openai/gpt-5.4-mini -> "Summaries use openai/gpt-5.4-mini. If it isn't
-    │   available, the meeting shows the error instead of trying another model"
-    ├── Empty -> "Empty: Hex tries its list of fast models in order and uses the first one OpenCode has"
-    └── No provider/ part -> says how to write it; the ranked models run until then
-```
-
-The gate is `labs::meeting_summary_model()`, read at each OpenCode
-generation in `meeting::generator::opencode`: with it on and a valid
-`provider/model` saved (`generator::parse_model`), the request goes to
-`processor::generate_text_with`, which asks that model alone (one retry when
-OpenCode is still starting it, as for a mode's model) and never the ranked
-list, so a failure is recorded as the meeting's `notes_error`
-("Notes could not be written.", prefixed with the model). Apple
-Intelligence, when it writes the notes, is unchanged. Off, notes are exactly
-as before. `hex settings set meetings.opencode_model openai/gpt-5.4-mini`
-sets it (`none` clears it). Not built: picking from the OpenCode catalog or
-a thinking variant. Checks: `a_summary_model_needs_a_provider_and_a_model`
-and `without_its_labs_toggle_no_summary_model_is_used` in
-[meeting/generator.rs](../../src/meeting/generator.rs);
-`a_chosen_model_is_asked_alone_and_never_falls_back` in
-[dictation/processor.rs](../../src/dictation/processor.rs). Not yet
-observed: a real meeting summarized with a chosen model; the rows render only
-in macOS builds, so no golden changes.
 
 Normal features, not Labs: dictation, Annotate (every build; its own pane
 and switch), lowering audio while dictating (#210), Dot scope, chord shortcuts, QuickJS transformations, clipboard
@@ -963,12 +849,6 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
 
 ## Features
 
-- Live chapters: chapter a meeting's transcript live while it records
-  (macOS, Apple Intelligence; see
-  [Live Chapters](meetings.md#live-chapters-labs)). Its own switch is
-  `labs.live_chapters` (off by default). The gate,
-  `labs::live_chapters()`, is where the work starts: the recorder's chapter worker, recording
-  chapters in the manifest, and the boundary pass after Stop.
 - Run setup again (not a feature toggle; every build): replays Hex's one
   onboarding, the first-run story every new install gets
   ([setup.tour](README.md)). Labs' **Run setup again** and
@@ -1019,9 +899,6 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   ```ts
   Prototypes        stories that aren't the window
   ├── Onboarding    the options and First run
-  ├── Meetings      Live notes: a canned call's chapters and notes under a
-  │                 draggable capsule, hidable, copied whole, new, or by
-  │                 chapter (nothing real runs; live_notes.rs)
   ├── HUD           (macOS) each placement × look × ending, Processing, Your voice + live HUD Lab Dot scope sliders & Save
   └── Capture capsule   (macOS) whole flow and each state × flow, notch, family
   Window            every macOS-window fixture scene by pane, under a readable name
@@ -1097,9 +974,6 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   [panes.rs](../../src/rune_ui/tests/panes.rs);
   `the_setting_or_an_installed_driver_turns_the_voice_filter_on_and_labs_never_does`
   in [app_settings.rs](../../src/app_settings.rs).
-- Meetings (beta): see [Meetings](meetings.md). Its toggle is
-  `meetings.enabled`; on, Meetings is a top-level sidebar item (debug builds
-  keep it available regardless).
 - Vocabulary biasing: Parakeet transcription biased toward the
   [vocabulary](vocabulary.md) (`transcribe_cpp::RunExtension::ParakeetVocabulary`),
   the request behind issue 452 / PR 457. Off (the default),

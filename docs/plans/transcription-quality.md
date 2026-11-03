@@ -134,7 +134,7 @@ Transcription quality plan (ordered by value / effort)
     - Apply Phase 2's shared vocabulary replacements and Phase 4's `RunOptions::vocabulary` to rolling and final meeting chunks so `"Hex"`, `"Cappuccino"`, `"OpenCode"`, and participant names are right on the first rolling pass.
   - **Optional sub-second volatile tail via Apple `SpeechTranscriber` (`src/apple_speech.rs`, `src/meeting_live.rs`, macOS 26+):**
     - Once Moonshine is removed from `meeting_live.rs`, the only gap is the 0-8 s sentence currently being spoken before a pause cut lands.
-    - If Kit wants live word-by-word captions for that active sentence, stream 100 ms Int16 buffers per track into Apple's on-device `SpeechAnalyzer` / `SpeechTranscriber` (`docs/plans/meeting-live-transcription.md`), emitting `TranscriptPhase::Updated` / `Completed` into `transcript.live.ndjson` after `rolling.covered_ms`. Rolling Parakeet overwrites the tail as each 5-8 s chunk completes.
+    - If Kit wants live word-by-word captions for that active sentence, stream 100 ms Int16 buffers per track into Apple's on-device `SpeechAnalyzer` / `SpeechTranscriber`, emitting `TranscriptPhase::Updated` / `Completed` into `transcript.live.ndjson` after `rolling.covered_ms`. Rolling Parakeet overwrites the tail as each 5-8 s chunk completes.
 - **Measurement & gate:**
   - Replay a recorded speaker-mode call through `meeting_echo_replay`:
     - Rolling Parakeet turn latency after a pause drops from ~20 s to **p50 <= 6 s, p95 <= 10 s**.

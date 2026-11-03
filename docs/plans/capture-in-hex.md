@@ -271,7 +271,8 @@ where the work starts (the `capture_host` worker), not only in the window.
   engine's loaded model and word timestamps (`parakeet::transcribe_with_words`;
   dictation still discards its words).
 - A finished capture's clip is foreground work: it runs after dictation that
-  was already queued and before meeting chunks. It never loads a second model.
+  was already queued and before background work such as host-audio clips. It
+  never loads a second model.
   It goes to the engine in 30 s chunks, one job each, so a dictation sent
   meanwhile waits for one chunk at most. A chunk waits while dictation
   captures or transcribes, and the engine holds one that arrives during a live
@@ -291,7 +292,7 @@ where the work starts (the `capture_host` worker), not only in the window.
 ## Interface
 
 - The capsule (recording, processing, done, route toast, picker) and the ink
-  and laser overlay are click-through Rune overlays, like the meeting capsules.
+  and laser overlay are click-through Rune overlays.
   Their window ids go to the engine through `Host::own_windows` so screen
   capture leaves them out and clicks pass through.
 - Each state has a `--snap` scene and a storybook entry.

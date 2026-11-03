@@ -11,8 +11,7 @@ Personal commands live in `~/.config/hex/hex.config.ts` (or `hex.config.js`).
 The config defines
 ordinary commands, capture descriptors, named text transformations, and optional
 dictation control phrases. Rust validates and matches the grammar and retains
-wake, sleep, cancellation, and dictation lifecycle behavior. Meeting lifecycle
-commands are native and developer-only.
+wake, sleep, cancellation, and dictation lifecycle behavior.
 
 Spoken commands and dictation control phrases require the persisted Commands
 opt-in, which defaults off. Creating a config does not enable it. Selected mode
@@ -64,7 +63,7 @@ script/data URLs remain unsupported; use `openPath` for filesystem paths.
 The config may register named string transformations. Select them in a mode's
 Transformations section to run them in displayed order after that mode's
 corrections and optional OpenCode rewrite. This pipeline applies to Paste and
-Send, not Voice Action or meetings. If the transformation stage fails, Hex
+Send, not Voice Action. If the transformation stage fails, Hex
 keeps the text from before that stage, not partially transformed output.
 
 ```ts

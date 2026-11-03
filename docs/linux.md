@@ -15,7 +15,7 @@ or a software Vulkan driver. See the Wayland requirements below.
 x86_64 machines need a 2013 or newer processor with AVX2 (Intel Haswell / AMD Excavator or later); on an older processor Hex shows a message and quits instead of starting.
 
 Linux opens the same window as macOS and Windows: Settings, Modes,
-and History. Meetings are macOS-only.
+and History.
 Paste on Wayland uses `wtype` where the compositor offers the virtual keyboard
 protocol (wlroots compositors, niri) and the desktop's RemoteDesktop portal
 elsewhere (KDE, GNOME). Shortcuts are general: the desktop's GlobalShortcuts portal when it has one, otherwise
@@ -67,7 +67,7 @@ dictation records or transcribes unless `--force`. Linux runs the same
 control commands as macOS ([docs/cli.md](cli.md)): `settings`, `model`,
 `window`, `vocabulary`, `history clear`, `check-for-updates`, `onboarding
 reset`, `annotate status`, `launch-at-login` (the XDG autostart entry),
-`logs`, `commands init|check`, `history`, `meetings`, and `mcp`.
+`logs`, `commands init|check`, and `history`.
 
 A launch first asks the running Hex over its socket. If one answers, it
 forwards `Activate` with the launcher's `XDG_ACTIVATION_TOKEN` or
