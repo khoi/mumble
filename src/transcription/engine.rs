@@ -102,9 +102,9 @@ pub(crate) enum Command {
         clip: Vec<f32>,
         offline: Offline,
         job: Job,
-        /// Whether Labs › Cloud transcription's service may take the whole
-        /// clip before the model; false once its stream already failed.
-        cloud: bool,
+        /// The capture's released cloud stream, whose answer comes before
+        /// the model (Labs › Cloud transcription).
+        cloud: Option<crate::transcription::cloud::CloudAnswer>,
     },
     /// An offline run that waits for an open live stream to end instead of
     /// interrupting it, such as a capture's word chunk or a `/streams`
@@ -467,7 +467,7 @@ impl LiveStream {
             return;
         }
         self.fed += samples.len();
-        match &self.feeds {
+        match &mut self.feeds {
             Feeds::Model(feed) => {
                 let _ = feed.commands.send(Command::Feed {
                     stream: feed.id,
@@ -728,81 +728,26 @@ impl TranscriptionEngine {
         offline: Offline,
     ) -> Result<PendingTranscript> {
         let fed = stream.as_ref().map_or(0, |stream| stream.fed);
-        let (stream, stream_cancel) = match stream.map(|stream| stream.feeds) {
-            Some(Feeds::Cloud(cloud)) => return Ok(self.finish_cloud(cloud, fed, clip, offline)),
+        let (stream, stream_cancel, cloud) = match stream.map(|stream| stream.feeds) {
+            // Released at once, so the service finishes while earlier work runs.
+            Some(Feeds::Cloud(cloud)) => {
+                let overfed = fed > clip.len() + MAX_OVERFED_SAMPLES;
+                let tail = &clip[fed.min(clip.len())..];
+                (None, None, Some(cloud.end(tail, overfed)))
+            }
             Some(Feeds::Model(mut feed)) => {
                 feed.finished = true;
-                (Some(feed.id), Some(feed.cancel.clone()))
+                (Some(feed.id), Some(feed.cancel.clone()), None)
             }
-            None => (None, None),
+            None => (None, None, None),
         };
         self.request(clip.len(), stream_cancel, |job| Command::Finish {
             stream,
             clip,
             offline,
             job,
-            cloud: true,
+            cloud,
         })
-    }
-
-    /// Finishes a cloud stream on its own thread with the clip's unsent tail,
-    /// so the engine stays free; without its text the engine transcribes the
-    /// clip as the stream says.
-    fn finish_cloud(
-        &self,
-        cloud: crate::transcription::cloud::CloudStream,
-        fed: usize,
-        clip: Vec<f32>,
-        offline: Offline,
-    ) -> PendingTranscript {
-        use crate::transcription::cloud::Fallback;
-        cloud.feed(&clip[fed.min(clip.len())..]);
-        let (reply, receiver) = mpsc::channel();
-        let cancel = CancelToken::new();
-        let pending = PendingTranscript {
-            reply: receiver,
-            cancel: cancel.clone(),
-            stream_cancel: None,
-            stalled: self.stalled.clone(),
-            job: self.deadlines.job_for(clip.len()),
-            stream_finish: self.deadlines.stream_finish,
-        };
-        let job = Job { cancel, reply };
-        let commands = self.commands.clone();
-        let requests = self.requests.clone();
-        let finish = move || {
-            let started = Instant::now();
-            match cloud.finish(&job.cancel) {
-                Ok(text) => {
-                    job.start();
-                    job.finish(Ok(Transcribed {
-                        text,
-                        source: Source::Cloud,
-                        finish_ms: started.elapsed().as_millis() as u64,
-                    }));
-                }
-                Err(fallback) => {
-                    requests.fetch_add(1, Ordering::AcqRel);
-                    let sent = commands.send(Command::Finish {
-                        stream: None,
-                        clip,
-                        offline,
-                        job,
-                        cloud: fallback == Fallback::WholeClip,
-                    });
-                    if let Err(mpsc::SendError(Command::Finish { job, .. })) = sent {
-                        job.finish(Err("transcription engine stopped".into()));
-                    }
-                }
-            }
-        };
-        if let Err(error) = thread::Builder::new()
-            .name("cloud-finish".into())
-            .spawn(finish)
-        {
-            tracing::error!(%error, "couldn't finish a cloud stream");
-        }
-        pending
     }
 
     /// Transcribes `clip` offline after every command already sent, without
@@ -1213,25 +1158,22 @@ impl Worker {
         }
     }
 
-    /// A finished dictation without a usable stream: Labs › Cloud
-    /// transcription's service first when `cloud`, then the model, which a
-    /// cloud answer never loads.
+    /// A finished dictation without a usable model stream: Labs › Cloud
+    /// transcription's service first (its stream's answer, or the whole
+    /// clip), then the model, which a cloud answer never loads.
     fn run_dictation(
         &mut self,
         clip: Vec<f32>,
         offline: Offline,
         source: Source,
         job: Job,
-        cloud: bool,
+        cloud: Option<crate::transcription::cloud::CloudAnswer>,
     ) {
         let Some((job, started)) = self.admit(job) else {
             return;
         };
         self.running.enter(&job.cancel);
-        let answer = cloud
-            .then(|| crate::transcription::cloud::dictation(&clip, &job.cancel))
-            .flatten();
-        match answer {
+        match crate::transcription::cloud::dictation(&clip, &job.cancel, cloud) {
             Some(text) => job.finish(Ok(Transcribed {
                 text,
                 source: Source::Cloud,
@@ -2082,73 +2024,61 @@ mod tests {
         (stream, heard)
     }
 
-    /// The finish the engine is handed once a cloud stream gives no text.
-    fn handed_over(commands: &Receiver<Command>) -> (Vec<f32>, Job, bool) {
-        match commands.recv_timeout(Duration::from_secs(5)) {
+    /// The finish a released cloud stream hands the engine.
+    fn handed_over(
+        commands: &Receiver<Command>,
+    ) -> (Vec<f32>, crate::transcription::cloud::CloudAnswer) {
+        match commands.try_recv() {
             Ok(Command::Finish {
                 stream: None,
                 clip,
-                job,
-                cloud,
+                cloud: Some(answer),
                 ..
-            }) => (clip, job, cloud),
-            _ => panic!("the clip went to the engine"),
+            }) => (clip, answer),
+            _ => panic!("the engine was handed the clip and the stream's answer"),
         }
     }
 
     #[test]
-    fn a_cloud_stream_hears_the_whole_clip_and_its_text_needs_no_model() {
+    fn a_released_cloud_stream_hears_the_rest_of_the_clip_at_once() {
         use crate::transcription::cloud::CloudProvider;
         let (engine, commands) = TranscriptionEngine::for_test();
         let (mut stream, heard) = cloud_stream(CloudProvider::Claude, Ok("hello there".into()));
         stream.feed(&[0.1, 0.2]);
-        let pending = engine
+        let _pending = engine
             .finish_with(
                 Some(stream),
                 vec![0.1, 0.2, 0.3, 0.4],
                 Box::new(|_, _| panic!("a cloud answer never reaches the model")),
             )
             .unwrap();
-        let transcribed = pending.wait().unwrap();
-        assert_eq!(transcribed.text, "hello there");
-        assert_eq!(transcribed.source, Source::Cloud);
-        assert_eq!(heard.recv().unwrap(), [0.1, 0.2, 0.3, 0.4]);
-        assert!(commands.try_recv().is_err(), "the engine ran nothing");
-    }
-
-    #[test]
-    fn a_failed_cloud_stream_leaves_the_clip_to_the_model() {
-        use crate::transcription::cloud::{CloudError, CloudProvider};
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let (stream, _) = cloud_stream(
-            CloudProvider::Claude,
-            Err(CloudError::Failed("dropped".into())),
+        // No worker runs here: the service hears the end before the engine
+        // reaches the finish.
+        assert_eq!(
+            heard.recv_timeout(Duration::from_secs(5)).unwrap(),
+            [0.1, 0.2, 0.3, 0.4]
         );
-        let pending = engine
-            .finish_with(Some(stream), vec![0.3; 5], silent())
-            .unwrap();
-        let (clip, job, cloud) = handed_over(&commands);
-        assert_eq!(clip, [0.3; 5]);
-        assert!(!cloud, "the service already failed this dictation");
-        job.start();
-        job.finish(Ok(Transcribed {
-            text: "from the model".into(),
-            source: Source::Offline,
-            finish_ms: 1,
-        }));
-        assert_eq!(pending.wait().unwrap().text, "from the model");
+        let (clip, answer) = handed_over(&commands);
+        assert_eq!(clip, [0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(
+            answer.wait(&CancelToken::new()).as_deref(),
+            Ok("hello there")
+        );
     }
 
     #[test]
-    fn a_refused_cloud_stream_offers_the_service_the_whole_clip() {
-        use crate::transcription::cloud::{CloudError, CloudProvider};
+    fn a_cloud_stream_that_heard_past_the_clip_is_dropped() {
+        use crate::transcription::cloud::CloudProvider;
         let (engine, commands) = TranscriptionEngine::for_test();
-        let (stream, _) = cloud_stream(CloudProvider::Codex, Err(CloudError::Refused(403)));
+        let (mut stream, heard) = cloud_stream(CloudProvider::Claude, Ok("and more".into()));
+        stream.feed(&[0.1; 16_000]);
         let _pending = engine
-            .finish_with(Some(stream), vec![0.3; 5], silent())
+            .finish_with(Some(stream), vec![0.1; 8_000], silent())
             .unwrap();
-        let (_, _, cloud) = handed_over(&commands);
-        assert!(cloud);
+        assert!(heard.recv_timeout(Duration::from_secs(5)).is_err());
+        let (clip, answer) = handed_over(&commands);
+        assert_eq!(clip.len(), 8_000, "the exact clip is transcribed");
+        assert!(answer.wait(&CancelToken::new()).is_err());
     }
 
     #[test]

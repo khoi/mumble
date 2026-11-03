@@ -142,12 +142,16 @@ the unload and reload themselves have no automated check.
 Cloud transcription (`cloud-transcription`): while on, its row shows
 "Transcribe with" (Claude or Codex; default Claude), and dictations
 (shortcut, `hex dictation`, `/dictations`) are transcribed by that service
-before Hex's own model. A hotkey dictation streams to it while it records,
-so on release only its last words are left; the audio leaves the computer,
-which is why it is off by default.
+before Hex's own model. A dictation that streams (macOS hotkey captures;
+every Linux and Windows capture, Linux `/dictations` included) streams to
+it while it records, so on release only its last words are left; the audio
+leaves the computer, which is why it is off by default. The switch is read
+as each capture's stream opens, so a stream already open finishes even if
+the feature is turned off meanwhile.
 
 ```ts
-Hotkey dictation passes the hold threshold (Toggle on Linux and Windows: on press)
+A capture starts streaming: past the hold threshold (Toggle on Linux and Windows: on press;
+Linux /dictations: at its start)
 └── Labs › Cloud transcription on -> engine::begin opens a cloud stream, not the model's
     // cloud/stream.rs: its own thread owns the connection; feeds arrive every 160 ms
     ├── Claude -> Claude Code's sign-in: CLAUDE_CODE_OAUTH_TOKEN, then the macOS Keychain item
@@ -156,15 +160,24 @@ Hotkey dictation passes the hold threshold (Toggle on Linux and Windows: on pres
     │   Claude Code's identity and the vocabulary as keyterms; KeepAlive every 8 s
     ├── Codex -> Codex's ChatGPT sign-in in $CODEX_HOME/auth.json (~/.codex); a dictation session on
     │   wss://chatgpt.com/backend-api/dictation/stream with Codex Desktop's identity: session.start,
-    │   base64 audio.append, a new session at a pause after 240 s and always by 285 s (it lives 300 s)
+    │   base64 audio.append of at most 1 s each, and a new session at a pause 240 s after the
+    │   session started, or 285 s after regardless (a session lives 300 s)
+    ├── Audio waits for a slow connection in a queue of at most 30 s; past it the stream is given
+    │   up and Hex's model transcribes the clip
+    ├── Every look at the socket ends within 250 ms, even while a frame trickles in, so the
+    │   stream's thread always gets back to the audio, the release, or a discard
     ├── Live text on -> Claude's words as it hears them (TranscriptText); Codex's utterances as
     │   each one finishes (final_only)
     ├── Short tap, chord, or discard -> the stream is dropped, nothing is finished; audio already
     │   sent stays sent
-    └── Release -> the unsent tail, then CloseStream / session.close; the clip waits for the last
-        words off the engine's thread (measured on a 3 s clip: Claude 0.28 s, Codex 0.54 s after
-        release, against 1.4 s and 0.75 s for the whole clip)
+    └── Release -> engine::finish_with sends the unsent tail and CloseStream / session.close at
+        once, so the service finishes while earlier work runs; the engine's worker then waits
+        for the answer as the dictation's job (its deadline, quitting cancels it), at most 45 s
+        (measured on a 3 s clip: Claude 0.28 s, Codex 0.53 s after release, against 1.4 s and
+        0.75 s for the whole clip)
         ├── Text -> pasted like any dictation (Output's modes still run); source=cloud in process.log
+        ├── The stream heard more than 250 ms past the clip (a delayed release) -> dropped, and
+        │   the exact clip goes to the service as below
         ├── The service refused the stream (403/404/405/410, streaming rolled out per account)
         │   -> the whole clip goes to it as below, and that provider streams no more for an hour
         └── Anything else (no sign-in, an expired one, a drop, empty text) -> Hex's model
@@ -196,13 +209,17 @@ CONNECT). Tungstenite logs nothing below warnings whatever `RUST_LOG` asks,
 since its handshake trace carries the authorization header. Checks:
 `cloud::tests` (off sends nothing, the chosen service hears the whole clip,
 any failure leaves it to the model, cancel and deadline end the wait),
-`cloud::stream::tests` (the stream hears every sample before it answers,
-failures go to the model, a refusal goes to the whole clip and pauses
-streaming), the `a_*cloud_stream*` tests in `transcription::engine` (the
-unsent tail reaches the stream, a cloud answer runs nothing on the engine,
-each fallback reaches it), `cloud::claude::tests` (frames, live text,
-sign-in, keyterms, request), `cloud::codex::tests` (sign-in, form, answers,
-session frames, rotation, session.start), `cloud::socket::tests`,
+`cloud::stream::tests` (the stream hears every sample by its release,
+failures go to the model, a refusal or overfeed goes to the whole clip, a
+stream 30 s behind is given up, cancel stops the wait), `cloud::tests`'
+streamed cases (a streamed answer is used without resending, a failed one
+goes to the model, a refused one sends the whole clip), the
+`a_*cloud_stream*` tests in `transcription::engine` (the service hears the
+end at release before the worker runs, an overfed stream is dropped for the
+exact clip), `cloud::claude::tests` (frames, live text, sign-in, keyterms,
+request), `cloud::codex::tests` (sign-in, form, answers, session frames,
+rotation by age, session.start), `cloud::socket::tests` (deadline, a
+look that ran its slice yields and resumes),
 `net::tunnel::tests` (CONNECT and refusals),
 `the_log_never_carries_the_websocket_handshake` in
 [app_paths.rs](../../src/app_paths.rs),

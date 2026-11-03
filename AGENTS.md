@@ -133,9 +133,10 @@ substitute for source inspection or a second roadmap.
   `transcription/local_transcriber`; it recreates the native session around each run (and
   each live stream) so inference scratch stays bounded, and owns chunked
   long-audio transcription.
-- `transcription/cloud`: Labs › Cloud transcription. A hotkey dictation
-  streams while it records (`cloud/stream`, its own thread behind
-  `LiveStream`) to Claude (Claude Code's sign-in from its token variable,
+- `transcription/cloud`: Labs › Cloud transcription. A dictation that
+  streams does so while it records (`cloud/stream`, its own thread behind
+  `LiveStream`; released at once, its answer waited for as the engine
+  worker's job) to Claude (Claude Code's sign-in from its token variable,
   the Keychain through `security`, or `.credentials.json`; its
   `voice_stream` WebSocket) or Codex (its `auth.json`; ChatGPT's dictation
   WebSocket, a new session before each 300 s one ends); any other dictation
@@ -737,10 +738,10 @@ CoreAudio formats, AppleScript details, or event serialization.
 - Dictation audio leaves the computer only through Labs › Cloud
   transcription (off by default) and only for dictations (shortcut,
   `hex dictation`, `/dictations`); meetings, captures, host-audio
-  transcription, and Transcribe again stay local. A hotkey dictation
-  streams from the hold threshold (Toggle on Linux and Windows: the press),
-  so short taps and chords send nothing, but a dictation discarded later
-  has already sent what it recorded. Nothing pastes before the final text,
+  transcription, and Transcribe again stay local. A dictation streams from
+  the hold threshold (Toggle on Linux and Windows: the press; Linux
+  `/dictations`: its start), so short taps and chords send nothing, but a
+  dictation discarded later has already sent what it recorded. Nothing pastes before the final text,
   and a stream or clip without text is transcribed on Hex's model.
 - CoreAudio capture timestamps and annotated-session CGEvent shortcut timestamps
   share the macOS boot-time nanosecond clock. Do not apply the Mach timebase to

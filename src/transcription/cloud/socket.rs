@@ -1,6 +1,7 @@
 //! The WebSocket both services speak: a TCP connection through the
-//! computer's proxy (`net::tunnel`), platform TLS, and a socket whose reads
-//! wait at most [`POLL`] and refuse everything once its deadline passes.
+//! computer's proxy (`net::tunnel`), platform TLS, and a socket that hands
+//! control back at least every [`SLICE`], however the service sends, and
+//! refuses everything once its deadline passes.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
@@ -14,9 +15,11 @@ use tungstenite::{HandshakeError, Message};
 use super::CloudError;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-/// The longest a read waits, so the stream's thread hands audio on at least
-/// this often.
+/// The longest a read waits for a byte.
 const POLL: Duration = Duration::from_millis(50);
+/// The longest one look at the socket lasts, even while a frame trickles
+/// in; tungstenite keeps the partial frame for the next look.
+const SLICE: Duration = Duration::from_millis(250);
 
 pub(super) type Socket = tungstenite::WebSocket<MaybeTlsStream<Bounded>>;
 
@@ -28,7 +31,8 @@ pub(super) enum Event {
     Idle,
 }
 
-/// Opens `request` to `host` by `deadline`, if it has one.
+/// Opens `request` to `host`, connecting within [`CONNECT_TIMEOUT`] (or
+/// `deadline`, if sooner); the socket then lives until `deadline`, if any.
 pub(super) fn connect(
     host: &str,
     request: Request,
@@ -36,11 +40,12 @@ pub(super) fn connect(
 ) -> Result<Socket, CloudError> {
     let unreachable =
         |detail: String| CloudError::Failed(format!("Couldn't reach {host}: {detail}"));
-    let step = deadline.map_or(CONNECT_TIMEOUT, |deadline| {
-        CONNECT_TIMEOUT
-            .min(deadline.saturating_duration_since(Instant::now()))
-            .max(POLL)
+    let connected_by = deadline.map_or(Instant::now() + CONNECT_TIMEOUT, |deadline| {
+        deadline.min(Instant::now() + CONNECT_TIMEOUT)
     });
+    let step = connected_by
+        .saturating_duration_since(Instant::now())
+        .max(POLL);
     let stream = crate::net::tunnel(host, 443, step).map_err(CloudError::Failed)?;
     let timeouts = |read| {
         stream
@@ -53,7 +58,12 @@ pub(super) fn connect(
     let control = stream
         .try_clone()
         .map_err(|error| unreachable(error.to_string()))?;
-    let socket = match tungstenite::client_tls(request, Bounded { stream, deadline }) {
+    let bounded = Bounded {
+        stream,
+        deadline: Some(connected_by),
+        slice: None,
+    };
+    let mut socket = match tungstenite::client_tls(request, bounded) {
         Ok((socket, _)) => socket,
         Err(HandshakeError::Failure(tungstenite::Error::Http(response))) => {
             return Err(refusal(
@@ -69,6 +79,7 @@ pub(super) fn connect(
     control
         .set_read_timeout(Some(POLL))
         .map_err(|error| unreachable(error.to_string()))?;
+    limit(&mut socket, deadline);
     Ok(socket)
 }
 
@@ -84,11 +95,18 @@ pub(super) fn refusal(status: u16, mitigated: bool) -> CloudError {
     }
 }
 
-/// From now on, every read and write fails once `deadline` passes.
-pub(super) fn set_deadline(socket: &mut Socket, deadline: Instant) {
-    if let MaybeTlsStream::NativeTls(tls) = socket.get_mut() {
-        let bounded = tls.get_mut();
-        bounded.deadline = Some(bounded.deadline.map_or(deadline, |old| old.min(deadline)));
+/// From now on, every read and write fails once `deadline` passes; `None`
+/// lifts it.
+pub(super) fn limit(socket: &mut Socket, deadline: Option<Instant>) {
+    if let Some(bounded) = bounded(socket) {
+        bounded.deadline = deadline;
+    }
+}
+
+fn bounded(socket: &mut Socket) -> Option<&mut Bounded> {
+    match socket.get_mut() {
+        MaybeTlsStream::NativeTls(tls) => Some(tls.get_mut()),
+        _ => None,
     }
 }
 
@@ -96,15 +114,22 @@ pub(super) fn send(socket: &mut Socket, message: Message) -> Result<(), CloudErr
     socket.send(message).map_err(failed)
 }
 
-/// The next frame, a close, or nothing within [`POLL`].
+/// The next frame, a close, or nothing within [`SLICE`].
 pub(super) fn next(socket: &mut Socket) -> Result<Event, CloudError> {
-    match socket.read() {
+    if let Some(bounded) = bounded(socket) {
+        bounded.slice = Some(Instant::now() + SLICE);
+    }
+    let read = socket.read();
+    let expired = bounded(socket).is_some_and(|bounded| {
+        bounded.slice = None;
+        bounded.check().is_err()
+    });
+    match read {
         Ok(Message::Text(text)) => Ok(Event::Text(text.as_str().to_owned())),
         Ok(Message::Close(frame)) => Ok(Event::Closed(frame.map(|frame| frame.code))),
         Ok(_) => Ok(Event::Idle),
         Err(tungstenite::Error::Io(error))
-            if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
-                && !Bounded::expired(socket) =>
+            if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) && !expired =>
         {
             Ok(Event::Idle)
         }
@@ -121,6 +146,8 @@ fn failed(error: tungstenite::Error) -> CloudError {
 pub(super) struct Bounded {
     stream: TcpStream,
     deadline: Option<Instant>,
+    /// When the current look at the socket ends: reads past it would block.
+    slice: Option<Instant>,
 }
 
 impl Bounded {
@@ -133,18 +160,14 @@ impl Bounded {
             _ => Ok(()),
         }
     }
-
-    fn expired(socket: &mut Socket) -> bool {
-        match socket.get_mut() {
-            MaybeTlsStream::NativeTls(tls) => tls.get_mut().check().is_err(),
-            _ => false,
-        }
-    }
 }
 
 impl Read for Bounded {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         self.check()?;
+        if self.slice.is_some_and(|slice| Instant::now() >= slice) {
+            return Err(ErrorKind::WouldBlock.into());
+        }
         self.stream.read(buffer)
     }
 }
@@ -171,6 +194,7 @@ mod tests {
         let mut bounded = Bounded {
             stream,
             deadline: Some(Instant::now()),
+            slice: None,
         };
         assert_eq!(
             bounded.read(&mut [0; 4]).unwrap_err().kind(),
@@ -180,6 +204,28 @@ mod tests {
             bounded.write(b"late").unwrap_err().kind(),
             ErrorKind::TimedOut
         );
+    }
+
+    #[test]
+    fn a_look_that_ran_its_slice_yields_but_keeps_the_socket_open() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut server, _) = listener.accept().unwrap();
+        server.write_all(b"data").unwrap();
+        let mut bounded = Bounded {
+            stream,
+            deadline: None,
+            slice: Some(Instant::now()),
+        };
+        assert_eq!(
+            bounded.read(&mut [0; 4]).unwrap_err().kind(),
+            ErrorKind::WouldBlock
+        );
+        bounded.slice = None;
+        let mut read = [0; 4];
+        bounded.stream.set_read_timeout(Some(POLL)).unwrap();
+        assert_eq!(bounded.read(&mut read).unwrap(), 4);
+        assert_eq!(&read, b"data");
     }
 
     #[test]

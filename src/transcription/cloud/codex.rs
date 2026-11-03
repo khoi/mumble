@@ -6,7 +6,6 @@
 
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -16,7 +15,7 @@ use tungstenite::http::HeaderValue;
 
 use super::CloudError;
 use super::socket::{self, Event, Socket};
-use super::stream::{Input, joined, publish, take};
+use super::stream::{Audio, joined, publish};
 use crate::transcription::engine::Partials;
 
 const URL: &str = "https://chatgpt.com/backend-api/transcribe";
@@ -29,10 +28,12 @@ const DESKTOP_VERSION: &str = "26.1021.31345";
 const SESSION_START: Duration = Duration::from_secs(15);
 /// How long a closing session may take to send its last words.
 const SESSION_CLOSE: Duration = Duration::from_secs(15);
-/// A session lives 300 s: a new one takes over at a pause after 240 s of
-/// audio, and at 285 s regardless.
-const ROTATE_AFTER: usize = 240 * 16_000;
-const FORCE_ROTATE: usize = 285 * 16_000;
+/// A session lives 300 s: a new one takes over at a pause after 240 s, and
+/// at 285 s regardless.
+const ROTATE_AFTER: Duration = Duration::from_secs(240);
+const FORCE_ROTATE: Duration = Duration::from_secs(285);
+/// The most audio one `audio.append` carries: one second.
+const APPEND_SAMPLES: usize = 16_000;
 /// A token this close to expiring reads as expired.
 const EXPIRY_MARGIN_MS: f64 = 60_000.0;
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
@@ -75,10 +76,10 @@ pub(super) fn transcribe(
     answer(status, mitigated, &body)
 }
 
-/// Sends `input`'s audio as it arrives, one dictation session after
-/// another, and returns their text once the last one closes after the end.
+/// Sends `audio` as it arrives, one dictation session after another, and
+/// returns their text once the last one closes after the end.
 pub(super) fn stream(
-    input: &Receiver<Input>,
+    audio: &Audio,
     language: &str,
     partials: Option<&Partials>,
 ) -> Result<String, CloudError> {
@@ -86,13 +87,13 @@ pub(super) fn stream(
     let mut finished: Vec<String> = Vec::new();
     let mut session = Session::open(&login, language)?;
     loop {
-        let taken = take(input)?;
-        if !taken.audio.is_empty() {
+        let taken = audio.take()?;
+        for chunk in taken.audio.chunks(APPEND_SAMPLES) {
             if session.due() {
                 finished.push(session.close()?);
                 session = Session::open(&login, language)?;
             }
-            session.append(&taken.audio)?;
+            session.append(chunk)?;
         }
         if taken.ended {
             finished.push(session.close()?);
@@ -117,31 +118,30 @@ pub(super) fn stream(
 struct Session {
     socket: Socket,
     dictation: Dictation,
-    /// Samples sent to it.
-    sent: usize,
+    /// When the service started it; its lifetime counts from here.
+    started: Instant,
 }
 
 impl Session {
     fn open(login: &Login, language: &str) -> Result<Self, CloudError> {
-        let socket = socket::connect(STREAM_HOST, stream_request(login)?, None)?;
+        let deadline = Instant::now() + SESSION_START;
+        let socket = socket::connect(STREAM_HOST, stream_request(login)?, Some(deadline))?;
         let mut session = Self {
             socket,
             dictation: Dictation::default(),
-            sent: 0,
+            started: Instant::now(),
         };
         socket::send(&mut session.socket, Message::text(session_start(language)))?;
-        let deadline = Instant::now() + SESSION_START;
         while !session.dictation.started {
-            if Instant::now() >= deadline {
-                return Err(CloudError::Failed("Codex didn't start the session".into()));
-            }
             session.poll()?;
         }
+        socket::limit(&mut session.socket, None);
+        session.started = Instant::now();
         Ok(session)
     }
 
     fn due(&self) -> bool {
-        rotation_due(self.sent, self.dictation.speaking)
+        rotation_due(self.started.elapsed(), self.dictation.speaking)
     }
 
     fn append(&mut self, audio: &[f32]) -> Result<(), CloudError> {
@@ -150,9 +150,7 @@ impl Session {
             "type": "audio.append",
             "audio": data_encoding::BASE64.encode(&pcm),
         });
-        socket::send(&mut self.socket, Message::text(frame.to_string()))?;
-        self.sent += audio.len();
-        Ok(())
+        socket::send(&mut self.socket, Message::text(frame.to_string()))
     }
 
     /// Reads one event; true when the text changed.
@@ -172,7 +170,7 @@ impl Session {
             &mut self.socket,
             Message::text(r#"{"type":"session.close"}"#),
         )?;
-        socket::set_deadline(&mut self.socket, Instant::now() + SESSION_CLOSE);
+        socket::limit(&mut self.socket, Some(Instant::now() + SESSION_CLOSE));
         while !self.dictation.closed {
             self.poll()?;
         }
@@ -180,10 +178,10 @@ impl Session {
     }
 }
 
-/// Whether a session that heard `sent` samples should hand over to a new
-/// one before more audio.
-fn rotation_due(sent: usize, speaking: bool) -> bool {
-    sent >= FORCE_ROTATE || (sent >= ROTATE_AFTER && !speaking)
+/// Whether a session started `age` ago should hand over to a new one
+/// before more audio.
+fn rotation_due(age: Duration, speaking: bool) -> bool {
+    age >= FORCE_ROTATE || (age >= ROTATE_AFTER && !speaking)
 }
 
 /// A session's state from its frames: each utterance's newest final text,
@@ -602,7 +600,7 @@ mod tests {
 
     #[test]
     fn a_session_rotates_at_a_pause_after_four_minutes_and_always_before_five() {
-        let minutes = |m: f64| (m * 60.0 * 16_000.0) as usize;
+        let minutes = |m: f64| Duration::from_secs_f64(m * 60.0);
         assert!(!rotation_due(minutes(3.9), false));
         assert!(rotation_due(minutes(4.0), false));
         assert!(!rotation_due(minutes(4.5), true));

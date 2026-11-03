@@ -4,7 +4,6 @@
 //! Code's own identity, fed while the dictation records.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -15,7 +14,7 @@ use tungstenite::protocol::frame::coding::CloseCode;
 
 use super::CloudError;
 use super::socket::{self, Event};
-use super::stream::{Input, joined, publish, take};
+use super::stream::{Audio, joined, publish};
 use crate::transcription::engine::Partials;
 
 const HOST: &str = "api.anthropic.com";
@@ -43,16 +42,19 @@ pub(super) fn transcribe(
     keyterms: &[String],
     deadline: Instant,
 ) -> Result<String, CloudError> {
-    let (sender, input) = mpsc::channel();
-    let _ = sender.send(Input::Audio(clip.to_vec()));
-    let _ = sender.send(Input::End);
-    stream(&input, language, keyterms, None, Some(deadline))
+    stream(
+        &Audio::whole(clip),
+        language,
+        keyterms,
+        None,
+        Some(deadline),
+    )
 }
 
-/// Sends `input`'s audio as it arrives and returns the text once the
-/// service closes after the end; every read and write stops by `deadline`.
+/// Sends `audio` as it arrives and returns the text once the service
+/// closes after the end; every read and write stops by `deadline`.
 pub(super) fn stream(
-    input: &Receiver<Input>,
+    audio: &Audio,
     language: &str,
     keyterms: &[String],
     partials: Option<&Partials>,
@@ -66,7 +68,7 @@ pub(super) fn stream(
     let mut ending = false;
     loop {
         if !ending {
-            let taken = take(input)?;
+            let taken = audio.take()?;
             let pcm: Vec<u8> = super::pcm16(&taken.audio)
                 .flat_map(i16::to_le_bytes)
                 .collect();
@@ -76,7 +78,11 @@ pub(super) fn stream(
             if taken.ended {
                 socket::send(&mut socket, Message::text(CLOSE_STREAM))?;
                 let unheard = Duration::from_secs_f64(taken.audio.len() as f64 / 16_000.0);
-                socket::set_deadline(&mut socket, Instant::now() + MIN_FINISH.max(unheard / 2));
+                let finish = Instant::now() + MIN_FINISH.max(unheard / 2);
+                socket::limit(
+                    &mut socket,
+                    Some(deadline.map_or(finish, |deadline| deadline.min(finish))),
+                );
                 ending = true;
             }
         }
