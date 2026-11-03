@@ -28,10 +28,10 @@ The weights are provided as-is, without warranties, as the licence states.
 ## Lucide And Feather
 
 The settings sidebar icons in `assets/icons/` (`settings`, `modes`,
-`history`, `voice-filter`, `scrawl`, `hud-lab`, `activity`) are Lucide
-1.62.0's `sliders-horizontal`, `layers`, `history`, `audio-waveform`,
-`scan-line`, `flask-conical`, and `activity`, with stroke attributes moved
-onto each element and a 1.75 stroke.
+`history`, `voice-filter`, `hud-lab`, `activity`) are Lucide 1.62.0's
+`sliders-horizontal`, `layers`, `history`, `audio-waveform`,
+`flask-conical`, and `activity`, with stroke attributes moved onto each
+element and a 1.75 stroke.
 The `assets/icons/lucide/*.svg` assets in the Windows development branch are
 also from Lucide: https://github.com/lucide-icons/lucide
 

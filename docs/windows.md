@@ -187,10 +187,9 @@ as they do on macOS: `status`, `start`, `quit`, `restart`, `dictation
 start|stop|cancel|toggle` (with `stop --print`), `paste-last`, `settings`,
 `model`, `window`, `vocabulary`, `history clear`, `check-for-updates`,
 `launch-at-login` (the Run key), `onboarding reset`, `logs`, `commands
-init|check`, `annotate`, and `history`. They reach it through its local API (`local-api.json` in
+init|check`, and `history`. They reach it through its local API (`local-api.json` in
 `%APPDATA%\hex` and the bearer-authenticated `POST /control`). Dictation commands go
-to the listener's own loop as a shortcut press would, and `annotate`
-start, stop, cancel, and status wait for its capture host. `history` works
+to the listener's own loop as a shortcut press would. `history` works
 as on macOS. `hex restart`
 quits, waits for the drain, and starts `hex app --hidden` again.
 

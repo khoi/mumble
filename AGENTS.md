@@ -42,8 +42,7 @@ Voice Filter (locked on while its macOS driver is installed), Playground,
 Live text, Vocabulary biasing, Switch model with keyboard language (#216),
 Mouse shortcuts (#209, macOS), Also pause the browser (#301, macOS), Share
 dictation shortcut (#176, Windows), Unload model when idle (#442), and Terminal paste (Windows). Externally contributed features land there too.
-Annotate is a normal feature in every build, stable included, on macOS,
-Linux, and Windows; only developer tools (`dev_build::is_dev_build()` with
+Only developer tools (`dev_build::is_dev_build()` with
 `DEVELOPER_FEATURES_ENABLED`) stay gated to dev builds.
 
 ## Feature Map
@@ -89,16 +88,14 @@ substitute for source inspection or a second roadmap.
   `/streams` audio into transcription windows.
 - `dictation/audio`: the authoritative microphone timeline, lazy stream
   lifecycle, recording owner, exact shortcut boundaries, recovery handoff,
-  disposable bounded command audio projection, and the bounded capture sink
-  (`open_capture_sink`/`close_capture_sink`) that copies the same timeline to
-  a Scrawl capture.
+  and disposable bounded command audio projection.
 - `audio/input_level`: the latest microphone peak as one atomic, stored per chunk by
   each OS's audio owner and read by the window's level bars (General and the
   practice dictation); a stale peak reads as no audio.
 - `audio/recording_environment`: serialized RAII ownership of idle-sleep prevention,
   output muting and lowering, and supported media-player pause/resume
-  behavior on macOS, each held from the first dictation or capture session
-  that wants it to the last.
+  behavior on macOS, each held from the first dictation session that wants it
+  to the last.
 - `audio/output_ducking`: the shared Lower audio ramp (relative, channel-preserving,
   respecting manual changes, rolled back on failure) over each OS's volume
   adapter: CoreAudio output channels, the Linux default sink's channels
@@ -120,9 +117,7 @@ substitute for source inspection or a second roadmap.
   without a service, features say "OpenCode isn't running".
 - `parakeet`: the strict-Metal `transcribe.cpp` adapter plus the dictation
   worker that hands clips to the transcription engine and runs bounded,
-  ordered processing, output, paste, and last-result work, plus
-  `transcribe_with_words`, the capture path's word-timestamped foreground
-  requests on the same engine.
+  ordered processing, output, paste, and last-result work.
 - `apple_speech`: the Swift `SpeechAnalyzer` bridge with per-locale support
   checks, asset reservation, and batch transcription.
 - `transcription`, `transcription/benchmark`: runtime selection, transactional
@@ -272,8 +267,8 @@ substitute for source inspection or a second roadmap.
   thread. macOS owns registration state; it is deliberately not duplicated in
   `settings.json`.
 - `policy`: macOS managed-preference feature locks in `anomaly.hex`
-  (`DisableAnnotate`, `DisableOpenCodeProcessing`, `DisableTransforms`,
-  `DisableLabs`, `RestrictTransformsToLoopback`), forced
+  (`DisableOpenCodeProcessing`, `DisableTransforms`, `DisableLabs`,
+  `RestrictTransformsToLoopback`), forced
   values only. Locked switches read off at load and keep their saved values on
   save; list-driven work checks the policy where it starts.
 - `app_paths`: the Application Support owner (`hex` on every OS) for runtime
@@ -302,8 +297,8 @@ substitute for source inspection or a second roadmap.
 - `linux/gnome_shortcuts`: on GNOME without a GlobalShortcuts portal
   (GNOME 46, #781), Hex's own custom keybindings under
   `…/media-keys/custom-keybindings/hex-*/` via `gsettings`
-  (`linux/gsettings`): `hex dictation toggle`, `hex paste-last`,
-  `hex annotate toggle`. Opt-in (`gnome_keyboard_shortcuts`), written while Hex
+  (`linux/gsettings`): `hex dictation toggle` and `hex paste-last`.
+  Opt-in (`gnome_keyboard_shortcuts`), written while Hex
   listens and removed when it's disabled; an existing entry keeps the key the
   user set in GNOME, and other custom shortcuts are never touched.
 - `linux/clipboard`: the clipboard a Linux paste restores: every format of the
@@ -424,7 +419,7 @@ substitute for source inspection or a second roadmap.
 - `rune_ui`: the one window on macOS, Windows, and Linux, on Rune with
   `rune-kit` and the OpenCode theme: General, Output, and History (each
   feature owns its settings, rarer ones in the pane's Advanced fold), and under Labs (`labs`:
-  the Labs switch and the opt-ins) Annotate and the Voice Filter, plus in
+  the Labs switch and the opt-ins) the Voice Filter, plus in
   Playground (`⇧⌘D`) HUD Lab's live Dot scope sliders (`hud_stories`), the transcription
   picker, the Sounds sheet (its stage replays `rune_hud`'s HUD, drawn by the
   window's compositor with `rune_hud.wgsl`), the onboarding pages, the `--snap`
@@ -445,8 +440,8 @@ substitute for source inspection or a second roadmap.
   `ListenerConfig` (event path and device). `rune_ui/macos_host.rs` is the
   window's host and the panes' `NativeHost`.
 - `rune_hud/hud_placement`: pure geometry for where a HUD sits on its screen (below
-  the menu bar, in it, or as an island grown out of the notch), shared by
-  the dictation HUD and, later, the capture capsule.
+  the menu bar, in it, or as an island grown out of the notch), for the
+  dictation HUD.
 - `dictation/indicator`, `rune_hud/dot_scope`, `rune_hud/spring`: the HUD's events, phases,
   jobs, and Dot scope (the one HUD look: a plate of dots lit by a braided,
   auto-levelled oscilloscope trace), the same on every OS and drawn by
@@ -463,8 +458,8 @@ substitute for source inspection or a second roadmap.
 - `audio/system_audio`: macOS System Audio Recording consent (TCC
   `kTCCServiceAudioCapture`): the status check and request behind the
   process tap Labs › Also pause the browser listens through.
-- `desktop/file_dialog`: the one native open dialog for a file or folder (Modes'
-  "Choose a file…", the macOS annotations folder) through `rune::FileDialogs` on
+- `desktop/file_dialog`: the one native open dialog for a file (Modes'
+  "Choose a file…", Add model file…) through `rune::FileDialogs` on
   its own thread. Answers on a channel; cancel and a dialog that never opened
   read as nothing chosen.
 - `labs`: the Labs feature registry (`labs::Feature`: name, settings key,
@@ -472,61 +467,6 @@ substitute for source inspection or a second roadmap.
   `playground`, `vocabulary_biasing`, `mouse_shortcuts`), and
   `hex labs [on|off <feature>]`. `dev_build`: whether this is a dev, local, test,
   or dev-channel build.
-- `capture_host`: Scrawl's capture engine (the `scrawl-capture` crate in
-  `crates/capture`, copied from Scrawl's `engine/split` at `e351ddb` and
-  kept out of the workspace; `scripts/check` names it on macOS) hosted in
-  Hex as Annotate (its user-facing name; code keeps `capture`;
-  `docs/plans/capture-in-hex.md`),
-  compiled as `cfg(hex_capture)` into every macOS, Linux, and Windows build
-  (`scripts/build-app.sh` bundles and signs `scrawl-helper` beside `hex`).
-  Everything here is shared by every OS; the engine's own platform
-  adapter (`crates/capture/src/capture/{macos,linux,windows}.rs`) is the seam for
-  the screen, window and area source, cursor, permission flow, and encoder.
-  The Linux adapter (`crates/capture/src/linux/`) asks the ScreenCast
-  portal over `zbus` (a screen keeps the portal's restore token at
-  `<support>/screencast-token`; a window is picked each time), reads the
-  PipeWire stream with `libpipewire-0.3` loaded at run time, imports each
-  frame as a linear DMA-BUF into VA-API (`libva`, also loaded at run time),
-  scales and encodes H.264 on the GPU with Hex-written SPS/PPS/slice
-  headers, and muxes and reads movies with the `ffmpeg`/`ffprobe`
-  executables; without VA-API it copies frames and encodes with x264.
-  Host-side, Linux differs only in where the audio comes from
-  (`capture_host::ListenerTimeline`, fed by `linux/dictation`'s
-  microphone), "While dictating" (`Environment`: an `AudioSuppressor` per
-  capture), words (`LocalTranscriber::transcribe_words` as one foreground
-  job on the listener's engine), the clipboard and paste (`linux/paste`),
-  and the shortcut (`linux/input`'s `Shortcut::Capture`). Windows records
-  with Windows.Graphics.Capture (`crates/capture/src/win/media.rs`) and
-  shares Linux's host side (`ListenerTimeline` fed by `windows/dictation`,
-  the same words path) except "While dictating" (`Environment`: a
-  `windows::audio_control::AudioSuppressor` per capture), paste and copy
-  (the engine's own Ctrl+V and clipboard), and input: `windows/input`'s
-  hooks give the Annotate key (`HotkeyAction::Capture`/`CaptureUp`), Escape
-  while drawing, and, while a capture records, every pointer move, click,
-  wheel turn, and modifier change in physical pixels
-  (`capture_host::report_input`, as the macOS tap does). The overlays lay
-  out in the primary display's points, so the picker and ink convert with
-  `capture_host::pixels_per_point`. Hex's `Host`,
-  `ConfigSource`, and Parakeet or Apple `Transcriber` for the engine, the
-  listener-owned `CaptureHost` behind `hex capture` and the capture shortcut,
-  its 16 kHz gap-padded timeline handed to the engine as `AudioIn::External`,
-  the tap's pointer input forwarded to `Capture::input()`, Scrawl.app
-  coexistence, the retention thread, and the `CaptureSnapshot` every view
-  reads (`capture_host::snapshot`/`watch`, published on each change, so a
-  capsule never reaches into the host), with `last.route` from
-  `capture_host::routing` (Scrawl's `crates/router` in-process: look, decide,
-  undo window, send, Undo and Redirect) and `phone` from a `capture-phone`
-  look for a cabled iPhone. The engine records the screen on macOS through
-  `crates/capture-core` (`Recorder`, one source per target, also outside the
-  workspace), which writes `recording.mp4` and its `capture.json` manifest
-  and changes what a recording leaves out with `Recording::set_exclusions`.
-  `capture_host::library` reads the captures
-  folder for `hex capture list|show|send|route`. `rune_ui/scrawl.rs` is its pane
-  (Labs › Scrawl) and `CaptureSettings` its `capture.*` settings;
-  `hex capture` is `control::cli::capture` (macOS through the running app;
-  Linux reads the folder itself and hands start/stop/cancel to the
-  listener over `linux/service`; Windows sends every `hex annotate` command
-  to the running Hex).
 - `desktop/instance`: the exclusive Application Support lock that prevents concurrent
   command listeners.
 - `desktop/process_exit`: how the macOS app ends. Every quit path (menu, `hex quit`
@@ -684,8 +624,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   never block authoritative audio capture. Their queues remain bounded.
 - Dictation audio leaves the computer only through Labs › Cloud
   transcription (off by default) and only for dictations (shortcut,
-  `hex dictation`, `/dictations`); captures, host-audio transcription, and
-  Transcribe again stay local. A dictation streams from
+  `hex dictation`, `/dictations`); host-audio transcription and Transcribe
+  again stay local. A dictation streams from
   the hold threshold (Toggle on Linux and Windows: the press; Linux
   `/dictations`: its start), so short taps and chords send nothing, but a
   dictation discarded later has already sent what it recorded. Nothing pastes before the final text,
@@ -839,8 +779,8 @@ CoreAudio formats, AppleScript details, or event serialization.
 - Hex never starts, probes, or searches for an OpenCode executable, and never
   starts the service: it only talks to an already running OpenCode service
   found through its registration file (`desktop/opencode_service`). Nothing touches
-  OpenCode unless a feature that uses it runs: mode rewriting, sending an
-  Annotate capture, or the model catalog while the Modes pane shows. Checks stay off the UI thread. A stopped
+  OpenCode unless a feature that uses it runs: mode rewriting, or the model
+  catalog while the Modes pane shows. Checks stay off the UI thread. A stopped
   service is looked for again at a coarse interval only while that pane shows;
   catalog failures require an explicit retry. Hex's OpenCode workspace folder is
   created by the first request that uses it.
@@ -897,106 +837,6 @@ CoreAudio formats, AppleScript details, or event serialization.
   query time, and reports malformed files/settings without repairing them.
   JSON contracts are documented in `docs/transcript-cli.md`; incompatible
   changes require a version increment.
-- Annotate (captures; `hex annotate`, alias `hex capture`) is compiled into
-  every macOS, Linux, and Windows build and on by default in every build,
-  stable included (`capture.enabled`, the pane's switch; the `annotate-on-by-default`
-  migration turns it on once for older settings). It is not an experiment.
-  Nothing asks for a screen permission until the first
-  capture: macOS's Screen Recording at its first capture, Linux's portal
-  dialog at its first Wayland Screen capture (X11 reads the screen from the
-  X server, with no portal or dialog); Windows asks nothing. Default shortcuts
-  share no key with the other defaults: ⌥⇧S on macOS, F9 on Linux and
-  Windows. One key does everything:
-  a tap (under `DRAW_HOLD`) starts and stops; held while recording, the
-  pointer draws with no click until it comes up (Linux: portal
-  Activated/Deactivated). The recording capsule is `● 0:07 │ ✎ │ ■ ✕`,
-  icons only, with no target chips; its pen stays on until clicked
-  again and draws only while the mouse button is down (drag to draw,
-  move freely otherwise), and Esc stops drawing, never the recording. Shift still
-  draws on the Mac. While drawing, the ink overlay takes the pointer with
-  a pen cursor (Linux leaves a hole over the capsule's pill), so clicks
-  reach neither the app nor anything but the capsule. Ink has no pins and
-  no undo. There is no separate draw shortcut and no send-to list
-  shortcut; Send to… is a capsule click. `hex annotate draw` toggles the
-  pen for desktops without the portal. While a capture records, the
-  dictation shortcut starts nothing on either OS. Sends
-  carry the contact sheet and keyframes as inline `data:` image parts, never
-  a local path. The Linux capsule doesn't open suggestions by itself.
-  `validate-app.sh` requires
-  `scrawl-helper` and the camera description in a macOS bundle. Linux
-  never links PipeWire, VA-API, or FFmpeg: the first two load when a
-  capture starts and `ffmpeg` runs as a child, so a missing one fails that
-  capture with a reason and nothing else. On X11 (never XWayland) Screen
-  and Area are captured natively (`scrawl_capture::linux::x11`: MIT-SHM,
-  XFixes cursor, x264), so desktops without a ScreenCast backend record; a
-  Window still needs the portal and fails with why rather than widening to
-  the screen. With `capture.enabled` off, the
-  listener builds no capture host: no engine, sink, thread, bundle folder,
-  or work. Scrawl's engine
-  records the screen, runs with `SharedResources::none()` (Hex never calls
-  `install_shared_resources`: no ingest server, ingest token, or global
-  shortcuts), logs to tracing, and writes only to the captures folder
-  (`capture.folder`, Scrawl's own by default) and Scrawl's router folders. A
-  written capture is copied to the clipboard (never pasted) and, with
-  `capture.routing`'s autoSend on, routed by Scrawl's router in Hex's process
-  (`capture_host::routing`): one `capture-look` thread per stop, one
-  `capture-route` thread with a bounded queue, a rule's send held 3 s for
-  Undo, guesses sent only when picked. Queued sends retry only while neither
-  Scrawl.app runs nor anything serves the ingest port, and never in tests.
-  `capture.routing` never holds a Jev key. A cabled iPhone records through
-  `scrawl-helper mirror --no-microphone`, narrated by the dictation timeline
-  (macOS only: Linux lists no phone, so it never shows). Hex's capture
-  shortcut (default ⌥⇧S, F9 on Linux, a key required, never overlapping
-  another binding) is, on Linux, the portal's or an X11 grab's press and
-  release: idle a press starts, recording a tap stops (debounced) and a
-  hold draws. On macOS it is a fresh press: idle, it starts once one of its
-  modifiers comes up (Esc before then records nothing); recording, a tap
-  stops and a hold draws; with the capsule's picker open, the picker
-  records. A switch (CLI) discards the recording (no outcome) rather than
-  retargeting it; while Scrawl.app
-  (`dev.kitlangton.scrawl`) runs, Hex registers no capture shortcut and runs
-  no retention, and only the pane's "Use Hex for captures" quits Scrawl.
-  Escape never ends a recording capture (while drawing it only stops
-  drawing), and otherwise Hex's tap lets it through to the app being
-  recorded; discarding is the capsule's two-step ✕ (✕, then
-  Discard). Pointer
-  events and Shift reach the engine from the one session tap, only while a
-  capture records, through a bounded queue that drops rather than block; they
-  never reach the listener. Scrawl's settings are imported once, read-only;
-  Screen Recording is asked at the first capture or from the pane, never in
-  onboarding. The capsule, picker, and ink are left out of every screen
-  recording while shown; hidden (prewarmed at alpha zero on every Space)
-  they are shareable, since one non-shareable window blanks every Space's
-  Mission Control thumbnail. A capture leaves out all of Hex's chrome, unless
-  `capture.show_overlays_in_recordings` (default off; the pane's Show in
-  screen recordings or the menu bar's checkmark) is on; it applies at once
-  to open overlays and a recording capture, never recreating a window. A
-  capture never opens a
-  microphone, installs a tap of its own, or loads a model: it copies the dictation
-  timeline through a bounded sink that records a gap rather than block, so a
-  stalled capture never stalls dictation, and while a sink is open the
-  release-while-idle close waits for it. While a capture records it holds a
-  recording-environment session with the same "While dictating" policy
-  (`recording_audio_behavior`, read at each start; no capture setting),
-  released at stop, cancel, or quit; it composes with dictation's,
-  so neither restores what the other still holds. One capture engine per
-  process, one capture recording at a time. Its words are foreground requests on the
-  dictation engine's loaded model in 30 s chunks: after dictation already
-  sent, before host-audio clips, never a second model, and dictation output is
-  unchanged. A chunk waits while dictation captures or transcribes and never
-  interrupts a live stream; the engine holds it until the stream ends. `stop`
-  replies at once and the screen recording stops then (`Capture::stop`), not
-  when the capture is written. The movie finishes after the stop on the
-  core's own bounded thread (detached before its stream stops, its final
-  frame held to the stop); only the steps that read `recording.mp4` wait
-  for it, and a discarded capture's bundle is removed only once it is done.
-  One thread writes stopped captures one at a
-  time, at most two wait, and a start beyond that is refused `busy`. The
-  engine's log goes to tracing from before it is built, and its settings come
-  from Hex (`ConfigSource`), never `~/.config/scrawl` after the import. Bundles are
-  owner-only. Quitting
-  cancels a recording capture, stops transcription between chunks, and waits
-  at most 2 s for capture threads, leaving a movie still finishing behind.
 - `hex` control commands (`status`, `quit`, `dictation`, `settings set`,
   `model use`, `window show`, …) are release-available on
   every OS and drive only the one running Hex through the owner-only
@@ -1015,7 +855,7 @@ CoreAudio formats, AppleScript details, or event serialization.
 - The HUD is observational and click-through. It must not alter capture
   boundaries, steal focus, or block controls in the foreground application.
 - Desktop UI is governed by [`docs/design-system.md`](docs/design-system.md);
-  read it before changing any pane, capsule, or picker. Rune is the only UI
+  read it before changing any pane or picker. Rune is the only UI
   toolkit: compose `rune-kit` components and Hex's pieces in
   `rune_ui/controls.rs` and `rune_ui/lists.rs`, and name only the OpenCode
   theme's tokens, never colour literals. Use sentence case and the product name
@@ -1026,8 +866,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   dark.
 - Neither Hex nor Rune (`anomalyco/rune`, public MIT) is published to
   crates.io; never run `cargo publish`. Hex depends on `rune`, `rune-kit`,
-  `rune-theme-opencode`, and (with `capture`) `rune-motion` at one pinned Git
-  rev in `Cargo.toml` and `Cargo.lock`; every pin bump
+  and `rune-theme-opencode` at one pinned Git rev in `Cargo.toml` and
+  `Cargo.lock`; every pin bump
   must also update `cargoLock.outputHashes."rune-0.0.1"` in `nix/package.nix`
   and keep `windows` 0.62.2 for `gpu-allocator` in `Cargo.lock`.
 - At the start of each work round, bump Hex's Rune pin to Rune's `dev` head:
@@ -1037,7 +877,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   it to Rune rather than working around it.
 - Hex runs as one long-lived process per user and data root on every OS: a
   menu-bar process on macOS (`macos_rune`, native `NSStatusItem`, native Metal
-  `NSPanel` HUD, Rune Annotate capsule overlays), a tray process on Windows
+  `NSPanel` HUD), a tray process on Windows
   (`windows/rune`, named-event single instance, Rune overlay HUD), and a
   single-instance process on Linux (`linux/app`, socket + lock in the data
   root, Rune overlay HUD). Closing the window never stops the runtime, listener,
@@ -1141,9 +981,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   shows the granted trigger in Settings (row note and the Status hint) and in
   `hex status --json` (`listener.shortcuts`). On GNOME the Linux dictation
   default is Ctrl+Alt+Space (GNOME keeps Alt+Space; so does KDE Plasma's
-  KRunner, #898), Settings flags a shortcut
-  on a key GNOME keeps for itself, and Annotate's shortcut shows beside
-  dictation's in General (#723). Enable and Disable
+  KRunner, #898), and Settings flags a shortcut
+  on a key GNOME keeps for itself. Enable and Disable
   (window, tray) also save `enable_on_launch`, so a disabled Hex stays disabled
   after a restart (#575). On GNOME only, Disable then binds an empty set in a
   fresh session: GNOME Settings stores exactly the set an app binds, so Hex's
@@ -1208,7 +1047,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   the paste (the same bytes on Wayland, the paste's owner on X11). An empty
   clipboard is cleared again; an oversized or unreadable one is not restored,
   and the log says why. A paste that only reached the clipboard keeps it for
-  Ctrl+V, and a capture copy is never restored over. Wayland restoration needs
+  Ctrl+V. Wayland restoration needs
   ext-data-control (KWin) or wlr-data-control, or, without either, the
   explicit `gnome-clipboard-restore` Labs opt-in with XWayland already running
   (same generation and still-holds-the-paste rules, the same bytes read back

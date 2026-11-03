@@ -60,12 +60,6 @@ hex
 │   ├── list [--json]              every term and its "sounds like" spellings
 │   ├── add <term> [--sounds-like a,b]  add a term, or new spellings to an existing one
 │   └── remove <term>              any case
-├── annotate (alias capture)       Annotate (features/capture.md)
-│   ├── start|stop|cancel|status   record a capture, end or discard it, or report
-│   ├── list [--limit N]           the newest captures in the captures folder
-│   ├── show <capture>             one capture's words, files, and where it went
-│   ├── send <capture> [--to <session>] [--always]  send it to an OpenCode session
-│   └── route <capture> [--ask-jev]  what routing sees and decides; sends nothing
 ├── labs [on|off <feature>]       list Labs features or turn one on/off; edits settings.json (features/labs.md)
 │   └── link <feature>             macOS: print hex://labs/<feature>, the link that opens Hex's Labs page at that row
 ├── check-for-updates              check for an update now
@@ -167,31 +161,6 @@ environment, so Hex passes each `HEX_*` variable to `open --env`. `start`
 takes them from the shell that runs it, `restart` from the running Hex. The
 values are never logged.
 
-`annotate` (or its old name `capture`) drives [Annotate](features/capture.md),
-in every macOS, Linux, and Windows build; with `capture.enabled` off it refuses with
-`feature-off`. On Linux, `list`, `show`, `route`, and `send` run in the
-`hex` process itself and `start`, `stop`, and `cancel` are handed to the
-running Hex's listener, as is `status`. On Windows every `annotate` command
-goes to the running Hex. `capture stop` replies at once with the bundle
-path while the words and files are written in the background; `capture status`
-lists bundles still writing and the last outcome (`last`: `bundle`, `stage`
-of `done`, `failed`, or `cancelled`, and for a written bundle `words`, `gaps`,
-and `missing_transcript`, why it has no words). A start while two captures
-are still writing is refused with `busy`. Every action is idempotent.
-
-`<capture>` is a bundle name (`1792933491953.scrawl`, the extension
-optional), a path, or `latest`. `list`, `show`, and `route` read the captures
-folder and need only the experiment; `send` needs captures on and a listening
-Hex. `send` with `--to` takes a session ID; for the newest capture it also
-takes a name its route lists, and it acts as the capsule's pick, so the
-capsule's Undo follows it. Without `--to` it goes where the capture's route
-(its rule, or its first guess) or its last send says. `--always`, for the
-newest capture only, also saves a rule sending its site or app there, as the
-capsule's ⇧⏎ does. Its reply says what became of it (`Sent to …`,
-`Queued for …` when OpenCode didn't answer, which Hex retries). `route` is
-Scrawl's `route --explain` (`--explain` is accepted); `--ask-jev` asks Jev
-again, one network call. An unknown capture is refused with `not-found`.
-
 ## Exit codes
 
 ```ts
@@ -225,14 +194,14 @@ transcription and `/streams`, but answer `/control` with
   `504 control-timeout`. Bad or missing tokens get `401` like every other
   route.
 
-## Wire format (version 5)
+## Wire format (version 6)
 
 Requests are flat objects tagged by `command` (kebab-case):
 
 ```json
-{"version": 5, "command": "settings-set", "key": "sound_effects", "value": "off"}
-{"version": 5, "command": "dictation", "action": "start"}
-{"version": 5, "command": "dictation", "action": "stop", "print": true}
+{"version": 6, "command": "settings-set", "key": "sound_effects", "value": "off"}
+{"version": 6, "command": "dictation", "action": "start"}
+{"version": 6, "command": "dictation", "action": "stop", "print": true}
 ```
 
 ```ts
@@ -246,9 +215,6 @@ window-show {pane?} | window-hide | window-story {story, variant?, play}
 onboarding-reset
 history-clear | check-for-updates | launch-at-login {enabled?}
 vocabulary-list | vocabulary-add {term, sounds_like} | vocabulary-remove {term}
-scrawl-capture {action}                          action: start | stop | cancel | status; `capture` experiment
-scrawl-capture-list {limit?} | scrawl-capture-show {capture}
-scrawl-capture-send {capture, to?, always?} | scrawl-capture-route {capture, ask_jev}
 ```
 
 Optional fields may be left out. `hex start` and `hex logs` are local and have
@@ -258,28 +224,16 @@ no wire form. `history-clear` has no confirmation field: the CLI asks for
 Replies are tagged by `status`:
 
 ```json
-{"version": 5, "status": "done", "message": "Quitting Hex", "changed": true}
-{"version": 5, "status": "error", "code": "feature-off", "message": "Annotate is off; …"}
-{"version": 5, "status": "settings", "settings": [{"key": "sound_effects", "value": true,
+{"version": 6, "status": "done", "message": "Quitting Hex", "changed": true}
+{"version": 6, "status": "error", "code": "feature-off", "message": "the playground is in Labs; …"}
+{"version": 6, "status": "settings", "settings": [{"key": "sound_effects", "value": true,
   "kind": "bool", "writable": true, "about": "Play recording and error tones"}]}
-{"version": 5, "status": "models", "models": [{"id": "parakeet_v3", "name": "…",
+{"version": 6, "status": "models", "models": [{"id": "parakeet_v3", "name": "…",
   "languages": ["en", "…"], "size": "…", "installed": true, "selected": true,
   "streams": true, "vocabulary": "bias", "supports_recognition_hints": false}]}
-{"version": 5, "status": "vocabulary", "entries": [{"term": "OpenCode",
+{"version": 6, "status": "vocabulary", "entries": [{"term": "OpenCode",
   "sounds_like": ["open code"]}, {"term": "Rune"}]}
-{"version": 5, "status": "scrawl-capture", "changed": true, "state": "idle",
-  "bundle": "…/captures/1792933491953.scrawl", "elapsed_ms": null,
-  "finishing": ["…/captures/1792933491953.scrawl"], "last": null}
-{"version": 5, "status": "scrawl-captures", "captures": [{"id": "1792933491953.scrawl",
-  "bundle": "…", "created_at_ms": 1792933491953, "duration_ms": 4000, "mode": "window",
-  "app": "Brave", "words": 12, "sent_to": {"session": "ses_…", "title": "Hex"},
-  "queued": false}]}
-{"version": 5, "status": "scrawl-capture-detail", "id": "…", "…": "the list's fields",
-  "window_title": "…", "transcript": "…", "note": null, "missing_transcript": null,
-  "marks": 2, "keyframes": 3, "video": "…/video.mp4", "audio": null,
-  "contact_sheet": "…/contact-sheet.jpg"}
-{"version": 5, "status": "scrawl-capture-route", "explanation": "Capture   …"}
-{"version": 5, "status": "transcript", "text": "Ship it."}
+{"version": 6, "status": "transcript", "text": "Ship it."}
 ```
 
 `done.changed` is `false` when the command found things already so ("Already
@@ -291,7 +245,7 @@ recording", "The window isn't open"). Setting `kind` is one of `bool`,
 
 ```json
 {
-  "version": 5, "status": "status",
+  "version": 6, "status": "status",
   "app_version": "2.3.1", "pid": 31708, "memory_footprint_bytes": 412000000,
   "listener": {"running": true, "status": "Listening"},
   "capture": {"state": "idle", "recording": null, "pending_jobs": 0},
@@ -332,11 +286,10 @@ read-only              the key can't be set here (the message says where)
 invalid-value          the value doesn't parse or is out of range
 confirmation-required  clears history; pass --yes
 shortcut-in-use        another Hex shortcut already uses that binding
-not-found              no such capture, or it has no scrawl.json yet
 unknown-model          no such model id (`hex model list`)
 model-unavailable      an imported model that is missing, changed, or behind its Labs toggle
 not-installed          `model use` on a model that isn't downloaded (`hex model install`)
-feature-off            the command needs an opt-in that is off (Annotate, the playground)
+feature-off            the command needs an opt-in that is off (the playground)
 not-ready              Hex is waiting for setup (permissions or the dictation model)
 busy                   something is in progress (recording, transcribing, a full queue),
                        or the listener couldn't confirm it's idle
@@ -400,8 +353,8 @@ observe input-source changes or show these controls.
   a key on an external keyboard. It acts only while
   `labs.second_dictation_shortcut` is on (`hex labs on
   second-dictation-shortcut`) and shares no key with another shortcut.
-- `json` settings (modes, keyboard model mappings, capture routing) take the JSON
-  value the file stores.
+- `json` settings (modes, keyboard model mappings) take the JSON value the
+  file stores.
 - `ui_language` takes `en`, `pl`, `zh` (Simplified Chinese), `zh-Hant`
   (Traditional Chinese), `ja`, `de`, `es`, `uk`, `pt`, `fr`, or `none`
   (follow the system language), the same languages Settings offers. Following
@@ -412,17 +365,6 @@ observe input-source changes or show these controls.
   another channel than the build's offers that channel's current release
   ("Switch to Stable 2.3.1" in the window); Hex installs it only once you
   confirm there. Versions are never compared.
-- With the `capture` experiment, `capture.*` keys appear:
-  `capture.enabled`, `capture.hotkey` (default `option+shift+s`),
-  `capture.list_hotkey` (the capsule's send-to list, default
-  `option+shift+v`), `capture.transcriber`, `capture.folder`,
-  `capture.media_days`, `capture.bundle_days`, `capture.routing`,
-  `capture.show_overlays_in_recordings` (default off; on lets screen
-  recordings, Hex's captures included, show its overlays), and
-  `capture.capsule_flow` (`list`, the default, `toast`, `menu_bar`, `cursor`
-  or `notch`: the capsule's flow after a capture, prototypes to compare). Both
-  capture shortcuts need a key, and `capture.enabled on` needs both free; on
-  a Mac whose Paste Last is still ⌥⇧V, rebind one of the two first.
 - `transcription.model` and `transcription.language` are read-only here: use
   `hex model use`. `transcription_recents` is read-only.
 
@@ -454,7 +396,7 @@ fails when a new persisted setting has no key here.
 
 ## Compatibility
 
-`CONTROL_VERSION` is 5. A change that breaks a request or reply shape
+`CONTROL_VERSION` is 6. A change that breaks a request or reply shape
 increments it; adding a command, an optional request field, or a reply field
 does not. A `hex` from a different version gets `version-mismatch`; use the
 `hex` inside the running Hex.app, or restart Hex after updating. Version 2
@@ -464,4 +406,8 @@ removed `permissions.input_monitoring` from the status reply; version 3 removed
 `features.commands`, and `features.command_model`; version 5 removed
 `meeting-record`, `meeting-stop`, `meeting-copy-last`, `window-show`
 `meetings`, the status reply's `meeting` and `features.meetings`, and the
-`meeting-active` error.
+`meeting-active` error; version 6 removed `scrawl-capture`,
+`scrawl-capture-list`, `scrawl-capture-show`, `scrawl-capture-send`,
+`scrawl-capture-undo`, `scrawl-capture-route`, their replies
+(`scrawl-capture`, `scrawl-captures`, `scrawl-capture-detail`, and
+`scrawl-capture-route`), and the `not-found` error.

@@ -66,8 +66,8 @@ replaces only the executable. `hex quit` and `hex restart` refuse while a
 dictation records or transcribes unless `--force`. Linux runs the same
 control commands as macOS ([docs/cli.md](cli.md)): `settings`, `model`,
 `window`, `vocabulary`, `history clear`, `check-for-updates`, `onboarding
-reset`, `annotate status`, `launch-at-login` (the XDG autostart entry),
-`logs`, `commands init|check`, and `history`.
+reset`, `launch-at-login` (the XDG autostart entry), `logs`, `commands
+init|check`, and `history`.
 
 A launch first asks the running Hex over its socket. If one answers, it
 forwards `Activate` with the launcher's `XDG_ACTIVATION_TOKEN` or
@@ -110,7 +110,7 @@ one (quit it first).
 The socket is owner-only in Hex's data directory, with same-user peer
 credentials, versioned bounded frames, bounded queues, and I/O deadlines. It is
 not a network API or the macOS embedded transcription SDK service. It carries
-`Activate`, `Status`, and Annotate's recording commands. The `hex` control
+`Activate` and `Status`. The `hex` control
 commands reach Hex through its local API's `POST /control`; dictation
 commands go straight from there to the listener, never through the window.
 The local API's `/dictations` (the TypeScript SDK's `hex.dictation`) also
@@ -397,8 +397,7 @@ dictation rules:
   focused application. On GNOME and KDE Plasma, new setups dictate with Ctrl+Alt+Space,
   because GNOME keeps Alt+Space for the window menu and Plasma for KRunner; Settings warns when a shortcut uses a key GNOME
   keeps for itself. Keys you change in GNOME Settings › Keyboard work at once,
-  and Hex's Settings and `hex status --json` show them. Annotate's shortcut (F9
-  by default) sits under the dictation shortcut in General. **Disable** (General or the tray) keeps Hex disabled
+  and Hex's Settings and `hex status --json` show them. **Disable** (General or the tray) keeps Hex disabled
   across restarts until you enable it again. On GNOME, Disable also removes
   Hex's entries from Settings › Keyboard › Global Shortcuts; Enable then asks
   you to approve them again. Hex also removes the duplicate list that versions
@@ -417,7 +416,7 @@ dictation rules:
   Hyprland names each shortcut `anomaly.hex:<shortcut>-<trigger>`: Hex's app
   id, the shortcut, and the key Settings records with `+` written as `-`.
   With the default keys these are `anomaly.hex:dictation-ALT-space` and
-  `anomaly.hex:paste-last-CTRL-ALT-v` (Annotate: `anomaly.hex:capture-F9`).
+  `anomaly.hex:paste-last-CTRL-ALT-v`.
   The name changes when you record another key in Settings, so list the
   current names with `hyprctl globalshortcuts` while Hex runs and bind those.
   For example:
@@ -467,8 +466,7 @@ GNOME 46 and older (Ubuntu 24.04) have no shortcuts portal. There, Settings ›
 Desktop shortcuts › **Add GNOME keyboard shortcuts** writes Hex's own entries
 into GNOME Settings › Keyboard › Custom Shortcuts with your shortcuts:
 `hex dictation toggle` (GNOME runs custom shortcuts on the key press only, so
-dictation toggles), `hex paste-last`, and `hex annotate toggle` while Annotate
-is on. Hex removes them while it's disabled and puts them back when you enable
+dictation toggles) and `hex paste-last`. Hex removes them while it's disabled and puts them back when you enable
 it; **Remove** takes them out for good. Keys you change in GNOME Settings stay.
 Hex never touches your other custom shortcuts.
 
@@ -499,9 +497,6 @@ so its key returns to your applications.
 
 Shortcuts need a non-modifier key. Modifier-only shortcuts, such as Super
 alone, are not supported on Linux.
-
-On X11, Hex grabs Escape only while Annotate draws, where it stops drawing. If
-another application holds it, drawing goes on and Hex logs it once.
 
 Recording sounds are enabled at 50% volume by default, including when upgrading
 older settings. A start sound is queued immediately when the shortcut starts capture,

@@ -137,7 +137,7 @@ chord evidence; any other key still is. Check:
 ### Chord Shortcuts
 
 **Added October 29, 2026 (issue 394):** every shortcut (dictation, Voice
-Action, Paste Last, Annotate) is a chord: the set of keys held together, in any
+Action, Paste Last) is a chord: the set of keys held together, in any
 order and nothing else. A modifier key names its side (left, right, or any);
 at most one other key or mouse button joins them. Both Options together is
 `[⌥ left, ⌥ right]`, so it no longer reads as plain Option.
@@ -413,9 +413,9 @@ still physically down (any other modifier already breaks the tap):
 ```ts
 Hold past 300 ms (Hold mode, or a held second tap) -> Chord breaker
 Toggle start press, 40 ms after the press          -> Chord breaker
-  (the start tone's chord grace: an extra modifier pressed with it,
-   as for ⌥⇧S, discards the press first; a toggle tap is too short
-   to wait out the 300 ms hold)
+  (the start tone's chord grace: an extra modifier pressed with it
+   discards the press first; a toggle tap is too short to wait out the
+   300 ms hold)
 Press that finishes a lock                         -> Chord breaker at once
 Short tap, chord discard, double-tap lock taps     -> Nothing (still a tap)
 Press during voice-delimited dictation             -> Nothing (starts nothing)
@@ -1181,7 +1181,6 @@ Toggled recording (held or locked) -> Cancel shortcut
   -> Jobs already transcribing -> finish and paste in order
 Idle, or any Hold mode -> Cancel shortcut -> Nothing: it reaches the app
 hex dictation cancel -> Discards whatever records, any mode; idle -> unchanged
-Annotate drawing -> Escape stops drawing first
 Programmatic dictation (local API) -> Its owner cancels through /cancel
 ```
 
@@ -1480,8 +1479,7 @@ Dot scope                                    // dot_scope
 
 The simulation steps at a fixed 240 Hz, so any frame rate draws the same
 picture. Placement ([rune_hud/hud_placement.rs](../../src/rune_hud/hud_placement.rs), pure
-geometry the capture capsule can reuse) puts it on the screen with the
-pointer:
+geometry) puts it on the screen with the pointer:
 
 ```ts
 Placement                                     // rune_hud::hud_placement::place

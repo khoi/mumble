@@ -362,8 +362,8 @@ latency or the macOS microphone indicator.
 Bluetooth headset's stream skipped about 130–145 ms of audio soon after it
 started, and every gap over 50 ms failed the held capture with the error tone.
 Gaps up to 250 ms are now filled with silence on the timeline, so the capture
-(and its pre-roll ring) keeps going; longer gaps still fail it. The Annotate
-sink still records the gap itself. Not verified on the reporter's headset; the
+(and its pre-roll ring) keeps going; longer gaps still fail it. Not verified
+on the reporter's headset; the
 report that a Bluetooth device was used with `avoid_bluetooth_microphone` on
 was not reproduced (a saved Bluetooth microphone, or no other usable input,
 keeps it by design).
@@ -470,9 +470,9 @@ behavior. Native compositor/device validation remains separate. The
 single-instance socket is same-user only; bounded I/O and queues keep client
 stalls off the audio loop.
 
-**Escape on Linux since #786:** dictation has no cancel, so Escape stays with
-applications on X11 and Wayland. Hex grabs it on X11 only while Annotate
-draws, where it stops drawing; a grab conflict is logged once and drawing goes
+**Escape on Linux since #786:** Escape stays with applications on X11 and
+Wayland. Hex grabs it on X11 only as Toggle's cancel shortcut while a toggled
+recording runs (#1022); a grab conflict is logged once and the recording goes
 on. The portal never binds Escape or any cancel shortcut, and the shortcut set
 is bound once in one session.
 
@@ -481,8 +481,8 @@ listener starts -> one session, one BindShortcuts: Hex's shortcuts only
   └── KDE -> remove the stale `cancel` and `cancel-dictation` entries first
 desktop closes the shortcuts session -> cancel active capture
   -> listener stops with an error -> Retry / hex start binds again
-X11, Annotate drawing -> grab Escape (AnyModifier, else bare + lock variants)
-  └── BadAccess -> warn once, keep drawing; other grab errors stop the listener
+X11, a toggled recording runs -> grab its cancel key (AnyModifier, else bare + lock variants)
+  └── BadAccess -> warn once, keep recording; other grab errors stop the listener
 ```
 
 `recover.linux-portal`: on Wayland, a missing GlobalShortcuts portal is

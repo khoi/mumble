@@ -150,8 +150,8 @@ version to the first `anomaly.hex` release before publishing.
 - **Users must re-grant permissions.** TCC records each grant against the app's
   designated requirement, which names the signing team. After the first
   Anomaly-signed update, Microphone, Accessibility,
-  Automation, Screen and System Audio Recording (Annotate, Also pause the
-  browser) stop matching; old
+  Automation, System Audio Recording (Also pause the browser) stop matching;
+  old
   entries can remain listed but inert, so users may need to remove and re-add
   Hex. Onboarding's permission health gate must show this; release notes must
   say so.

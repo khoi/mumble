@@ -44,8 +44,6 @@ reviewed by a native speaker.
 The [vocabulary](vocabulary.md) biases transcription toward names you list.
 [Your own speech models](own-models.md) covers adding a GGUF file and using
 models another app already downloaded.
-[Annotate](capture.md) (macOS, Linux,
-and Windows) records the screen while you draw and talk and sends it to an agent.
 The other capabilities stay here until they need their own verification recipe.
 
 ## Get Ready
@@ -327,7 +325,7 @@ checked. Both families, on silence or noise, often return the prompt verbatim
 (Qwen3-ASR 0.6B did on 3 s of silence and of noise). A segment whose text
 equals the prompt after normalization (case, ASCII punctuation, spelled-out
 digits; commas, semicolons and line breaks separate words) is removed, in
-dictation, captures, and the local API alike. The filter needs at least two
+dictation and the local API alike. The filter needs at least two
 terms, so dictating the one listed name still pastes it; speech that contains
 a term among other words is kept, and so is a repeat of only some terms.
 Checks: `prompt_echo_is_dropped`, `speech_containing_the_hints_is_kept`,
@@ -340,7 +338,7 @@ said, such as "Sous-titrage Société Radio-Canada" from Cohere Transcribe in
 French after a trailing pause (#1141). Every GGUF run and live stream drops a
 known credit only when it is the very end of the text (letters and digits
 compared, case and punctuation ignored), with its segment and words, in
-dictation, captures, and the local API alike; the same words elsewhere stay.
+dictation and the local API alike; the same words elsewhere stay.
 The list is in
 [transcription/subtitle_credits.rs](../../src/transcription/subtitle_credits.rs).
 Checks: `a_trailing_subtitle_credit_is_removed`,
@@ -715,7 +713,7 @@ latency measurement.
 ```ts
 Sidebar                                  // settings.nav
 ├── General, Output, History, then each feature that is on: Voice Filter
-│   (a Labs toggle), Annotate, Playground (Labs, an item)
+│   (a Labs toggle), Playground (Labs, an item)
 └── Labs -> one flat page of toggles, each off by default; hex://labs/<feature> opens it at a row (labs.md)
     // Command-1…9 follow the panes' order (labs::order)
 
@@ -1401,8 +1399,7 @@ update from an older supported build.
 
 ```ts
 Configuration profile forces a key in anomaly.hex     // maintain.managed-locks
-├── DisableAnnotate -> Annotate off
-├── DisableOpenCodeProcessing -> no mode rewrites or capture sends
+├── DisableOpenCodeProcessing -> no mode rewrites
 ├── DisableTransforms -> no transforms; the hex.config.ts host never starts
 ├── RestrictTransformsToLoopback -> transforms on; fetch reaches loopback only
 │   (resolved addresses, every redirect, no proxy); exec/execFile refused
@@ -1418,7 +1415,7 @@ none of these keys. [policy.rs](../../src/policy.rs) owns the keys:
 back on save, so the person's own settings return when the profile goes away.
 Work that follows a list rather than a switch checks the policy where it
 starts: `Profile::configured` (rewrites, transformations), OpenCode generation
-in `dictation/processor.rs`, `capture_host/routing.rs` sends,
+in `dictation/processor.rs`,
 `PersonalCommands::start`, and `personal_commands/script.rs` with
 `net::loopback_agent`. Admin docs: `site/public/docs/admin.md`
 (https://anoma.ly/hex/docs/admin).
@@ -1504,7 +1501,7 @@ Linux beta                               // not macOS feature parity
 │       // as for hex quit|restart|status
 ├── hex dictation cancel -> Discards whatever records, any mode
 ├── Toggle's cancel shortcut (Escape by default), only while recording
-│   ├── X11 -> Grabbed only for the recording, and Escape while Annotate draws
+│   ├── X11 -> Grabbed only for the recording
 │   └── Portal -> Never bound: bind `hex dictation cancel` in the desktop
 │       └── KDE startup -> before the bind, the pre-#579 `hex` set (with the
 │           pre-#492 `cancel` on Escape), and every action under `anomaly.hex`
@@ -1626,9 +1623,8 @@ GNOME portal shortcuts (#723)            // linux.gnome-shortcuts
 │   window menu and Plasma's KRunner keep Alt+Space; #898)
 │   // checked in a headless KWin 6.8 session: the portal's dialog flags Alt+Space
 ├── Granted key GNOME keeps (Alt+Space, Super+Space, Alt+Tab, Print, …) -> red note under the row
-├── Keys changed in GNOME Settings -> ShortcutsChanged -> pressing them dictates at once;
-│   the row note, the Status hint and `hex status --json` listener.shortcuts show them
-└── Annotate's shortcut -> its own row under dictation's in General
+└── Keys changed in GNOME Settings -> ShortcutsChanged -> pressing them dictates at once;
+    the row note, the Status hint and `hex status --json` listener.shortcuts show them
     // observed on apollo: gnome-control-center 51.1 provider, portal-gnome 50, stand-in Shell
 Enable / Disable (General, tray)         // linux.listener-persist
 ├── Saves enable_on_launch -> a disabled Hex stays disabled after a restart (#575)

@@ -213,7 +213,7 @@ refuses force pushes and deletion.
 The first Anomaly-signed macOS release also changes the bundle ID to
 `anomaly.hex` (docs/plans/macos-signing.md). Its notes must tell Mac users
 that macOS sees a new app: grant Microphone, Accessibility, and (for
-Annotate and Also pause the browser) Screen & System Audio Recording once more, removing any
+Also pause the browser) System Audio Recording once more, removing any
 stale Hex entry in System Settings first; turn Launch at login on again; and
 point `DisableUpdates` profiles at `anomaly.hex`. Settings, history, and
 models do not carry over from 2.3.1 on any OS: 2.3.1 kept them in

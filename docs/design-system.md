@@ -1,6 +1,6 @@
 # Hex Design System
 
-Hex's window, Annotate capsule, transcription picker, and onboarding are
+Hex's window, transcription picker, and onboarding are
 drawn with [Rune](https://github.com/anomalyco/rune) in OpenCode's design
 language:
 
@@ -35,7 +35,7 @@ by a Rune overlay's compositor on every OS, hand-tuned in HUD Lab.
    beside it; never keep two helpers for the same job.
 3. **One accent per screen.** The kit's contrast button
    (`ButtonKind::Primary`) marks at most one action per screen: the thing the
-   person came to do. A capsule is its own screen. States are not
+   person came to do. States are not
    actions: an ongoing state (recording, an available update) is a Secondary
    button with a `status_dot`. `ButtonKind::Danger` is for destructive and
    armed confirmations only; success colours mark ready and live states only.
@@ -89,9 +89,8 @@ These live in [`rune_ui/controls.rs`](../src/rune_ui/controls.rs) and
 
 Pane-specific pieces stay in their pane module: the listener card and model
 cards in [`rune_ui/settings.rs`](../src/rune_ui/settings.rs) and
-[`rune_ui/picker.rs`](../src/rune_ui/picker.rs), the onboarding pieces in
-[`rune_ui/onboarding_kit`](../src/rune_ui/onboarding_kit.rs), and the Annotate
-capsule in [`rune_ui/capture_capsule`](../src/rune_ui/capture_capsule/mod.rs).
+[`rune_ui/picker.rs`](../src/rune_ui/picker.rs), and the onboarding pieces in
+[`rune_ui/onboarding_kit`](../src/rune_ui/onboarding_kit.rs).
 `platform::Capabilities` decides which panes and rows exist on each OS; a
 missing capability omits the row instead of imitating it.
 
@@ -115,7 +114,7 @@ missing capability omits the row instead of imitating it.
   Developer-only panes (Activity, HUD Lab) stay English.
 - Exception: native macOS menus (`macos_rune/status_item.rs` and the app menu in
   `macos_rune.rs`) follow the macOS title-case convention ("Check for
-  Updates…", "Paste Last Dictation", "Show Hex in Screen Recordings").
+  Updates…", "Paste Last Dictation").
 
 ## Verification
 

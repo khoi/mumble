@@ -120,7 +120,7 @@ has reached it for that long and nothing records (`audio::idle_sleep::held()`: a
 dictation past its hold; a macOS dictation capture from its press via
 `dictation_busy`), freeing its RAM and VRAM; between commands no request
 runs. Apple Speech stays loaded. The unloaded model still counts as held
-(`TranscriptionEngine::holds`), so dictation, captures, and the local API send
+(`TranscriptionEngine::holds`), so dictation and the local API send
 their work to the engine as before, and the worker reloads it before the
 first command that needs it: audio fed meanwhile waits in the queue, so
 nothing recorded is lost. A capture's stream opens after the reload and
@@ -192,8 +192,8 @@ Hex never refreshes or writes either sign-in: Claude Code and Codex renew
 their own tokens (Claude's last about eight hours, Codex's about ten days),
 so an expired one falls back until its app runs again. Both endpoints are
 the apps' private ones, reached with their identities, and may change or
-refuse without notice. Captures, host-audio transcription
-(`/transcriptions`, `/streams`), and Transcribe again stay on Hex's model.
+refuse without notice. Host-audio transcription
+(`/transcriptions`, `/streams`) and Transcribe again stay on Hex's model.
 Everything goes through the computer's proxy: Codex's upload through
 `net`'s agent, both WebSockets through `net::tunnel` (an HTTP proxy's
 CONNECT). Tungstenite logs nothing below warnings whatever `RUST_LOG` asks,
@@ -684,7 +684,7 @@ A clip in which no frame rose above the noise floor is left whole, as the
 stream does for #841. The job deadline, History's duration, and the silence
 discard still use the full clip; process.log adds a `skipped long pauses
 before whole-clip transcription` line with `pauses_dropped_ms`. macOS,
-streams, captures, and the local API are unchanged, and off the
+streams, and the local API are unchanged, and off the
 clip is passed through untouched. Checks:
 `skipping_pauses_cuts_a_whole_clips_long_pauses_to_their_ends`,
 `skipping_pauses_leaves_short_pauses_and_quiet_only_clips_whole`, and
@@ -832,8 +832,7 @@ stays installed and is only hidden (`NSStatusItem` `setVisible`), so
 dictation, the shortcuts, and the listener are unchanged. The gate,
 `labs::hide_menu_bar_icon()`, is read when the item is installed and on each
 menu-bar refresh (`status_item::update_visibility`, about twice a second), so
-turning it on or off applies at once. An Annotate capture keeps its own
-capsule and doesn't bring the icon back. With the
+turning it on or off applies at once. With the
 Dock icon off too, a launch stays quiet, and opening Hex again from Finder
 or Spotlight (the reopen Apple event) opens Settings, which has Quit Hex.
 Off, the icon is exactly as before. Checks:
@@ -842,8 +841,7 @@ Off, the icon is exactly as before. Checks:
 Mac, or macOS restoring an item's remembered visibility; the row renders
 only in macOS builds, so no golden changes.
 
-Normal features, not Labs: dictation, Annotate (every build; its own pane
-and switch), lowering audio while dictating (#210), Dot scope, chord shortcuts, QuickJS transformations, clipboard
+Normal features, not Labs: dictation, lowering audio while dictating (#210), Dot scope, chord shortcuts, QuickJS transformations, clipboard
 restore (Labs › Keep dictation on clipboard skips it on macOS), the
 vocabulary list itself (rewriting and search), and Linux's Terminal paste.
 
@@ -899,8 +897,7 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   ```ts
   Prototypes        stories that aren't the window
   ├── Onboarding    the options and First run
-  ├── HUD           (macOS) each placement × look × ending, Processing, Your voice + live HUD Lab Dot scope sliders & Save
-  └── Capture capsule   (macOS) whole flow and each state × flow, notch, family
+  └── HUD           (macOS) each placement × look × ending, Processing, Your voice + live HUD Lab Dot scope sliders & Save
   Window            every macOS-window fixture scene by pane, under a readable name
   ├── General       Settings, Microphone missing, Shortcut/…, Updates/…
   ├── Output, Modes … HUD Lab, Activity, Transcription model, Shortcut explainer, Onboarding
@@ -942,7 +939,6 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
 
   ```ts
   open 'hex://story/prototypes/hud/notch?variant=pulse-fail&play=1'   // hex-test:// in Hex Test.app
-  open 'hex://story/prototypes/capture-capsule/suggestions?variant=toast'
   hex window story Prototypes/HUD/Processing [--variant 2] [--play]
   ├── the window opens on the story: its path, name, or slug, `/` or `-` between groups and name
   ├── a link from before the groups nested (`hud/processing`, `General/mac-settings`, `mac-settings`) → that story now
@@ -955,9 +951,8 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   An unknown story opens the list and an unknown variant the story; Rune
   logs which to stderr. Checks: `reads_story_links`, `links_from_before_the_list_nested_still_open_their_story`, `ignores_other_links`
   in [story_link.rs](../../src/rune_ui/story_link.rs);
-  `every_hud_story_and_variant_opens_from_its_link` and
-  `every_capsule_story_and_flow_opens_from_its_link` in
-  playground.rs open every HUD and capsule link headlessly. The URL
+  `every_hud_story_and_variant_opens_from_its_link` in
+  playground.rs opens every HUD link headlessly. The URL
   handler and the replay have no automated end-to-end check.
 - Voice Filter: the Voice Filter pane (macOS and Linux), the only home of
   the Hex Microphone (macOS's driver, Linux's PipeWire virtual source), its

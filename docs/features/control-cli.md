@@ -75,7 +75,7 @@ dictation and paste-last go to the listener's own queue (Windows: the same
 hotkey loop, as a toggle press would), settings save and reload as the
 window's do, and `settings set` refuses a key whose capability the OS lacks
 (`settings list` marks it "not on this OS"); `window story` answers
-`unsupported`; Windows sends every `annotate` command to the running Hex.
+`unsupported`.
 `hex history` reads files on every OS.
 
 Sources: [control.rs](../../src/control.rs) (protocol, status, quit rules),

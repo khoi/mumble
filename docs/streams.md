@@ -175,8 +175,7 @@ stream. So:
   once dictation is idle. A window that completes while that can't happen, or
   any window on a model that can't stream, is transcribed offline as one
   foreground request on the loaded model: after any dictation already sent,
-  before background work such as host-audio clips (the same class as
-  capture-word requests).
+  before background work such as host-audio clips.
 
 Dictation's capture never waits on the engine: its audio is recorded
 independently and losslessly. Only its transcription can wait, and only for
