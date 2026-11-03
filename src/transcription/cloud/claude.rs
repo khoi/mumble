@@ -374,20 +374,16 @@ fn keychain() -> Result<Option<String>, CloudError> {
 
 #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
 fn keychain_service(secure_storage_dir: Option<&str>, config_dir: Option<&str>) -> String {
-    let suffix = match (secure_storage_dir, config_dir) {
-        (Some(""), _) => None,
-        (Some(dir), _) => Some(dir),
-        (None, Some(dir)) if !dir.is_empty() => Some(dir),
-        (None, _) => None,
-    }
-    .map(|dir| {
-        use sha2::Digest;
-        use unicode_normalization::UnicodeNormalization;
-        let digest = sha2::Sha256::digest(dir.nfc().collect::<String>().as_bytes());
-        let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-        format!("-{}", &hex[..8])
-    })
-    .unwrap_or_default();
+    let suffix = secure_storage_dir
+        .or(config_dir)
+        .filter(|dir| !dir.is_empty())
+        .map(|dir| {
+            use sha2::Digest;
+            use unicode_normalization::UnicodeNormalization;
+            let digest = sha2::Sha256::digest(dir.nfc().collect::<String>().as_bytes());
+            format!("-{}", data_encoding::HEXLOWER.encode(&digest[..4]))
+        })
+        .unwrap_or_default();
     format!("Claude Code-credentials{suffix}")
 }
 
