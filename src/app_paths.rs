@@ -59,12 +59,23 @@ pub fn init_process_logging(shutdown: &'static AtomicBool) -> Result<PathBuf> {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("hex=info"));
     tracing_subscriber::fmt()
-        .with_env_filter(filter)
+        .with_env_filter(without_secrets(filter))
         .with_writer(std::io::stderr.and(Mutex::new(process_log)))
         .init();
     log_panics();
     ctrlc::set_handler(|| shutdown.store(true, Ordering::Relaxed))?;
     Ok(log_dir)
+}
+
+/// `filter`, with tungstenite held to warnings whatever `RUST_LOG` asks: its
+/// handshake trace prints the request with its authorization header (Labs ›
+/// Cloud transcription's sign-in).
+fn without_secrets(filter: tracing_subscriber::EnvFilter) -> tracing_subscriber::EnvFilter {
+    filter.add_directive(
+        "tungstenite=warn"
+            .parse()
+            .expect("tungstenite=warn is a valid directive"),
+    )
 }
 
 /// Records every panic in `process.log` before the installed report runs.
@@ -118,6 +129,36 @@ fn user_config_dir_in(home: &std::path::Path, test_build: bool) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_log_never_carries_the_websocket_handshake() {
+        #[derive(Clone, Default)]
+        struct Captured(std::sync::Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Captured {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buffer);
+                Ok(buffer.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        for asked in ["trace", "tungstenite=trace,hex=trace"] {
+            let captured = Captured::default();
+            let writer = captured.clone();
+            let subscriber = tracing_subscriber::fmt()
+                .with_env_filter(without_secrets(tracing_subscriber::EnvFilter::new(asked)))
+                .with_writer(move || writer.clone())
+                .finish();
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::trace!(target: "tungstenite::handshake::client", "Bearer sk-ant-secret");
+                tracing::trace!(target: "hex", "still logged");
+            });
+            let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+            assert!(log.contains("still logged"), "{asked}: {log}");
+            assert!(!log.contains("sk-ant-secret"), "{asked}: {log}");
+        }
+    }
 
     #[test]
     fn each_build_has_its_own_config_folder() {

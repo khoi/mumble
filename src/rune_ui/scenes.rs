@@ -610,6 +610,14 @@ pub(super) const SCENES: &[Scene] = &[
             Instant::now() + Duration::from_secs(3600),
         ));
     }),
+    // Labs › Cloud transcription on, with its provider picker.
+    ("mac-labs-cloud", |ui| {
+        *ui = mac_fixture();
+        ui.labs_open = true;
+        ui.settings.labs.cloud_transcription = true;
+        ui.settings.labs.cloud_transcription_provider =
+            crate::transcription::cloud::CloudProvider::Codex;
+    }),
     ("mac-production", |ui| {
         *ui = mac_fixture();
         ui.settings.meetings.enabled = false;

@@ -256,6 +256,12 @@ fn rows(ui: &Ui) -> Vec<Row> {
         tr("Vocabulary biasing"),
         tr("Bias Parakeet transcription toward your vocabulary; rewriting and search use it either way"),
     ));
+    rows.push(row(
+        Feature::CloudTranscription,
+        &WAVE,
+        tr("Cloud transcription"),
+        tr("Transcribe dictations with Claude or Codex, signed in through their own apps. The audio leaves this computer; Hex's model takes over when the service can't answer"),
+    ));
     if caps.keyboard_model_switching {
         rows.push(row(
             Feature::KeyboardModelSwitching,
@@ -528,6 +534,7 @@ fn row_key(feature: Feature) -> &'static str {
         Feature::MovableMeetingCapsules => "lab-movable-meeting-capsules",
         Feature::MeetingSummaryModel => "lab-meeting-summary-model",
         Feature::GnomeClipboardRestore => "lab-gnome-clipboard-restore",
+        Feature::CloudTranscription => "lab-cloud-transcription",
     }
 }
 
@@ -586,13 +593,13 @@ pub(super) fn page(ui: &Ui, p: Paint) -> El {
         .child(feedback);
     let mut cards: Vec<CardRow> = Vec::new();
     for row in rows(ui).into_iter().filter(|row| row.feature.shipped()) {
-        let unload_idle = row.feature == Feature::UnloadIdle && row.on;
-        let flashing = ui
-            .lab_flash
-            .is_some_and(|(feature, _)| feature == row.feature);
+        let (feature, on) = (row.feature, row.on);
+        let flashing = ui.lab_flash.is_some_and(|(flashed, _)| flashed == feature);
         cards.push(feature_row(p, row, flashing));
-        if unload_idle {
-            cards.push(unload_after_row(ui, p));
+        match feature {
+            Feature::UnloadIdle if on => cards.push(unload_after_row(ui, p)),
+            Feature::CloudTranscription if on => cards.push(cloud_provider_row(ui, p)),
+            _ => {}
         }
     }
     let rows = cards;
@@ -658,6 +665,34 @@ fn unload_after_row(ui: &Ui, p: Paint) -> CardRow {
             let minutes = UNLOAD_IDLE_MINUTES[index];
             ui.update(|settings| settings.labs.unload_idle_minutes = minutes);
         }),
+    )
+    .into()
+}
+
+/// Which service Cloud transcription sends dictations to, under its row
+/// while on.
+fn cloud_provider_row(ui: &Ui, p: Paint) -> CardRow {
+    use crate::transcription::cloud::CloudProvider;
+    let labels = CloudProvider::ALL.map(CloudProvider::name);
+    let selected = CloudProvider::ALL
+        .iter()
+        .position(|provider| *provider == ui.settings.labs.cloud_transcription_provider)
+        .unwrap_or_default();
+    controls::setting_row(
+        p,
+        "lab-cloud-transcription-provider",
+        tr("Transcribe with"),
+        None,
+        controls::segmented(
+            p,
+            "cloud-transcription-provider",
+            &labels,
+            selected,
+            |ui, index| {
+                let provider = CloudProvider::ALL[index];
+                ui.update(|settings| settings.labs.cloud_transcription_provider = provider);
+            },
+        ),
     )
     .into()
 }

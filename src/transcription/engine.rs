@@ -333,6 +333,8 @@ pub struct Transcribed {
 pub enum Source {
     Stream,
     Offline,
+    /// Labs › Cloud transcription's service.
+    Cloud,
     /// The stream could not be used; the reason is logged with the result.
     Fallback(String),
 }
@@ -342,6 +344,7 @@ impl Source {
         match self {
             Self::Stream => "stream",
             Self::Offline => "offline",
+            Self::Cloud => "cloud",
             Self::Fallback(_) => "fallback",
         }
     }
@@ -602,9 +605,10 @@ impl TranscriptionEngine {
         self
     }
 
-    /// Opens a live stream when the loaded model can stream on this device.
+    /// Opens a live stream when the loaded model can stream on this device,
+    /// unless Labs › Cloud transcription sends the whole clip away instead.
     pub fn begin(&self) -> Option<LiveStream> {
-        if !self.streams.load(Ordering::Acquire) {
+        if !self.streams.load(Ordering::Acquire) || crate::labs::cloud_transcription().is_some() {
             return None;
         }
         let id = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
@@ -678,6 +682,8 @@ impl TranscriptionEngine {
     }
 
     /// Like `finish`, with the caller's offline transcription of the clip.
+    /// Labs › Cloud transcription's service tries a clip without a usable
+    /// stream before it.
     pub fn finish_with(
         &self,
         stream: Option<LiveStream>,
@@ -983,7 +989,7 @@ impl Worker {
                     };
                     self.dictating.store(true, Ordering::Release);
                     crate::dictation::vocabulary::for_dictation(|| {
-                        self.run_offline(clip, offline, source, job);
+                        self.run_dictation(clip, offline, source, job);
                     });
                     self.dictating.store(false, Ordering::Release);
                 }
@@ -1101,14 +1107,38 @@ impl Worker {
     }
 
     fn run_offline(&mut self, clip: Vec<f32>, offline: Offline, source: Source, job: Job) {
-        if job.cancel.is_cancelled() {
-            // Its waiter already gave up on it.
-            job.finish(Err("transcription was abandoned".into()));
+        if let Some((job, started)) = self.admit(job) {
+            self.offline(clip, offline, source, started, job);
+        }
+    }
+
+    /// A finished dictation without a usable stream: Labs › Cloud
+    /// transcription's service first, then the model, which a cloud answer
+    /// never loads.
+    fn run_dictation(&mut self, clip: Vec<f32>, offline: Offline, source: Source, job: Job) {
+        let Some((job, started)) = self.admit(job) else {
             return;
+        };
+        self.running.enter(&job.cancel);
+        match crate::transcription::cloud::dictation(&clip, &job.cancel) {
+            Some(text) => job.finish(Ok(Transcribed {
+                text,
+                source: Source::Cloud,
+                finish_ms: started.elapsed().as_millis() as u64,
+            })),
+            None => self.offline(clip, offline, source, started, job),
+        }
+    }
+
+    /// Starts `job` and its clock, unless its waiter already gave up on it.
+    fn admit(&self, job: Job) -> Option<(Job, Instant)> {
+        if job.cancel.is_cancelled() {
+            job.finish(Err("transcription was abandoned".into()));
+            return None;
         }
         let started = Instant::now();
         self.start(&job);
-        self.offline(clip, offline, source, started, job);
+        Some((job, started))
     }
 
     /// Starts a job's clock. The engine is evidently moving again.
@@ -1277,6 +1307,7 @@ mod tests {
     fn source_labels_distinguish_fallbacks() {
         assert_eq!(Source::Stream.label(), "stream");
         assert_eq!(Source::Offline.label(), "offline");
+        assert_eq!(Source::Cloud.label(), "cloud");
         assert_eq!(Source::Fallback("x".into()).label(), "fallback");
     }
 

@@ -133,6 +133,12 @@ substitute for source inspection or a second roadmap.
   `transcription/local_transcriber`; it recreates the native session around each run (and
   each live stream) so inference scratch stays bounded, and owns chunked
   long-audio transcription.
+- `transcription/cloud`: Labs › Cloud transcription. A dictation's
+  whole clip goes to Claude (Claude Code's sign-in from its token variable,
+  the Keychain through `security`, or `.credentials.json`; its
+  `voice_stream` WebSocket) or Codex (its `auth.json`; ChatGPT's transcribe
+  endpoint) before the engine's model, which takes over on any failure.
+  Hex never refreshes or writes either app's sign-in.
 - `transcription/speech_detector`: the optional Silero voice activity detector, loaded once on
   the CPU and downloaded in the background, that keeps speechless dictation
   captures and meeting chunks away from the transcription models.
@@ -360,7 +366,8 @@ substitute for source inspection or a second roadmap.
 - `linux/login_item`: Launch at login on Linux, the managed XDG autostart
   entry the installer also writes; the file is the only state.
 - `net`: Hex's own HTTPS (model downloads, update checks, transformation
-  `fetch`): ureq over the platform's TLS and trusted roots, the proxy the
+  `fetch`, cloud transcription): ureq over the platform's TLS and trusted
+  roots (`net::tunnel` for a WebSocket's TCP through the same proxy), the proxy the
   computer uses (environment variables everywhere, then Windows' WinHTTP
   settings with PAC/WPAD or macOS' CFNetwork settings), bounded resumable
   ranged downloads, and failures named for a person (`docs/downloads.md`).
@@ -724,6 +731,10 @@ CoreAudio formats, AppleScript details, or event serialization.
   the capture. Cold opens retry the selected device briefly before falling back.
 - Model inference, optional post-processing, and paste must
   never block authoritative audio capture. Their queues remain bounded.
+- Dictation audio leaves the computer only through Labs › Cloud
+  transcription (off by default), read as each run starts and only for
+  dictations (shortcut, `hex dictation`, `/dictations`); meetings, captures,
+  host-audio transcription, and Transcribe again stay local. Any cloud failure transcribes the same clip on Hex's model.
 - CoreAudio capture timestamps and annotated-session CGEvent shortcut timestamps
   share the macOS boot-time nanosecond clock. Do not apply the Mach timebase to
   annotated-session timestamps. Physical HID-tap timestamps arrived as raw Mach
