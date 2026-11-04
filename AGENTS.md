@@ -39,10 +39,11 @@ dev-channel builds only; a stable build never lists, accepts, or runs it).
 A feature with its own pane joins the sidebar as a normal item while
 on and is hidden while off; a behaviour-only feature is just its toggle. Today:
 Voice Filter (locked on while its macOS driver is installed), Playground,
-Live text, Vocabulary biasing, Switch model with keyboard language (#216),
-Mouse shortcuts (#209, macOS), Also pause the browser (#301, macOS), Share
-dictation shortcut (#176, Windows), Unload model when idle (#442), and Terminal paste (Windows). Externally contributed features land there too.
-Only developer tools (`dev_build::is_dev_build()` with
+Live text, Mouse shortcuts (#209, macOS), Also pause the browser (#301, macOS),
+Share dictation shortcut (#176, Windows), and Terminal paste (Windows).
+Externally contributed features land there too. Transcription is not a Labs
+feature: choosing the cloud service (Claude or Codex) is a normal General
+setting. Only developer tools (`dev_build::is_dev_build()` with
 `DEVELOPER_FEATURES_ENABLED`) stay gated to dev builds.
 
 ## Feature Map
@@ -77,16 +78,9 @@ substitute for source inspection or a second roadmap.
 - `suppression`: the macOS event taps, shortcut suppression, and the
   configurable dictation-hotkey state machine.
 - `keyboard`: active-layout key resolution and balanced synthetic shortcuts.
-- `keyboard_input_sources`, `transcription/keyboard_model_switching`: keyboard input-source
-  observation (macOS TIS, Windows foreground-window layout, X11 XKB groups;
-  Wayland has no general protocol) and the shared debounced policy that turns a
-  mapped source into an installed-only model-picker choice.
 - `dictation`, `dictation/diagnostics`: warm pre-roll, growable capture, 16 kHz
-  local-transcription resampling, and owner-only diagnostic WAV retention when
+  resampling, and owner-only diagnostic WAV retention when
   `HEX_RETAIN_DICTATION_AUDIO` is set.
-- `transcription/pause_segmenter`: pure 16 kHz speech and quiet frame
-  classification against an adaptive noise floor, behind a dictation stream's
-  cut pauses and the growing release tail.
 - `dictation/audio`: the authoritative microphone timeline, lazy stream
   lifecycle, recording owner, exact shortcut boundaries, recovery handoff,
   and disposable bounded command audio projection.
@@ -116,75 +110,35 @@ substitute for source inspection or a second roadmap.
   `/api/info`, and talks authenticated loopback HTTP over `TcpStream` with
   cancellation and deadlines. It never runs an OpenCode executable or curl;
   without a service, features say "OpenCode isn't running".
-- `parakeet`: the strict-Metal `transcribe.cpp` adapter plus the dictation
-  worker that hands clips to the transcription engine and runs bounded,
-  ordered processing, output, paste, and last-result work.
-- `apple_speech`: the Swift `SpeechAnalyzer` bridge with per-locale support
-  checks, asset reservation, and batch transcription.
-- `transcription`, `transcription/benchmark`: runtime selection, transactional
-  warm-model activation, and the fixed-corpus benchmark runner behind
-  `hex benchmark-transcription`.
-- `transcription/gguf_session`: the `transcribe.cpp` session owner shared by `parakeet` and
-  `transcription/local_transcriber`; it recreates the native session around each run (and
-  each live stream) so inference scratch stays bounded, and owns chunked
-  long-audio transcription.
-- `transcription/cloud`: Labs › Cloud transcription. A dictation that
-  streams does so while it records (`cloud/stream`, its own thread behind
-  `LiveStream`; released at once, its answer waited for as the engine
-  worker's job) to Claude (Claude Code's sign-in from its token variable,
-  the Keychain through `security`, or `.credentials.json`; its
-  `voice_stream` WebSocket) or Codex (its `auth.json`; ChatGPT's dictation
-  WebSocket, a new session before each 300 s one ends); any other dictation
-  sends its whole clip (Codex: ChatGPT's transcribe endpoint). The engine's
-  model takes over on any failure. Hex never refreshes or writes either
-  app's sign-in.
-- `transcription/speech_detector`: the optional Silero voice activity detector, loaded once on
-  the CPU and downloaded in the background, that keeps speechless dictation
-  captures away from the transcription models.
-- `transcription/local_transcriber`: the Linux and Windows GGUF loader, prewarm, whole-clip
-  transcription, and stream entry point. Loads where Settings › Speech engine
-  (`transcription_device`: Auto/GPU/CPU) says; a GPU device error reloads
-  on the CPU mid-run.
-- `transcription/gpu_health`: GPUs that failed while transcribing, remembered
-  per device and driver in `gpu-failures.json` (#856), which Auto skips.
-- `transcription/engine`: the thread that owns the loaded model on every OS and
-  runs every inference in order: live streams fed during capture, their finish,
-  whole-clip runs, and (macOS) model loads and switches. The capture owns its
-  `LiveStream` and hands it to the finished clip; finishing returns a
-  `PendingTranscript` whose wait enforces the stream deadline and falls back to
-  the whole clip. It also runs background work (History's Transcribe again)
-  that yields to any dictation request sent before it starts. The
-  listener shares its engine (`TranscriptionEngine::share`) on every OS;
-  `transcription::engine::dictation_busy` is the press-to-paste capture state
-  on macOS, and on Linux and Windows only the engine's dictation streams and
-  finishes. With Labs › Unload model when idle on, its worker unloads the GGUF
-  model after the chosen idle time when nothing records
-  (`audio::idle_sleep::held`) and reloads it before the next command that
-  needs it.
-- `transcription/preparation`: application-owned model preparation shared by
-  Settings and the menu bar on macOS and by the Windows runtime, with one
-  worker, latest-choice pending admission, cancellation fences, and an
-  installed-only path that never downloads a model.
-- `transcription/models`: the compiled model catalog, language recommendations,
-  pinned artifact verification, and lazy installation.
-- `transcription/model_details`: what a catalog model's details view adds:
-  licence credit, source and licence links, the publisher's notice, measured
-  memory, and benchmarks the publisher (never Hex) measured (Parakeet Ultra).
-- `transcription/custom_models`, `transcription/gguf_header`: your own speech
-  models: GGUF imports checked from their header alone (family, variant,
-  languages, F32/F16/Q8_0 tensors), copied into `models/custom/` under their
-  SHA-256 with a receipt and manifest (or recorded in place for a found file),
-  `TranscriptionModelId::Custom` IDs, and the default-model fallback for an
-  import that can't run.
-- `transcription/found_models`: the Hugging Face cache scan (headers only, a
-  per-file cache keyed by path, size, mtime, and file ID), exact catalog
-  matches by pinned SHA-256 blob name, adopted catalog records in
-  `models/found/`, and the GPU memory estimate.
+- `parakeet`: the macOS dictation worker that hands each capture's clip to the
+  transcription engine and runs bounded, ordered processing, output, paste, and
+  last-result work.
+- `transcription`, `transcription/engine`: the dictation coordinator on every
+  OS. It owns no model: a capture streams to the cloud service while the
+  shortcut is held (`begin`), and on release the clip and the stream's released
+  answer are handed to the engine thread, which runs the transcription in
+  submission order (`finish`), with a per-job deadline, cancellation,
+  submission-order replies, and Live text. The capture owns its `LiveStream` and
+  hands it to the finished clip; finishing returns a `PendingTranscript`. There
+  is no local fallback: a dictation the service can't transcribe fails with its
+  reason.
+- `transcription/cloud` (`cloud/{claude,codex,socket,stream}`): the transcriber.
+  A dictation streams while it records (`cloud/stream`, its own thread behind
+  `LiveStream`; released at once, its answer waited for as the engine worker's
+  job) to Claude (Claude Code's sign-in from its token variable, the Keychain
+  through `security`, or `.credentials.json`; its `voice_stream` WebSocket) or
+  Codex (its `auth.json`; ChatGPT's dictation WebSocket, a new session before
+  each 300 s one ends). A dictation without a usable stream sends its whole clip
+  (Claude's or Codex's transcribe endpoint); a stream the service refuses sends
+  the whole clip too. Any other failure fails the dictation with its reason. The
+  provider (`CloudProvider`: Claude or Codex) and language come from the saved
+  transcription selection; Claude also receives the vocabulary as keyterms. Hex
+  never refreshes or writes either app's sign-in.
 - `local_api`: authenticated loopback discovery, bounded HTTP parsing,
   `GET /health` and `GET /capabilities`, the always-on authenticated
   `POST /control`, and `GET /profile/vitals` (process footprint and CPU from
-  Rune's `procwatch`, sampled by `macos_rune`; debug builds also count the heap
-  and report the `speech.model_weights` gauge from `parakeet`). The running
+  Rune's `procwatch`, sampled by `macos_rune`; debug builds also count the
+  heap). The running
   app serves it on every OS; the discovery file is `local-api.json` in the
   data folder (mode 0600 on Unix, the per-user `%APPDATA%` ACL on Windows). `/dictations` (`local_api::dictation`) runs on
   the macOS recognition loop and the Linux listener, sharing the protocol,
@@ -259,8 +213,8 @@ substitute for source inspection or a second roadmap.
 - `app_paths`: the Application Support owner (`hex` on every OS) for runtime
   logs and shared state.
 - `desktop/onboarding`, `desktop/permission_guide`: required permission health, the native
-  floating System Settings guide, selected dictation-model installation, the
-  release startup gate, and opt-in command-model setup.
+  floating System Settings guide, the release startup gate, and the practice
+  game.
 - `audio/hex_microphone`, `audio/voice_filter`: the experimental virtual microphone
   (`Hex Microphone`: a CoreAudio driver on macOS, a PipeWire virtual source
   fed through `pw-cat` on Linux, none on Windows, which would need a signed
@@ -343,13 +297,12 @@ substitute for source inspection or a second roadmap.
   with a dbusmenu built by `desktop/tray_menu`). It registers whenever a tray host
   (`org.kde.StatusNotifierWatcher`) appears; without one Hex runs unchanged.
 - `desktop/tray_menu`: the tray menu Linux and Windows share (recording state, Show
-  Hex, Paste last dictation, the downloaded-model picker, the update item,
-  Enable / Disable Hex, Quit Hex) and the model entries the macOS menu bar
-  lists too. Each tray maps a `TrayCommand` onto its own runtime.
+  Hex, Paste last dictation, the update item, Enable / Disable Hex, Quit Hex).
+  Each tray maps a `TrayCommand` onto its own runtime.
 - `linux/login_item`: Launch at login on Linux, the managed XDG autostart
   entry the installer also writes; the file is the only state.
-- `net`: Hex's own HTTPS (model downloads, update checks, transformation
-  `fetch`, cloud transcription): ureq over the platform's TLS and trusted
+- `net`: Hex's own HTTPS (update checks, transformation `fetch`, cloud
+  transcription): ureq over the platform's TLS and trusted
   roots (`net::tunnel` for a WebSocket's TCP through the same proxy), the proxy the
   computer uses (environment variables everywhere, then Windows' WinHTTP
   settings with PAC/WPAD or macOS' CFNetwork settings), bounded resumable
@@ -365,8 +318,8 @@ substitute for source inspection or a second roadmap.
   and restart into an update.
 - `windows`, `windows/app`, `windows/rune`, `windows/dictation`,
   `windows/input`, `windows/paste`, `windows/context`, `windows/audio_control`, `windows/login_item`: the Windows
-  beta CLI, the runtime host (`WindowsDesktopHost`: listener, model
-  preparation, OpenCode catalog, transformations, updater) and single-instance
+  beta CLI, the runtime host (`WindowsDesktopHost`: listener, OpenCode catalog,
+  transformations, updater) and single-instance
   claim, the tray app on `rune::App` (tray, window icon, and runtime thread;
   `rune_ui/windows_host.rs` is the window's host), the WASAPI dictation loop,
   low-level keyboard hook, clipboard paste, UI Automation context, While
@@ -385,8 +338,7 @@ substitute for source inspection or a second roadmap.
   translates lacks a language.
 - `history`: the owner-only bounded retained-dictation store: retention
   windows with hard entry and byte caps, atomic crash-safe persistence, and
-  search. Text and bounded metadata; audio only with Labs › Keep recordings
-  (`history/recordings`: one owner-only WAV per entry, Transcribe again).
+  search. Text and bounded metadata only; no audio is retained.
 - `control/transcript_cli`: the read-only release command `hex history` on
   every OS, versioned JSON projections and filters.
   Reads history snapshots without opening the writable store; its stemmed,
@@ -405,8 +357,8 @@ substitute for source inspection or a second roadmap.
   `rune-kit` and the OpenCode theme: General, Output, and History (each
   feature owns its settings, rarer ones in the pane's Advanced fold), and under Labs (`labs`:
   the Labs switch and the opt-ins) the Voice Filter, plus in
-  Playground (`⇧⌘D`) HUD Lab's live Dot scope sliders (`hud_stories`), the transcription
-  picker, the Sounds sheet (its stage replays `rune_hud`'s HUD, drawn by the
+  Playground (`⇧⌘D`) HUD Lab's live Dot scope sliders (`hud_stories`), the
+  Sounds sheet (its stage replays `rune_hud`'s HUD, drawn by the
   window's compositor with `rune_hud.wgsl`), the onboarding pages, the `--snap`
   fixture scenes, and the macOS `hex://story/…` playground links
   (`story_link`, `hex-test://` in test builds). `platform::Capabilities` decides which panes and rows exist (and, through `rune_ui::capabilities`, which `hex settings` keys act and what `hex status` reports); every difference between the OSes names a reason in `platform::DIFFERENCES` (an OS pattern, impossible, or pending), which `parity_tests` enforce;
@@ -420,8 +372,8 @@ substitute for source inspection or a second roadmap.
   Dictation, update checks, and orderly application shutdown.
 - `macos_rune`: the macOS app as one menu-bar process on
   `rune::App`: the status item, the updater, main menu, Dock reopen Apple event,
-  and HUD on the main AppKit loop, and a runtime thread for model
-  preparation and the window's state. It owns the listener's
+  and HUD on the main AppKit loop, and a runtime thread for the window's
+  state. It owns the listener's
   `ListenerConfig` (event path and device). `rune_ui/macos_host.rs` is the
   window's host and the panes' `NativeHost`.
 - `rune_hud/hud_placement`: pure geometry for where a HUD sits on its screen (below
@@ -455,8 +407,7 @@ substitute for source inspection or a second roadmap.
 - `desktop/process_exit`: how the macOS app ends. Every quit path (menu, `hex quit`
   and `hex restart`, Ctrl-C, and AppKit's terminate) stops and joins Hex's
   workers, bounded by a 5 s deadline, then calls `_exit`, so C++ static
-  destructors (such as ggml's Metal device) never run
-  under live threads. A restart
+  destructors never run under live threads. A restart
   schedules its relaunch first; the new copy waits for the old pid to exit.
 - `feedback`: bounded volume-controlled capture and failure tones.
 
@@ -473,8 +424,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   identical originals share one backup). A failed backup blocks the save.
   Keep saved values readable by older builds. Do not omit optional fields
   whose absence restores a nonempty default, such as `paste_last_hotkey`.
-- On a new Mac, release dictation starts only after Microphone, Accessibility,
-  and the selected dictation model are ready. Hex never asks for Input
+- On a new Mac, release dictation starts only after Microphone and
+  Accessibility are ready. Hex never asks for Input
   Monitoring: Accessibility also grants the listen-event access its shortcut
   taps need (measured on macOS 26 and 27).
 - The dictation shortcut defaults to Option but supports modifier-only,
@@ -603,15 +554,16 @@ CoreAudio formats, AppleScript details, or event serialization.
   idle. Accepted jobs never keep the stream open. A stream failure before the
   hold threshold returns the press to pending and reopens; later failures fail
   the capture. Cold opens retry the selected device briefly before falling back.
-- Model inference, optional post-processing, and paste must
+- Transcription, optional post-processing, and paste must
   never block authoritative audio capture. Their queues remain bounded.
-- Dictation audio leaves the computer only through Labs › Cloud
-  transcription (off by default) and only for dictations (shortcut,
-  `hex dictation`, `/dictations`); Transcribe again stays local. A dictation
+- Dictation audio always goes to the chosen cloud service (Claude or Codex):
+  it is the transcriber, no longer gated by any toggle, and only dictations
+  (shortcut, `hex dictation`, `/dictations`) send audio. A dictation
   streams from the hold threshold (Toggle on Linux and Windows: the press; Linux
   `/dictations`: its start), so short taps and chords send nothing, but a
-  dictation discarded later has already sent what it recorded. Nothing pastes before the final text,
-  and a stream or clip without text is transcribed on Hex's model.
+  dictation discarded later has already sent what it recorded. Nothing pastes
+  before the final text, and a stream or clip without text fails the dictation
+  with its reason; there is no local fallback.
 - CoreAudio capture timestamps and annotated-session CGEvent shortcut timestamps
   share the macOS boot-time nanosecond clock. Do not apply the Mach timebase to
   annotated-session timestamps. Physical HID-tap timestamps arrived as raw Mach
@@ -638,19 +590,15 @@ CoreAudio formats, AppleScript details, or event serialization.
   or `toggle`. Toggle reuses the lock state on every platform: each press acts
   as the second tap of a double-tap, so release locks and the next shortcut
   press finishes. A modifier pressed alone never ends a key-chord capture. Double-tap settings apply to Hold only.
-- Streaming dictation is speculative on every OS: a hotkey capture's stream
-  receives the capture's 16 kHz audio with each pause cut to its first 2.5 s
-  and last 0.3 s (Parakeet drops words after pauses past its left context),
-  the finish always carries the complete clip, and a failed, empty, overfed, late, or interrupted stream
-  falls back to the whole clip, as does one whose text ends well before the
-  speech it heard (a dropped late phrase, #1101). Nothing pastes or reaches the focused app
-  before the final text. With Labs › Live text on, a hotkey capture's
-  stream publishes its provisional text for Hex's own HUD only; it is never
-  pasted, copied, or kept in History or Paste Last. One engine thread runs every inference because a live
-  stream holds the model's compute lease. Streams run only on GPU devices
-  (Metal, Vulkan); models that cannot stream transcribe the whole clip after
-  release. Labs › Cloud transcription's streams go to Claude or Codex
-  instead, on any device. Dictation is never cut at pauses.
+- Streaming dictation is speculative on every OS: a hotkey capture streams its
+  16 kHz audio to the cloud service while it records, and the finish always
+  carries the complete clip. A stream the service refuses falls back to sending
+  the whole clip to the same service; any other failure (empty, overfed, late,
+  interrupted, or signed out) fails the dictation with its reason, with no local
+  fallback. Nothing pastes or reaches the focused app before the final text.
+  With Labs › Live text on, the stream publishes its provisional text for Hex's
+  own HUD only; it is never pasted, copied, or kept in History or Paste Last.
+  Streams need no GPU. Dictation is never cut at pauses.
 - Starting a new capture never cancels accepted dictation work. Pending jobs
   preserve submission-order output while capture remains immediately available.
 - Completing or pasting an older job must not reconcile or finish a newer
@@ -658,19 +606,11 @@ CoreAudio formats, AppleScript details, or event serialization.
   fabricate a release timestamp from later physical state.
 - A programmatic dictation's owner cancels it through the API, and the lease
   ends an abandoned one. While one records, Hex claims no Escape at all.
-- Model switches activate only after the pinned artifact is checksum-verified,
-  loaded on strict Metal, and prewarmed. A failed switch preserves the active
-  model and persisted selection. An import is checked from its GGUF header
-  before anything loads and verified against the receipt Hex wrote when it
-  copied the file; that digest is not a publisher's. A saved import that is
-  missing or changed stays saved while the listener runs the default model;
-  never rewrite it away.
-- Models found in the Hugging Face cache are scanned only when the picker or
-  onboarding opens (or `hex model list` runs), never in the background, and
-  only their headers are read. A found file is used in place and is
-  read-only: Hex never writes, moves, or deletes anything in the cache, keeps
-  its receipts in its own models folder, hashes a file in full once when it is
-  chosen (against the pin or the blob name), and removing one only forgets it.
+- The transcription selection is the provider (`transcription.provider`:
+  Claude or Codex, default Claude) and the language (`transcription.language`,
+  default `en`), each a `hex settings` key. There is no model to download,
+  verify, switch, or prewarm; Hex never refreshes or writes either app's
+  sign-in, so an expired one reads as signed out until its app renews it.
 - Hex has one onboarding, on every build and OS, stable and dev alike: the
   first-run story (`rune_ui/onboarding_kit/live.rs`) over the tour state
   machine (`rune_ui/onboarding.rs`, `desktop::onboarding::Flow`). No flag,
@@ -679,33 +619,11 @@ CoreAudio formats, AppleScript details, or event serialization.
   (resumed at its saved step), or an upgrader from 2.3.1 or earlier whose
   setup isn't ready (#475). Run setup again (Labs) and `hex onboarding reset`
   replay it from the start on every build. Start using Hex records completion
-  only once setup is ready. A quiet Skip shows only on the optional pages,
-  the demo and the practice: it passes over that part to the next step setup
-  still needs (permissions, then the model), else Hex is ready, and never
-  records completion. Permissions, the model step and download, and the paste
-  permission have no Skip. The one way past a model that can't be had (#894)
-  is Continue without a model, shown on the download step only once every
-  permission is ready and the download failed or stalled (30 s without
-  bytes); it records completion, and Settings › General then says no model
-  is installed, with Download and Add model file….
-- Onboarding shows its model step only when the scan found a compatible
-  model; otherwise Setting up Hex is unchanged and the recommended model
-  downloads by itself. The step is one card of radio rows with no buttons or
-  file details: Hex's recommended model first and selected (its exact copy on
-  this computer is that same row), then the found files. Picking a row starts
-  it, and Continue starts the selected row and moves on once the pick is
-  under way; a found pick shows no download page or pill. The tour's own
-  download is held while the scan runs and until a pick, and only through
-  setup. Back on the pages after the step returns to it. A found model is
-  never picked for the person.
-- The menu-bar model picker lists only downloaded, available models and remembers
-  each model's last selected language. It works without a
-  Settings window. Settings and the menu bar share one preparation owner; a newer
-  choice supersedes uncommitted work, and preparation/save failures leave the old
-  selection intact. Menu-bar selections never silently download or repair a model.
-- Cohere's advertised encoder input capacity is not its recommended inference
-  window. Both GGUF adapters cap Cohere chunks at the reference processor's
-  35 seconds (or a stricter advertised bound); capture duration remains unlimited.
+  only once setup is ready. The run covers permissions, then the practice
+  game; there is no model step. A quiet Skip shows only on the optional pages
+  (the demo and the practice); permissions and the paste permission have no
+  Skip. A quiet Skip passes over that part to the next step setup still needs,
+  else Hex is ready, and never records completion.
 - The microphone is either System default (`microphone` unset) or one saved
   device. System default follows the OS default input live: macOS through
   CoreAudio listeners on the default input and the device list (their callbacks
@@ -793,17 +711,12 @@ CoreAudio formats, AppleScript details, or event serialization.
   pastes, even on failure or timeout; no speech exits 4. History records it as
   Printed and Paste Last skips it.
 - Option-Shift-V pastes the last completed dictation.
-- Do not persist captured audio by default. Diagnostic dictation retention is an
-  explicit, bounded, owner-only opt-in through `HEX_RETAIN_DICTATION_AUDIO`.
-  Labs › Keep recordings (`keep-recordings`, off by default) is the only
-  other way dictation audio is stored: while on, each new History entry
-  keeps its 16 kHz clip as an owner-only WAV beside the store. The audio
-  follows its entry's retention, entry cap, Delete, and Clear all, under its
-  own 512 MiB cap (oldest audio dropped first, text kept). Turning it off
-  stops saving; existing audio stays until it expires or History is cleared.
+- Do not persist captured audio. Diagnostic dictation retention is the one
+  explicit, bounded, owner-only opt-in through `HEX_RETAIN_DICTATION_AUDIO`;
+  History never stores audio.
 - Retained dictation history records only successful pasted output: raw and
   final text plus bounded metadata, never full browser URLs or window titles,
-  and no audio unless Labs › Keep recordings is on. History defaults to seven days, and every retention window remains
+  and no audio. History defaults to seven days, and every retention window remains
   subject to hard entry and byte caps. No new entries are accepted while Off.
   Turning retention Off preserves existing entries; clearing history is explicit.
   Time-based retention expires during idle uptime through the shared history
@@ -999,10 +912,9 @@ CoreAudio formats, AppleScript details, or event serialization.
   valid entry points forever: self-updates replace only the executable.
 - On Linux and Windows, saved settings apply to the running listener in place
   while no dictation records; a settings change never stops listening or
-  changes the shown status. Shortcut changes register the shortcuts again,
-  a microphone change reopens the stream, and a model or recognition-hint
-  change loads the new model beside the old one and swaps it in once no
-  transcription is pending (`transcription::local_transcriber::ModelSwap`). Recording a
+  changes the shown status. Shortcut changes register the shortcuts again, a
+  microphone change reopens the stream, and a transcription change (provider or
+  language) applies to the next dictation. Recording a
   shortcut in the window suspends only global matching.
 - Linux shortcut capture uses focused input in the window. Recording a
   shortcut suspends the running listener's global matching and registers the
@@ -1041,7 +953,6 @@ CoreAudio formats, AppleScript details, or event serialization.
 
 ```sh
 ./scripts/setup.sh
-./scripts/setup-parakeet.sh
 cargo run -- listen
 cargo run -- status --json   # asks the running Hex (docs/cli.md)
 cargo run -- dev dashboard   # debug recognition TUI
@@ -1087,7 +998,7 @@ Use Rune's headless renders as the desktop-UI iteration loop: `hex app --
 (no settings, History, or log; only `live` reads, and never writes), on
 every OS (`--list-scenes` lists them; `--theme light|dark`, `--size WxH`, and `--scale` adjust the
 render). Scenes cover every pane and state the goldens check: the Linux and
-Windows panes (`modes`, `history`, `picker`, `onboarding`,
+Windows panes (`modes`, `history`, `onboarding`,
 `windows-settings`, …) and the macOS ones (`mac-settings`,
 `mac-voice-filter*`, `mac-hud-lab`, `mac-activity`, `mac-onboarding*`).
 `live` renders the running Linux Hex's real state. On a host without a GPU,
@@ -1101,13 +1012,12 @@ native build dependencies with:
 
 ```sh
 sudo pacman -S --needed base-devel git rustup python alsa-lib curl jq openssl xxd \
-  util-linux libxkbcommon libxkbcommon-x11 libx11 libxcb openblas \
-  vulkan-headers vulkan-icd-loader \
-  shaderc spirv-headers clang cmake pkgconf wl-clipboard wtype
+  util-linux libxkbcommon libxkbcommon-x11 libx11 libxcb \
+  clang pkgconf wl-clipboard wtype
 rustup default stable
 ```
 
-For a source install, run `scripts/install-linux.sh`, then `hex model install`.
+For a source install, run `scripts/install-linux.sh`.
 The installer owns the user-local version layout, desktop entry, and autostart
 entry; only that managed layout participates in automatic updates.
 
@@ -1196,13 +1106,11 @@ hooks or persist a second launch-at-login flag.
 Onboarding gates every stable release. Before any stable release, run
 `scripts/check-onboarding.sh` on the release candidate commit and include its
 result, with the scene images it writes, in the go/no-go given to Dax. It
-renders every onboarding scene (Setting up Hex with nothing found, a stopped
-download, the model step with found models, with the recommended model already
-present, ours downloading, and Back to it, the demo, the macOS permissions and
-Windows' microphone switch, Almost ready, the practice game, Hex is ready) in
+renders every onboarding scene (the demo, the macOS permissions and Windows'
+microphone switch, Almost ready, the practice game, Hex is ready) in
 both appearances against the approved goldens, and walks a first run through
-the real onboarding in a clean temporary data folder until a model is
-downloaded and it reaches Hex is ready. Any unexpected
+the real onboarding in a clean temporary data folder until it reaches Hex is
+ready. Any unexpected
 visual or flow change blocks the release; an intentional change refreshes the
 goldens in its own PR. It runs on Linux, like every golden; the macOS and
 Windows scenes are fixtures of the same window and render there too, but
@@ -1287,16 +1195,10 @@ Run `scripts/build-linux-release.sh` (Docker; `scripts/build-linux.sh` for a
 build against the host's glibc) on x86_64 or aarch64 Linux (then
 `scripts/package-linux.sh` for the `.deb` and `.rpm`) and `scripts/build-windows.sh`
 from Git Bash once per architecture with `HEX_WINDOWS_ARCH=x86_64` (the
-default; Vulkan SDK required) or `aarch64` (clang-cl and Ninja; best on an
-ARM64 host). Builds use `-DGGML_NATIVE=OFF` so the CPU kernels stay portable,
-and the static runtime in `.cargo/config.toml` keeps the Visual C++
+default) or `aarch64` (clang-cl and Ninja; best on an
+ARM64 host). The static runtime in `.cargo/config.toml` keeps the Visual C++
 Redistributable unnecessary; the release workflow asserts neither Windows
-executable imports it. Every build embeds Vulkan shaders only for f32, f16,
-and q8_0 tensors and no MUL_MAT_ID (`CMAKE_ARGS` in `.cargo/config.toml`,
-through the patched `transcribe-cpp-sys` in `Cargo.toml`): about 7 MB of
-SPIR-V instead of 44 MB. ggml aborts a Vulkan run whose weights use another
-type, so widen `GGML_VULKAN_SHADER_TYPES` before the catalog gains a non-Q8_0
-model. Release executables are stripped (`[profile.release]`). The
+executable imports it. Release executables are stripped (`[profile.release]`). The
 installers live in the locked `.github/release/` (`install-linux.sh`,
 `install-windows.ps1`; the Installers workflow serves them at
 `https://anoma.ly/hex/files/`) and install from the service's manifest,

@@ -21,16 +21,9 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Voice Filter    yes   experimental.hex_microphone  (macOS, Linux) Voice Filter joins the sidebar; feeds the Hex Microphone (macOS driver, Linux PipeWire source)
 ├── Playground      yes   labs.playground                        a Playground sidebar item and ⇧⌘D open the story browser
 ├── Live text       no    labs.live_text                         provisional words beside the HUD while dictating
-├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
-├── Cloud transcription no labs.cloud_transcription + labs.cloud_transcription_provider (claude/codex, default claude)
-│                                        a dictation goes to Claude or Codex through their apps' sign-in first; Hex's model on any failure
-├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)
-│                                        the input source picks its mapped model (#216); General shows the mappings while on
 ├── Mouse shortcuts no    labs.mouse_shortcuts         (macOS)   mouse buttons record as shortcuts (#209)
 ├── Also pause the browser no pause_browser_media      (macOS)   pause a playing tab too, with Pause media (#301); General shows its permission row
 ├── Share dictation shortcut no share_dictation_shortcut (Windows) apps such as Discord see the shortcut too (#176)
-├── Unload model when idle no labs.unload_idle + labs.unload_idle_minutes (5/15/30/60, default 15)
-│                                        the engine frees the speech model after that long unused (#442)
 ├── Restore shortcut default no labs.restore_shortcut_default   Paste last dictation's row offers its default back (#613)
 ├── Keep dictation on clipboard no labs.keep_on_clipboard (macOS) a pasted dictation stays on the clipboard; the previous one is not restored (#200)
 ├── Copy dictation only no labs.copy_only (macOS)    a dictation goes to the clipboard and is never pasted; Paste last dictation still pastes (#629)
@@ -42,19 +35,11 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Smart spacing   no    labs.smart_spacing           (macOS)   a dictation pasted right after a word gets one leading space (#632)
 ├── Sided modifier chords no labs.sided_modifier_chords (macOS) the recorder keeps each modifier's side in a modifier-only chord: R⌘ R⌥ (#710)
 ├── Tap or hold      no    labs.tap_or_hold             (macOS, Linux) in Toggle mode, a press held past 300 ms dictates until it lifts; a short tap still locks (#711, #1144)
-├── Sort and filter models no labs.picker_sort_filter   the Local transcription picker sorts by recommendation, size, or name and can show only models for the saved language (#645)
-├── Benchmark details no  labs.benchmark_details        picker rows show raw WER/CER (lower is better), language, dataset, source, and conditions; incomparable "Most accurate" badges drop (#647)
-├── Parakeet Ultra  no    labs.parakeet_ultra          the picker offers Moondream's Parakeet Ultra (pinned Q8_0, CC BY 4.0) with a details view; stays on while it dictates (#648)
 ├── Special keys alone no labs.standalone_special_keys (Linux, Windows) Linux: Menu, Pause, Scroll Lock may be a shortcut's key, alone or with modifiers (#767); Windows: Insert, Home, End, Page Up, Page Down may stand alone (#794)
 ├── Section key alone no  labs.section_key_alone       (Linux) the § key, left of 1 on ISO keyboards, may be a shortcut with no modifier (#1050)
 ├── Dictation stats no    labs.history_stats           History shows a summary of retained dictations; hex history stats prints it (#790)
 ├── Copy recent dictations no labs.recent_dictations (macOS) the menu bar's Copy Recent Dictation submenu copies one of the last five dictations (#877)
-├── Skip long pauses no    labs.skip_pauses             (Linux, Windows) a whole-clip dictation run hears only the head and tail of each long pause (#899)
 ├── Fix results in Output no labs.output_fixes           Output's Try card offers Vocabulary and Fix this, which copies an agent prompt naming the wrong result (#989)
-├── Model in use first no labs.picker_active_first     the speech model picker shows the model in use first: Compare's first column, Every model's first row (#1019)
-├── Use model files where they are no labs.model_in_place the picker adds a model file without copying it, so accounts can share one (#941)
-├── Downloaded models only no labs.picker_downloaded   the picker's All speech models view can show only downloaded models, with the space Hex's copies take (#1018)
-├── Keep recordings no    labs.keep_recordings         History entries keep their dictation audio; Transcribe again runs it through another installed model (#1032)
 ├── Hide menu bar icon no labs.hide_menu_bar_icon      (macOS) the menu-bar icon hides; shortcuts keep working, reopening Hex shows Settings (#1064)
 ├── Restore clipboard on GNOME no labs.gnome_clipboard_restore (Linux) on a Wayland desktop without data-control (GNOME), a paste snapshots and restores
 │                                        the clipboard through XWayland, only while this user's Xwayland already runs; never starts it (#1111)
@@ -112,111 +97,6 @@ settings load (macOS), with a one-time note in General
 (`mouse_shortcut_notice`). Check:
 `mouse_shortcuts_go_back_to_their_default_while_their_labs_toggle_is_off` in
 [app_settings.rs](../../src/app_settings.rs).
-
-Unload model when idle (`unload-idle`, issue 442 from @theoneand33): while
-on, its row shows "Unload after" (5, 15, 30, or 60 minutes; default 15).
-`transcription/engine`'s worker unloads a loaded GGUF model once no command
-has reached it for that long and nothing records (`audio::idle_sleep::held()`: a
-dictation past its hold; a macOS dictation capture from its press via
-`dictation_busy`), freeing its RAM and VRAM; between commands no request
-runs. Apple Speech stays loaded. The unloaded model still counts as held
-(`TranscriptionEngine::holds`), so dictation and the local API send
-their work to the engine as before, and the worker reloads it before the
-first command that needs it: audio fed meanwhile waits in the queue, so
-nothing recorded is lost. A capture's stream opens after the reload and
-catches up, falling back to the whole clip if it can't finish in time; the
-HUD shows its transcribing state while a released clip waits on the reload,
-with no look of its own. A failed reload fails that job and is retried by the
-next. Check: `unload_idle_carries_its_minutes` in [labs.rs](../../src/labs.rs);
-the unload and reload themselves have no automated check.
-
-Cloud transcription (`cloud-transcription`): while on, its row shows
-"Transcribe with" (Claude or Codex; default Claude), and dictations
-(shortcut, `hex dictation`, `/dictations`) are transcribed by that service
-before Hex's own model. A dictation that streams (macOS hotkey captures;
-every Linux and Windows capture, Linux `/dictations` included) streams to
-it while it records, so on release only its last words are left; the audio
-leaves the computer, which is why it is off by default. The switch is read
-as each capture's stream opens, so a stream already open finishes even if
-the feature is turned off meanwhile.
-
-```ts
-A capture starts streaming: past the hold threshold (Toggle on Linux and Windows: on press;
-Linux /dictations: at its start)
-└── Labs › Cloud transcription on -> engine::begin opens a cloud stream, not the model's
-    // cloud/stream.rs: its own thread owns the connection; feeds arrive every 160 ms
-    ├── Claude -> Claude Code's sign-in: CLAUDE_CODE_OAUTH_TOKEN, then the macOS Keychain item
-    │   "Claude Code-credentials" through /usr/bin/security (no prompt), then ~/.claude/.credentials.json;
-    │   16 kHz PCM frames over wss://api.anthropic.com/api/ws/speech_to_text/voice_stream with
-    │   Claude Code's identity and the vocabulary as keyterms; KeepAlive every 8 s
-    ├── Codex -> Codex's ChatGPT sign-in in $CODEX_HOME/auth.json (~/.codex); a dictation session on
-    │   wss://chatgpt.com/backend-api/dictation/stream with Codex Desktop's identity: session.start,
-    │   base64 audio.append of at most 1 s each, and a new session at a pause 240 s after the
-    │   session started, or 285 s after regardless (a session lives 300 s)
-    ├── Audio waits for a slow connection in a queue of at most 30 s; past it the stream is given
-    │   up and Hex's model transcribes the clip
-    ├── Every look at the socket ends within 250 ms, even while a frame trickles in, so the
-    │   stream's thread always gets back to the audio, the release, or a discard
-    ├── Live text on -> Claude's words as it hears them (TranscriptText); Codex's utterances as
-    │   each one finishes (final_only)
-    ├── Short tap, chord, or discard -> the stream is dropped, nothing is finished; audio already
-    │   sent stays sent
-    └── Release -> engine::finish_with sends the unsent tail and CloseStream / session.close at
-        once, so the service finishes while earlier work runs; the engine's worker then waits
-        for the answer as the dictation's job (its deadline, quitting cancels it), at most 45 s
-        (measured on a 3 s clip: Claude 0.28 s, Codex 0.53 s after release, against 1.4 s and
-        0.75 s for the whole clip)
-        ├── Text -> pasted like any dictation (Output's modes still run); source=cloud in process.log
-        ├── The stream heard more than 250 ms past the clip (a delayed release) -> dropped, and
-        │   the exact clip goes to the service as below
-        ├── The service refused the stream (403/404/405/410, streaming rolled out per account)
-        │   -> the whole clip goes to it as below, and that provider streams no more for an hour
-        └── Anything else (no sign-in, an expired one, a drop, empty text) -> Hex's model
-
-Dictation finished without a stream     // engine worker run_dictation -> cloud::dictation
-├── Labs › Cloud transcription off -> Hex's model, as always
-└── On (programmatic captures, a refused stream) -> the whole clip goes to the service before
-    the engine touches its model, so an unloaded model (Unload model when idle) stays unloaded
-    ├── Claude -> the same WebSocket, all audio at once; Codex -> a WAV posted to
-    │   https://chatgpt.com/backend-api/transcribe
-    ├── One budget for connecting, sending, and the answer: 30 s plus the clip's length,
-    │   well inside the engine's job deadline; the attempt runs on its own thread, so a
-    │   cancelled job or quitting Hex stops the wait at once
-    └── No sign-in, an expired one, a language the service lacks (Claude: 20; Auto -> English),
-        a refusal, rate limit, the budget running out, or empty text -> Hex's model
-        transcribes the same clip; process.log names the reason
-        ("cloud transcription failed; transcribing on this computer")
-```
-
-Hex never refreshes or writes either sign-in: Claude Code and Codex renew
-their own tokens (Claude's last about eight hours, Codex's about ten days),
-so an expired one falls back until its app runs again. Both endpoints are
-the apps' private ones, reached with their identities, and may change or
-refuse without notice. Transcribe again stays on Hex's model.
-Everything goes through the computer's proxy: Codex's upload through
-`net`'s agent, both WebSockets through `net::tunnel` (an HTTP proxy's
-CONNECT). Tungstenite logs nothing below warnings whatever `RUST_LOG` asks,
-since its handshake trace carries the authorization header. Checks:
-`cloud::tests` (off sends nothing, the chosen service hears the whole clip,
-any failure leaves it to the model, cancel and deadline end the wait),
-`cloud::stream::tests` (the stream hears every sample by its release,
-failures go to the model, a refusal or overfeed goes to the whole clip, a
-stream 30 s behind is given up, cancel stops the wait), `cloud::tests`'
-streamed cases (a streamed answer is used without resending, a failed one
-goes to the model, a refused one sends the whole clip), the
-`a_*cloud_stream*` tests in `transcription::engine` (the service hears the
-end at release before the worker runs, an overfed stream is dropped for the
-exact clip), `cloud::claude::tests` (frames, live text, sign-in, keyterms,
-request), `cloud::codex::tests` (sign-in, form, answers, session frames,
-rotation by age, session.start), `cloud::socket::tests` (deadline, a
-look that ran its slice yields and resumes),
-`net::tunnel::tests` (CONNECT and refusals),
-`the_log_never_carries_the_websocket_handshake` in
-[app_paths.rs](../../src/app_paths.rs),
-`cloud_transcription_carries_its_provider` in [labs.rs](../../src/labs.rs),
-and the `mac-labs-cloud` golden (Linux). The live services have no
-automated check; the timings above are one run of a temporary probe on a
-Mac with real sign-ins.
 
 Restore shortcut default (`restore-shortcut-default`, issue 613): while on,
 General › Advanced › Paste last dictation shows a Restore default shortcut
@@ -448,106 +328,6 @@ and `tap_or_hold_still_discards_a_chord_and_off_keeps_plain_toggle` in
 (X11 grab or Wayland portal) with the toggle on; the Linux Labs page goldens
 need regenerating with the new row.
 
-Sort and filter models (`picker-sort-filter`, issue 645, every OS): while
-on, the speech model picker's Every model view shows one row between its
-header and the list: a sort (By recommendation, the default and the catalog's order; By
-size, smallest model file first with unknown sizes last; By name) and a
-switch, "Only models that support <saved language>" ("Only models that
-detect the language automatically" when the language is Auto), which keeps
-the models whose `supports_language` accepts it. Both are view state in
-`rune_ui/picker.rs`, reset each time the picker opens; they never save
-settings, send a request, or change the language or the active model. When
-the switch hides the model being prepared, or the active one, a line outside
-the results names it and its state (its preparation label or Active), with
-the preparation's Cancel. The gate is the picker itself
-(`sort_filter_on`); the feature does no other work. Off, the picker is
-exactly as before. Speed and accuracy sorts, and filters for English-only,
-multilingual, specific languages, size, streaming, and recognition hints,
-are not built yet. Checks: `recommended_keeps_the_catalogs_order_and_the_others_reorder_it`,
-`the_language_toggle_keeps_only_models_for_the_saved_language`,
-`a_hidden_preparing_or_active_model_is_named`, and
-`browsing_never_saves_or_asks_for_a_model` in
-[picker.rs](../../src/rune_ui/picker.rs). Not yet observed: the row rendered
-in a real window; there is no `--snap` scene for the picker with the Lab on,
-and the Labs page goldens need regenerating on Linux with the new row.
-
-Benchmark details (`benchmark-details`, issue 647, every OS): while on,
-each row in the speech model picker's Every model view that has a benchmark
-record (`transcription::models::benchmark`; Apple Speech has none) adds one
-wrapping line under its facts: the raw figure, such as "7.57% CER", then the measured language,
-the dataset and split, the source as plain text (with its source-record
-revision), the conditions (utterances, batch size, timestamps, hardware), and
-"Speed: upstream figure; hardware and method unknown". Anything the source
-didn't record reads "Dataset unknown", "Source unrecorded", "Hardware
-unknown", or "Conditions unknown". Qwen3-ASR 0.6B (7.57% CER) and SenseVoice
-Small (10.12% CER) carry transcribe.cpp's legacy-published Mandarin FLEURS
-test records (945 utterances, batch 8, no timestamps, source revision
-7045d1c; run IDs and scoring or artifact revisions unknown); the catalog's
-7.64 and 10.11 stay as the alternate legacy figures the picker shows with the
-toggle off. QwenCleo-ASR 1.7B names its author's 3,699-utterance Egyptian
-Arabic test. ivrit.ai Whisper large-v3-turbo carries Hex's own run of
-transcribe.cpp's WER harness on the FLEURS Hebrew test (18.45% WER, 792
-utterances, batch 1, no timestamps, Radeon 8060S over Vulkan, source revision
-7045d1c); every other figure is English WER with dataset and source
-unrecorded. A "Most accurate" badge stays only when its record is comparable
-(`BenchmarkRecord::comparable`: same metric, language, and a known, equal
-dataset) with every other recommended model's for the saved language, so
-today it drops everywhere. The gate is the picker (`benchmark_details_on`);
-the feature does no other work. Off, the picker is exactly as before.
-Checks: `benchmark_details_show_raw_rates_and_mark_unknowns`,
-`most_accurate_needs_comparable_figures_only_with_benchmark_details`, and
-`benchmark_details_are_off_by_default` in
-[picker.rs](../../src/rune_ui/picker.rs);
-`only_figures_on_the_same_metric_language_and_dataset_compare` in
-[models.rs](../../src/transcription/models.rs). Not yet observed: the rows
-rendered with the toggle on; there is no `--snap` scene for it, and the Labs
-page goldens need regenerating on Linux with the new row.
-
-Use your own speech model (`custom-models`) graduated: adding a model file
-and models found on this computer are always on now
-([own-models.md](own-models.md)). `hex labs on|off custom-models` still
-answers with that and exits 0 (`labs::GRADUATED`); the saved
-`labs.custom_models` key is ignored.
-
-Parakeet Ultra (`parakeet-ultra`, issue 648, every OS): a pinned catalog
-entry, `parakeet_ultra`, listed and runnable only while the toggle is on
-(`ModelDefinition::available` reads `labs::parakeet_ultra`).
-
-```ts
-Picker row -> "Parakeet Ultra" + Labs tag; 25 languages, offline, Token     // labs.parakeet-ultra
-│   timestamps; v3's "Detects language from audio" note; never recommended
-├── Download -> handy-computer/parakeet-ultra-gguf@a1539be1, parakeet-ultra-Q8_0.gguf,
-│   740,363,168 bytes, SHA-256 007a5976…0a59 (430 F32, 225 Q8_0, 48 F16 tensors)
-├── Details -> languages; peak memory measured on apollo (~0.7 GB GPU, ~0.2 GB
-│   RAM, Radeon 8060S over Vulkan; not measured elsewhere); "Experimental: Hex
-│   has run it only on Linux (Vulkan) so far."; the credit word for word ("Parakeet
-│   Ultra by Moondream, based on NVIDIA Parakeet TDT 0.6B v3. GGUF conversion and
-│   quantization by handy-computer. Creative Commons Attribution 4.0 International
-│   (CC BY 4.0)."); the publisher's NOTICE; Source and License links
-├── "Published conversion benchmarks; not measured in Hex" (folded) -> conditions
-│   (FLEURS test, Q8_0, CUDA, batch 8, each language's hint, no timestamps,
-│   transcribe.cpp 021aa17d; file digest, dataset revision, scorer unknown), then
-│   25 FLEURS WERs from transcribe.cpp 7045d1c's catalog/parakeet-ultra.json
-├── Accuracy 98.2% / Labs › Benchmark details: LibriSpeech test-clean 1.80%
-│   WER, the same published source (2,620 utterances, batch 8, CUDA)
-└── Toggle off while Ultra is the dictation model -> refused (row locked,
-    `hex labs off`, `hex settings set`); a saved Ultra with the toggle off some
-    other way stays saved and the listener runs a downloaded fallback
-```
-
-Observed on apollo (Linux, Radeon 8060S over Vulkan, 2026-11-01): the file
-matched its pinned size and SHA-256 (`hex model install` verified it); `hex
-model transcribe` with Ultra, passed and saved, transcribed FLEURS German and
-English and JFK correctly; Ultra ran a FLEURS English clip at 191x against
-Parakeet v3's 211x in transcribe-cli; turning the toggle off while Ultra was
-selected was refused. Not observed: Metal, Windows, the picker in a real window
-(the `picker-parakeet-ultra` scene was rendered once, not as a golden, because
-it lists Ultra only where the saved settings turn the Lab on).
-Checks: `parakeet_ultra_is_offered_only_with_its_lab_and_a_saved_choice_survives`
-in [models.rs](../../src/transcription/models.rs) and
-`parakeet_ultras_published_scores_cover_its_languages_once` in
-[model_details.rs](../../src/transcription/model_details.rs).
-
 Special keys alone (`special-keys`, issue 767, Linux): for holding Caps Lock
 to dictate on GNOME Wayland by remapping it to Menu (GNOME's "Caps Lock is
 also a Menu" keyboard option), or using Pause or Scroll Lock.
@@ -668,32 +448,6 @@ only); `recent_dictations_is_its_own_bit_and_off_by_default` in
 [labs.rs](../../src/labs.rs). Not yet observed: the submenu on a real Mac;
 the row renders only in macOS builds, so no golden changes.
 
-Skip long pauses (`skip-pauses`, issue 899, Linux and Windows): for slow
-CPUs and older integrated GPUs, where a dictation is transcribed as a whole
-clip (no stream, or the fallback after a failed or late stream) and every
-second of silence goes through the model. While on, the engine's whole-clip
-run (`TranscriptionEngine::finish` in
-[transcription/engine.rs](../../src/transcription/engine.rs)) reads
-`labs::skip_pauses()` as it starts and transcribes the clip as a dictation
-stream hears it (`skip_long_pauses` in
-[engine/streaming.rs](../../src/transcription/engine/streaming.rs), the same
-`PauseCap`): each pause at the noise floor keeps its first 2.5 s and last
-0.3 s, a trailing pause only its first 2.5 s, and shorter pauses pass whole.
-A clip in which no frame rose above the noise floor is left whole, as the
-stream does for #841. The job deadline, History's duration, and the silence
-discard still use the full clip; process.log adds a `skipped long pauses
-before whole-clip transcription` line with `pauses_dropped_ms`. macOS,
-streams, and the local API are unchanged, and off the
-clip is passed through untouched. Checks:
-`skipping_pauses_cuts_a_whole_clips_long_pauses_to_their_ends`,
-`skipping_pauses_leaves_short_pauses_and_quiet_only_clips_whole`, and
-`with_skip_pauses_off_the_whole_clip_is_untouched` in
-[transcription/engine.rs](../../src/transcription/engine.rs);
-`skip_pauses_is_its_own_bit_and_off_by_default` in [labs.rs](../../src/labs.rs).
-Not yet observed: a real dictation with the toggle on in Hex (the reporter
-measured their own branch on an i5-8259U); the Labs page goldens need
-regenerating on Linux with the new row.
-
 Fix results in Output (`output-fixes`, issue 989, every OS): for a Try
 result in Settings › Output that comes out wrong. While on, the Try card
 adds a row under the sentence with a Vocabulary button, which opens the same
@@ -713,117 +467,6 @@ in [rune_ui/tests.rs](../../src/rune_ui/tests.rs) and
 [rune_ui/output.rs](../../src/rune_ui/output.rs). Not yet observed: the row
 in a real window; the Labs page goldens need regenerating on Linux with the
 new row (the Output goldens keep the toggle off and are unchanged).
-
-Model in use first (`picker-active-first`, issue 1019, every OS): while on,
-the speech model picker remembers the saved model when it opens, only if it
-is installed (`Picker::in_use_first`, set in `picker::open`, cleared in
-`close`), so the order never moves while the picker is open, even if another
-model is chosen or prepared. Compare puts it in the first column and fills
-the rest with the first models that speak the language, without it; a model
-being prepared that the three leave out still takes the last column. Every
-model moves it to the top of its group, and an import in use puts "Your
-model files" above the language's group; with Labs › Sort and filter models
-sorting By size or By name the list keeps that exact order, and By
-recommendation leads with it. The gate is the ordering itself
-(`picker::pinned` and `list_first` read the toggle; `compare::columns` and
-`list::groups` take what they return); off, both views are exactly as
-before. Checks: `the_model_in_use_is_fixed_while_the_picker_is_open` and
-`without_model_in_use_first_nothing_is_pinned` in
-[picker.rs](../../src/rune_ui/picker.rs),
-`the_model_in_use_takes_the_first_column_only_when_pinned` in
-[picker/compare.rs](../../src/rune_ui/picker/compare.rs), and
-`the_model_in_use_leads_its_group_only_when_pinned` in
-[picker/list.rs](../../src/rune_ui/picker/list.rs). Not yet observed: the
-picker in a real window with the toggle on, or an import's group moving
-(no automated check builds an import entry); the Labs page goldens need
-regenerating on Linux with the new row.
-
-Use model files where they are (`model-in-place`, issue 941, every OS): for
-one speech model file shared by several accounts. While on, the speech model
-picker's Every model header adds "Use model file where it is…" beside "Add
-model file…"; the chosen GGUF is checked, hashed once, and recorded with its
-path (`custom_models::add_in_place`), never copied
-([own-models.md](own-models.md#use-a-model-file-where-it-is-labs)). The gate
-is `model_import::in_place_on`, read when the button draws and again when the
-dialog answers, before the worker starts. Off, the picker is exactly as
-before. Checks:
-`a_file_added_in_place_is_recorded_by_path_copied_nowhere_and_forgetting_leaves_it`
-in [transcription/custom_models.rs](../../src/transcription/custom_models.rs);
-`every_feature_is_off_by_default_and_round_trips` in
-[labs.rs](../../src/labs.rs). Not yet observed: a real window or a second
-macOS account; the Labs page goldens need regenerating on Linux with the new
-row.
-
-Downloaded models only (`picker-downloaded`, issue 1018, every OS): for
-seeing which speech models take disk space and deleting unused ones. While
-on, the speech model picker's All speech models view shows one row under its
-header (below Sort and filter models' row when that Lab is on too): "Downloaded
-models take <size>", the sum of the pinned sizes of every downloaded catalog
-model and import whose file is in Hex's own models folder (files another app
-downloaded, and imports added where they are, aren't counted), and a switch,
-"Only downloaded models". The switch keeps only the rows the picker reads as
-downloaded (catalog models, imports, and found catalog models in use) and
-leaves out "On this computer"; each keeps its usual Delete (Forget for a file
-used in place) with its confirmation. It is view state in
-`rune_ui/picker.rs`, reset each time the picker opens; it saves nothing and
-sends no request. When it hides the model being downloaded, a line outside
-the results names it with its progress and Cancel. The gate is the picker
-(`downloaded_on` in `shown_models`, the row, and `list::body`); off, the
-picker is exactly as before. Not built: a button that shows the models folder
-in the file manager, or choosing another folder for models. Checks:
-`only_downloaded_models_keeps_the_installed_ones`,
-`the_downloaded_total_adds_up_hexs_own_files`, and
-`without_downloaded_models_only_the_picker_is_unchanged` in
-[picker.rs](../../src/rune_ui/picker.rs);
-`every_feature_is_off_by_default_and_round_trips` in
-[labs.rs](../../src/labs.rs). Not yet observed: the row in a real window; the
-Labs page goldens need regenerating on Linux with the new row.
-
-Keep recordings (`keep-recordings`, issue 1032, every OS): for hearing a
-dictation again through a different model.
-
-```ts
-Labs › Keep recordings on                     // labs.keep-recordings
-├── Dictation saved to History -> its 16 kHz mono clip is written as a 16-bit
-│   WAV, history-audio/<id>.wav beside history.json (folder 0700, file 0600)
-│   ├── The gate: `Recording::keep`, read as each capture goes to the engine
-│   │   (parakeet::submit on macOS, submit_capture on Windows and Linux)
-│   ├── History Off, the local API's dictations -> no entry, no audio
-│   └── Entries from before the toggle was on -> no audio
-├── Retention, the 10,000-entry and text caps, Delete, Clear all -> the
-│   entry's WAV is deleted at the next save (`recordings::sweep`)
-├── Over 512 MiB of audio -> the oldest entries lose their audio, keep their text
-├── History card, entry with audio -> "Saved recording" + "Transcribe again" menu
-│   ├── Lists every available model installed for the language it would use
-│   ├── A model that takes a language hint (not Parakeet v3/Ultra, GigaAM,
-│   │   Bark) -> "<model> · Language: <saved language>" menu (Auto when it
-│   │   detects, then its languages) + Transcribe; the language applies to
-│   │   that run only, never to settings (#1068)
-│   ├── Choose one -> "Transcribing with <model>…" on a worker: its own
-│   │   transcription service, sharing the dictation engine's model when it is
-│   │   the one chosen, yielding to dictation; otherwise loads a copy for the run
-│   ├── Done -> "Transcribed again with <model>", the text, Copy, Replace
-│   │   └── Replace -> the entry's text becomes it (processing record dropped);
-│   │       the audio stays
-│   └── Failed -> "Could not transcribe again: <why>"
-└── Toggle off -> nothing new is saved and the menu hides; existing audio stays
-    until it expires or History is cleared
-```
-
-No playback yet. Off, History and dictation are exactly as before: no copy
-of the clip is made. Checks: `a_kept_recording_is_an_owner_only_wav_that_reads_back`,
-`recordings_leave_with_their_entries`,
-`the_recordings_byte_cap_drops_the_oldest_audio_but_keeps_the_text`,
-`a_recording_another_process_has_not_saved_yet_survives_a_sweep`,
-`replacing_the_text_keeps_the_entry_and_its_recording`, and
-`retranscribing_a_missing_recording_says_so` in
-[history.rs](../../src/history.rs);
-`transcribe_again_shows_only_with_its_lab_and_replace_updates_the_entry` and
-`transcribe_again_offers_a_language_only_for_models_that_take_one` in
-[tests.rs](../../src/rune_ui/tests.rs);
-`keep_recordings_is_its_own_bit_and_off_by_default` in
-[labs.rs](../../src/labs.rs). Not yet observed: a real dictation kept and
-transcribed again with another model in a window, on any OS.
 
 Hide menu bar icon (`hide-menu-bar-icon`, issue 1064, macOS): for people
 who only use the shortcut and want the menu-bar space back. The status item
@@ -968,12 +611,6 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   [panes.rs](../../src/rune_ui/tests/panes.rs);
   `the_setting_or_an_installed_driver_turns_the_voice_filter_on_and_labs_never_does`
   in [app_settings.rs](../../src/app_settings.rs).
-- Vocabulary biasing: Parakeet transcription biased toward the
-  [vocabulary](vocabulary.md) (`transcribe_cpp::RunExtension::ParakeetVocabulary`),
-  the request behind issue 452 / PR 457. Off (the default),
-  `dictation::vocabulary::transcription_bias` returns nothing, so no run or stream takes
-  the list; rewriting and search still use it, and the Vocabulary sheet says
-  so.
 - Terminal paste (Windows): paste with Ctrl+Shift+V instead of Ctrl+V for
   apps that ignore a synthetic Ctrl+V (issue 477 / PR 478). Its toggle is the
   shared `paste_with_shift`; Linux keeps it as a General › Advanced row.
@@ -981,7 +618,6 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
 Checks: `labs_is_one_flat_list_of_toggles_off_by_default`,
 `contributed_options_are_labs_toggles_off_by_default`,
 `the_browser_labs_toggle_turns_on_and_asks_for_system_audio`,
-`keyboard_model_switching_is_a_labs_toggle_wherever_layouts_are_observable`,
 `voice_filter_shows_only_while_its_labs_toggle_is_on`, and
 `an_installed_driver_keeps_the_voice_filter_on` in
 [panes.rs](../../src/rune_ui/tests/panes.rs);

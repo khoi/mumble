@@ -105,30 +105,18 @@ bind `hex dictation cancel` to a key in the desktop instead (#786, #1022).
 `onboarding reset` (or `onboarding restart`) opens the window on the
 first-run onboarding at once, as on a new install, for trying it again, on
 macOS, Linux, and Windows. It removes only the onboarding markers (`onboarding-complete`, `onboarding-step`,
-`onboarding-relaunch`) from the data folder. Settings, history, models, and
-permissions are untouched, so the run finds them ready: the download passes at
-once and the permission step is skipped. Labs' Run setup again row does the
-same.
+`onboarding-relaunch`) from the data folder. Settings, history, and
+permissions are untouched, so the run finds them ready and the permission step
+is skipped. Labs' Run setup again row does the same.
 
 `paste-last` needs a listening Hex (`not-ready` during setup) and is refused
 with `busy` while anything records or a shortcut gesture is in progress. The
 menu bar's Paste Last Dictation does nothing in that case.
 
-`model import`, `rename`, `repair`, and `remove` run in this process on every
-OS; `hex models` is an alias for `hex model`. An import's id is `custom-` and
-the first 16 hex digits of its SHA-256, and every model command takes it. One
-that is missing or changed answers `model-unavailable` with the reason.
-`model list` also looks in the Hugging Face cache and says where each model
-comes from (`download`, `hex`, `imported`, or `found: owner/name@abcdef1`); a
-compatible file there that isn't a catalog model is listed as `custom-<first 16
-hex of its blob>` `(not tested by Hex)`, and `model use` with that id checks it
-in full and uses it where it is. `remove` on a found file only forgets it
-([own models](features/own-models.md)).
-
-`model use` switches only to a downloaded model and checks it on disk; it never
-downloads or repairs one (`model install` does). It keeps that model's own
-remembered language, as the menu bar does; `--language`
-overrides only the language, and must be one the model supports.
+Transcription is cloud-only: the service and language are the
+`transcription.provider` (`claude` or `codex`) and `transcription.language`
+settings, changed with `hex settings set`. There is no `hex model` command and
+no local model to download.
 
 `vocabulary` edits the [shared vocabulary](features/vocabulary.md) through the
 running Hex, which saves settings and reloads them as a window edit would.
@@ -147,13 +135,6 @@ command and `hex start` then answer `outdated` (exit 1) instead of
 `not-running`, and `hex restart` restarts its systemd unit into the installed
 build and waits for it to answer (#915); one not run by the unit has to be
 quit from its window or tray.
-
-`model install` with Hex running downloads in the background, as Settings
-does; on Linux and Windows with no Hex running it downloads in this process,
-printing progress (the source-install step `hex model install`). `model
-status`, `devices`, `check`, and `transcribe` are local tools on Linux and
-Windows and take the selected model unless one is named; macOS answers
-`unsupported`.
 
 `start` and `restart` keep the `HEX_*` environment (`HEX_RETAIN_DICTATION_AUDIO`,
 `HEX_ENABLE_LLM`, and so on): macOS opens apps without the caller's
@@ -191,14 +172,14 @@ the discovery file lives in `~/.local/share/hex` and `%APPDATA%\hex`.
   `504 control-timeout`. Bad or missing tokens get `401` like every other
   route.
 
-## Wire format (version 6)
+## Wire format (version 7)
 
 Requests are flat objects tagged by `command` (kebab-case):
 
 ```json
-{"version": 6, "command": "settings-set", "key": "sound_effects", "value": "off"}
-{"version": 6, "command": "dictation", "action": "start"}
-{"version": 6, "command": "dictation", "action": "stop", "print": true}
+{"version": 7, "command": "settings-set", "key": "sound_effects", "value": "off"}
+{"version": 7, "command": "dictation", "action": "start"}
+{"version": 7, "command": "dictation", "action": "stop", "print": true}
 ```
 
 ```ts
@@ -207,7 +188,6 @@ dictation {action, print?}                       action: start | stop | toggle |
                                                  print (stop only) answers `transcript`
 paste-last
 settings-get {key?} | settings-set {key, value}
-model-list | model-use {model, language?} | model-install {model, language?} | model-cancel
 window-show {pane?} | window-hide | window-story {story, variant?, play}
 onboarding-reset
 history-clear | check-for-updates | launch-at-login {enabled?}
@@ -221,16 +201,13 @@ no wire form. `history-clear` has no confirmation field: the CLI asks for
 Replies are tagged by `status`:
 
 ```json
-{"version": 6, "status": "done", "message": "Quitting Hex", "changed": true}
-{"version": 6, "status": "error", "code": "feature-off", "message": "the playground is in Labs; …"}
-{"version": 6, "status": "settings", "settings": [{"key": "sound_effects", "value": true,
+{"version": 7, "status": "done", "message": "Quitting Hex", "changed": true}
+{"version": 7, "status": "error", "code": "feature-off", "message": "the playground is in Labs; …"}
+{"version": 7, "status": "settings", "settings": [{"key": "sound_effects", "value": true,
   "kind": "bool", "writable": true, "about": "Play recording and error tones"}]}
-{"version": 6, "status": "models", "models": [{"id": "parakeet_v3", "name": "…",
-  "languages": ["en", "…"], "size": "…", "installed": true, "selected": true,
-  "streams": true, "vocabulary": "bias", "supports_recognition_hints": false}]}
-{"version": 6, "status": "vocabulary", "entries": [{"term": "OpenCode",
+{"version": 7, "status": "vocabulary", "entries": [{"term": "OpenCode",
   "sounds_like": ["open code"]}, {"term": "Rune"}]}
-{"version": 6, "status": "transcript", "text": "Ship it."}
+{"version": 7, "status": "transcript", "text": "Ship it."}
 ```
 
 `done.changed` is `false` when the command found things already so ("Already
@@ -242,15 +219,13 @@ recording", "The window isn't open"). Setting `kind` is one of `bool`,
 
 ```json
 {
-  "version": 6, "status": "status",
+  "version": 7, "status": "status",
   "app_version": "2.3.1", "pid": 31708, "memory_footprint_bytes": 412000000,
   "listener": {"running": true, "status": "Listening"},
   "capture": {"state": "idle", "recording": null, "pending_jobs": 0},
-  "model": {"id": "parakeet_v3", "name": "…", "language": "en", "installed": true,
-            "preparing": null, "downloaded_bytes": 0, "error": null},
+  "transcription": {"provider": "claude", "language": "en"},
   "features": {"release_microphone_while_idle": false, "history_retention": "week"},
-  "permissions": {"ready": true, "microphone": "ready", "accessibility": "ready",
-                  "transcription_model": true},
+  "permissions": {"ready": true, "microphone": "ready", "accessibility": "ready"},
   "window": {"open": false, "pane": null},
   "update": "current",
   "labs": ["live-text"]
@@ -283,11 +258,8 @@ read-only              the key can't be set here (the message says where)
 invalid-value          the value doesn't parse or is out of range
 confirmation-required  clears history; pass --yes
 shortcut-in-use        another Hex shortcut already uses that binding
-unknown-model          no such model id (`hex model list`)
-model-unavailable      an imported model that is missing, changed, or behind its Labs toggle
-not-installed          `model use` on a model that isn't downloaded (`hex model install`)
 feature-off            the command needs an opt-in that is off (the playground)
-not-ready              Hex is waiting for setup (permissions or the dictation model)
+not-ready              Hex is waiting for setup (permissions)
 busy                   something is in progress (recording, transcribing, a full queue),
                        or the listener couldn't confirm it's idle
 discarded              `stop` dropped the clip: no audio yet, or silent; nothing transcribes
@@ -307,18 +279,9 @@ Changes go through the same rules as the window and are saved by the app,
 which then reloads them live; an open window adopts the change unless it has
 an unsaved edit.
 
-On macOS, Windows, and Linux on X11, `keyboard_model_switching.enabled` opts
-into switching the shared speech-model picker on keyboard input-source changes.
-The JSON setting `keyboard_model_switching.mappings` maps enabled input-source
-IDs to a model and a language it supports, for example
-`{"com.apple.keylayout.Spanish":{"model":"parakeet_v3","language":"es"}}`.
-Source IDs are macOS input-source IDs, Windows keyboard layout handles
-(`04190419` for Russian), or X11 XKB layouts (`ru`, `de(neo)`). Omit a source
-for "Don't switch"; Apple Speech can't be mapped. Automatic switches load
-installed models only; they never download them. Enabling or editing the active
-mapping applies it; launching Hex does not reapply it. Wayland has no general
-protocol for the active layout, so there Hex keeps the settings but does not
-observe input-source changes or show these controls.
+Transcription is cloud-only: `transcription.provider` takes `claude` or
+`codex`, and `transcription.language` takes a language code (`en`, `de`, `fr`,
+…) or `auto`. Both are writable here; a change applies to the next dictation.
 
 - Booleans take `on`/`off`, `true`/`false`, `yes`/`no`, or `1`/`0`.
 - Optional settings take `none` to clear them.
@@ -350,8 +313,7 @@ observe input-source changes or show these controls.
   a key on an external keyboard. It acts only while
   `labs.second_dictation_shortcut` is on (`hex labs on
   second-dictation-shortcut`) and shares no key with another shortcut.
-- `json` settings (modes, keyboard model mappings) take the JSON value the
-  file stores.
+- `json` settings (modes) take the JSON value the file stores.
 - `ui_language` takes `en`, `pl`, `zh` (Simplified Chinese), `zh-Hant`
   (Traditional Chinese), `ja`, `de`, `es`, `uk`, `pt`, `fr`, or `none`
   (follow the system language), the same languages Settings offers. Following
@@ -362,38 +324,32 @@ observe input-source changes or show these controls.
   another channel than the build's offers that channel's current release
   ("Switch to Stable 2.3.1" in the window); Hex installs it only once you
   confirm there. Versions are never compared.
-- `transcription.model` and `transcription.language` are read-only here: use
-  `hex model use`. `transcription_recents` is read-only.
+- `transcription.provider` (`claude` or `codex`) and `transcription.language`
+  (a language code or `auto`) choose the cloud transcription service.
 
 `recording_audio_behavior` also accepts `duck` (Lower audio): macOS and Linux
 lower the default output, Windows lowers other apps' audio sessions.
 `recording_duck_volume` sets the fraction of the original output volume (0–1,
 default 0.2), applied on the next intentional capture when ducking is selected.
 
-Writable keys: `release_microphone_while_idle`,
+Writable keys: `transcription.provider`, `transcription.language`,
+`release_microphone_while_idle`,
 `sound_effects`, `sound_effect_volume`, `sound_theme`, `microphone`,
 `avoid_bluetooth_microphone`, `recording_audio_behavior`, `recording_duck_volume`, `double_tap_lock`, `double_tap_only`,
 `shortcut_mode`, `dictation_hotkey`, `paste_last_hotkey`, `raw_dictation_hotkey`,
-`second_dictation_hotkey`, `labs.second_dictation_shortcut`, `labs.standalone_special_keys`, `show_dock_icon`, `vocabulary_boost`,
+`second_dictation_hotkey`, `labs.second_dictation_shortcut`, `labs.standalone_special_keys`, `show_dock_icon`,
 `dictation_processing.default_mode`, `dictation_processing.modes`,
 `history_retention`, `experimental.hex_microphone`, `experimental.hex_microphone_mode`,
 `experimental.hex_microphone_comfort_noise`,
 `experimental.hex_microphone_strength`, `enable_on_launch`,
 `paste_with_shift`, `ui_language`, `indicator_position`, `updates.channel`.
 
-`transcription.recognition_hints` is deprecated: recognition hints merged into
-the [vocabulary](features/vocabulary.md). `get` returns the vocabulary's terms,
-comma-separated, and `set` (or `apply`) adds the comma-separated names to it;
-`list` leaves the key out. Model listings keep `supports_recognition_hints`
-(true where the model reads the vocabulary as its prompt) beside the newer
-`vocabulary`: `prompt`, `bias`, or `none`.
-
 A test (`control::settings::tests::every_persisted_setting_has_a_cli_key`)
 fails when a new persisted setting has no key here.
 
 ## Compatibility
 
-`CONTROL_VERSION` is 6. A change that breaks a request or reply shape
+`CONTROL_VERSION` is 7. A change that breaks a request or reply shape
 increments it; adding a command, an optional request field, or a reply field
 does not. A `hex` from a different version gets `version-mismatch`; use the
 `hex` inside the running Hex.app, or restart Hex after updating. Version 2
@@ -407,4 +363,8 @@ removed `permissions.input_monitoring` from the status reply; version 3 removed
 `scrawl-capture-list`, `scrawl-capture-show`, `scrawl-capture-send`,
 `scrawl-capture-undo`, `scrawl-capture-route`, their replies
 (`scrawl-capture`, `scrawl-captures`, `scrawl-capture-detail`, and
-`scrawl-capture-route`), and the `not-found` error.
+`scrawl-capture-route`), and the `not-found` error; version 7 removed
+`model-list`, `model-use`, `model-install`, `model-cancel`, the `models`
+reply, the status reply's `model` (now `transcription: {provider, language}`),
+`permissions.transcription_model`, and the `unknown-model`, `model-unavailable`,
+and `not-installed` errors (transcription is cloud-only).

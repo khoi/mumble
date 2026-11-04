@@ -14,7 +14,7 @@ locators unless an executed result is explicitly recorded, as in the
 
 ```ts
 Hex                                      // macOS release
-├── Get ready                            // install, permissions, local model
+├── Get ready                            // install, permissions, sign in to Claude or Codex
 ├── Dictate                              // hold OR double-tap lock
 ├── Use the result                       // paste, paste-last, History
 ├── Adjust behavior                      // shortcut, microphone, recording preferences
@@ -27,13 +27,9 @@ Hex                                      // macOS release
 [Dictation](dictation.md) and [Recovery](recovery.md) have detailed maps.
 Agents can [read retained transcripts](transcript-cli.md) and
 [control the running app](control-cli.md) with the release CLI.
-[Labs](labs.md) is one switch, on by default, for every unfinished feature.
+[Labs](labs.md) lists every unfinished feature as a row, each off by default.
 Its Restore shortcut default toggle (off by default) puts a Restore default
-button beside Paste last dictation's shortcut (#613); its Sort and filter
-models toggle (off by default) adds a sort and a saved-language filter to the
-Local transcription picker (#645); its Benchmark details toggle (off by
-default) shows each model's raw WER or CER with its language, dataset, source,
-and conditions (#647).
+button beside Paste last dictation's shortcut (#613).
 General › Advanced › Interface language offers Português (Brasil), and Hex
 uses it for any Portuguese system language (#867); it also offers Français,
 used for any French system language (#892). Neither has had a native
@@ -41,9 +37,8 @@ speaker's review yet. It offers 简体中文 (`zh`) and 繁體中文 (`zh-Hant`,
 Traditional Chinese is drafted from the Simplified strings by a character and
 Taiwan-usage phrase converter (`desktop/i18n/traditional_chinese.rs`), not yet
 reviewed by a native speaker.
-The [vocabulary](vocabulary.md) biases transcription toward names you list.
-[Your own speech models](own-models.md) covers adding a GGUF file and using
-models another app already downloaded.
+The [vocabulary](vocabulary.md) lists names you want spelled correctly; Hex
+sends them to the transcription service as keyterms.
 The other capabilities stay here until they need their own verification recipe.
 
 ## Get Ready
@@ -70,18 +65,17 @@ Download Hex                              // setup.download-recovery
 
 Install on Windows                        // setup.windows-installer
 ├── Setup.exe, per user, no admin -> managed versions\<version>\hex.exe
-│   ├── x64 without vulkan-1.dll -> stop with driver guidance
 │   ├── another version installed (e.g. self-updated) -> install this one over it
-│   └── finish -> Open Hex -> the first run downloads a model
+│   └── finish -> Open Hex
 └── Settings › Apps -> uninstall every version, shortcut, Launch at login; keep data
 
 Install on Linux                          // setup.linux-installer
 └── curl … | sh -> signed feed -> verified artifact -> launcher + hex.service
     └── cannot start -> name the glibc floor or the missing Arch packages
 
-Prepare local models                      // separate network dependency
-└── Dictation -> huggingface.co and its download CDN
-    └── Transfer fails -> host-specific guidance -> restore access -> Retry
+Sign in to transcribe                     // setup.sign-in
+└── Dictation -> Claude or Codex, through the sign-in their own app holds
+    └── Signed out or expired -> the dictation fails with that reason -> sign in
 ```
 
 The website shows the pinned macOS version and platform requirements beside its
@@ -164,37 +158,13 @@ Launch Hex, setup incomplete              // setup.tour; every build and OS, ful
 ├── Upgrading from 2.3.1 or earlier (same `hex` folder)     // setup.upgrade; macOS
 │   ├── `anomaly.hex` is a new identity: macOS kept none of the old grants
 │   ├── Settings without `anomaly-hex-identity` in `migrations` -> checked once at launch
-│   │   ├── Permissions or the selected model not ready -> the old completion
+│   │   ├── Permissions not ready -> the old completion
 │   │   │   no longer counts -> onboarding opens from the start
 │   │   └── Everything ready -> no onboarding; nothing but the ID changes
 │   ├── Saved settings are kept; the ID is recorded either way
 │   └── Setup ready, listener starting -> a running 2.3.1 or Swift Hex   // setup.quit-legacy
 │       (retired bundle IDs) is asked to quit, so both never answer Option;
 │       it stays installed. No check; `macos_rune::quit_legacy_hex`
-├── Setting up Hex -> speech model download starts at once  // setup.background-download
-│   ├── Model -> the selection recommended for the system's first preferred
-│   │            language (English -> Parakeet Unified English; e.g. French ->
-│   │            Parakeet v3, Japanese -> Qwen3-ASR); the language capsule
-│   │            switches between English and that language
-│   ├── The download is held while the Hugging Face scan runs (headers only)
-│   ├── Models found here -> the model step instead      // setup.found-choice
-│   │   ├── "Choose a speech model": one list, ours first and selected, then the
-│   │   │   found files; a pick starts at once (ours downloads, a found one is
-│   │   │   checked and used in place); Continue starts the selected row
-│   │   ├── A found pick moves on with no download page or pill
-│   │   └── Back on the pages after it returns to the list to change the pick
-│   ├── Nothing found -> this page as always, the recommended model downloading
-│   ├── Progress moves to the top pill once the story moves on; failure ->
-│   │   why, in one line (a proxy or certificate, #894), + Use a model
-│   │   file… + Try again
-│   ├── Failed, or stalled 30 s without bytes, with every permission ready
-│   │   -> Continue without a model (quiet), saying dictation won't work
-│   │   until a model is added with Add model file…      // setup.without-model
-│   │   └── Records completion and closes onboarding; Settings › General's
-│   │       Speech model row says no model is installed (with the download's
-│   │       error), + Download + Add model file…. Check: golden
-│   │       `onboarding-no-model`, `onboarding_continue_without_model`
-│   └── Change or delete the model later in Settings      // setup.delete-model
 ├── The demo: Without Hex (typed, with typos) -> With Hex (spoken) -> Continue
 ├── Quit part-way -> next launch resumes at the saved step  // setup.resume
 │   └── Permissions are read again at launch: a setup they now finish (macOS's
@@ -217,7 +187,7 @@ Launch Hex, setup incomplete              // setup.tour; every build and OS, ful
 │   ├── Windows: only while the microphone privacy switch is off: "Let Hex hear
 │   │   you", one Microphone row -> Open Settings (ms-settings:privacy-microphone)
 │   └── Linux: no page
-├── Almost ready: the model still downloads -> waits, then Your turn
+├── Almost ready -> Your turn
 ├── Your turn: the practice game          // setup.practice; every OS
 │   ├── "Clear your messages": hold the saved shortcut and answer the lit card;
 │   │   Hex's own dictation (macOS listener, Linux and Windows event log) holds
@@ -231,18 +201,8 @@ Launch Hex, setup incomplete              // setup.tour; every build and OS, ful
     ├── Try again -> back to the practice game
     └── Start using Hex -> records completion once setup is ready; closes onboarding
 Run setup again (Labs) or `hex onboarding reset` -> the same story from the start,
-on every build; settings, models, and permissions stay, so their pages pass
+on every build; settings and permissions stay, so their pages pass
 ```
-
-General > Speech model, selected model not downloaded     // settings.model-missing (#676)
-├── Muted "Hex can't listen until the speech model has downloaded"
-├── Downloading -> progress bar beside the model
-└── No download running -> Download (the same ChooseModel); a failure shows its error
-
-General > Speech model or Language
-  -> Prepare candidate
-     ├── Success -> Save selection
-     └── Failure -> Preserve previous selection and show error
 
 Permissions revoked later
   -> General > Permissions needed: Allow rows like onboarding's
@@ -265,368 +225,32 @@ or untrusted in System Settings. Checks:
 [rune_ui/tests/panes.rs](../../src/rune_ui/tests/panes.rs). Scenes:
 `mac-onboarding-stale`, `mac-settings-permissions-stale`.
 
-Apple silicon, macOS 15+. Choices come from the compiled model/language catalog;
-Apple Speech is currently excluded from the desktop picker.
+Apple silicon, macOS 15+. Transcription is cloud-only: every dictation goes to
+Claude or Codex through the sign-in those apps already hold. There is no local
+speech model to choose, download, or run.
 
 ```ts
-General > Dictation > Speech model, then Language below it   // setup.language-select; every desktop root
-├── Speech model -> Picker: Compare, then every model; never changes the language
-│   ├── Compare -> "Speech model for Japanese": three columns from the saved
-│   │   language's models, recommendations first; "{n} more models" -> every model
-│   ├── Every model -> the saved language's models, Your model files, then a fold
-│   │   "{n} more that don't speak Japanese"
-│   ├── Model without the saved language -> Row: "Choosing it switches the
-│   │   language to English"
-│   └── Choose it -> ChooseModel(model, model's default: English, else its first)
-│       └── Saved -> Language row: "<Model> doesn't support Japanese, so the
-│           language changed to English" until the next choice
-├── Language -> Select of the saved model's languages (catalog order, Auto first
-│   when it detects); one language -> the field shows it, disabled
-│   └── Choose -> ChooseModel(same model, language): the same preparation as a
-│       model choice, so per-language assets (Apple Speech locales) install
-└── The saved TranscriptionSelection is always a pair the model supports
+General > Dictation > Transcribe with, then Language below it   // setup.transcription; every desktop root
+├── Transcribe with -> Claude or Codex (transcription.provider; Claude default)
+│   └── Uses the app's own sign-in (Claude Code's token, Keychain, or
+│       .credentials.json; Codex's auth.json); Hex never refreshes or writes it
+├── Language -> a language code (transcription.language; "en" default), or Auto
+└── Vocabulary (vocabulary.md) rides along as keyterms (Claude)
 ```
 
-Sources: [shared picker](../../src/rune_ui/picker.rs) (`choose`,
-`choose_language`, `language_row`) and `picker_models`, `language_choices`,
-`language_for` in [transcription/models.rs](../../src/transcription/models.rs).
-Checks: `the_picker_lists_every_model_with_the_language_s_recommendations_first`,
-`a_model_switch_keeps_a_supported_language_or_falls_back_to_the_model_s_default`,
-`each_model_offers_exactly_the_languages_it_supports`, and the Rune tests
-`a_model_without_the_saved_language_falls_back_to_its_own_visibly`,
-`browsing_the_picker_never_changes_the_language`,
-`changing_only_the_language_prepares_the_same_model_again`, and
-`settings_opens_the_picker_and_names_the_model_and_language_apart`. Scenes:
-`picker-japanese`, `picker-japanese-all`, `language-fallback`, `language-menu`. Fixture renders and
-recorded requests only; a live model switch with a fallback has not been
-observed. Apple Speech stays excluded, so its per-locale install through the
-Language row is unexercised.
+Sign in to Claude Code or Codex in their own app before dictating; an expired
+or missing sign-in reads as signed out, and the dictation fails with that
+reason (there is no local fallback). The selection is two `hex settings` keys,
+`transcription.provider` and `transcription.language`, applied to the next
+dictation.
 
-```ts
-Choose a supported language              // setup.language-conditioning; macOS + Linux picker
-├── Parakeet v3 -> Detect language from audio; selected language does not constrain output
-├── Whisper -> Use selected language to guide decoding; accuracy is not guaranteed
-├── Whisper (ivrit.ai's too), Qwen3-ASR 0.6B, QwenCleo-ASR 1.7B -> Vocabulary ->
-│   context prompt (vocabulary.md); output that only repeats it is dropped
-├── Hebrew -> ivrit.ai Whisper large-v3-turbo, always with the `he` hint (it
-│   lost Whisper's language detection); stock Whisper turbo also offers it
-├── Russian -> GigaAM v3 (Russian only, no language input); Parakeet v3 and
-│   Whisper turbo also offer it
-└── Bangla -> Whisper only, with the `bn` hint; Auto lets Whisper guess per clip
-```
-
-Whisper and Qwen3-ASR (including QwenCleo) read the shared
-[Vocabulary](vocabulary.md) as their context prompt; recognition hints, a
-separate per-model box, merged into it ([#129](https://github.com/anomalyco/hex/issues/129)).
-Observed on apollo (Vulkan, 2026-10-31, LibriSpeech test-clean), when they were
-still hints: with Qwen3-ASR 0.6B, "Kaffar, Rodolfo, Bragelonne, …" fixed Caffer,
-Rudolpho, Redolfo, Rudolph, and Bragolon in 10 clips without changing the others
-checked. Both families, on silence or noise, often return the prompt verbatim
-(Qwen3-ASR 0.6B did on 3 s of silence and of noise). A segment whose text
-equals the prompt after normalization (case, ASCII punctuation, spelled-out
-digits; commas, semicolons and line breaks separate words) is removed, in
-dictation and Transcribe again alike. The filter needs at least two
-terms, so dictating the one listed name still pastes it; speech that contains
-a term among other words is kept, and so is a repeat of only some terms.
-Checks: `prompt_echo_is_dropped`, `speech_containing_the_hints_is_kept`,
-`only_the_echo_segment_is_removed`, `single_hint_dictation_is_kept`, and
-`hints_without_spaces_after_commas_are_matched` in
-[transcription/gguf_session.rs](../../src/transcription/gguf_session.rs).
-
-Models trained on subtitled video can end a clip with a subtitle credit nobody
-said, such as "Sous-titrage Société Radio-Canada" from Cohere Transcribe in
-French after a trailing pause (#1141). Every GGUF run and live stream drops a
-known credit only when it is the very end of the text (letters and digits
-compared, case and punctuation ignored), with its segment and words, in
-dictation and Transcribe again alike; the same words elsewhere stay.
-The list is in
-[transcription/subtitle_credits.rs](../../src/transcription/subtitle_credits.rs).
-Checks: `a_trailing_subtitle_credit_is_removed`,
-`speech_without_a_trailing_credit_is_kept`, and
-`a_trailing_subtitle_credit_is_dropped_from_text_segments_and_words`. No
-inference reproduces the credit.
-
-```ts
-Settings picker > Compare                 // setup.model-card; shared by every desktop root
-├── Column head -> Role (Recommended, Fewest wrong words, Fastest, Most languages,
-│   Reads your vocabulary; from the catalog for the saved language), name, one-line blurb
-├── Rows -> Wait when you stop (30 s ÷ realtime; "None" when it streams), Wrong
-│   words or characters "1 in N" (benchmark in the saved language, else "Not
-│   measured"; row hidden when none is measured), Languages, Reads your vocabulary,
-│   Download size; one strictly best value is medium weight, ties get none
-├── Action cell -> exactly one: In use dot, progress with Cancel, Use, or
-│   Download <size>; Primary only on the recommended column when it can be chosen
-├── The model in use or preparing replaces the last column when it would be left out
-└── "{n} more models" -> Every model
-
-Settings picker > Every model row          // fixed height; scrolls
-├── Name, role, blurb, then "No wait · 1 in 50 words wrong · 25 languages · 2.5 GB"
-├── Saved language unsupported -> Warning line naming the language it switches to
-├── Trailing edge -> In use dot; progress with Cancel; else Use/Download; Delete when downloaded
-├── Labs > Benchmark details (off) -> raw error rate "7.57% CER", a wrapping line:
-│   language · dataset/split · source · conditions or "unknown" ·
-│   speed qualified; "Most accurate" only between comparable records (labs.md)
-├── Labs > Parakeet Ultra (off) -> its row with a Labs tag and Details: languages,  // setup.parakeet-ultra
-│   measured memory, the CC BY 4.0 credit, notice, Source/License links, folded
-│   published benchmarks "not measured in Hex" (labs.md)
-├── "Add model file…" in the header -> imported cards after the catalog:  // setup.custom-models
-│   Imported · family · languages · Not benchmarked · file · licence · SHA-256
-│   prefix; Rename, Remove (not the active
-│   model); missing or changed -> warning line and no Use (own-models.md)
-└── Found on this computer -> a scan of the Hugging Face cache when the picker  // setup.found-models
-    opens: other compatible files at the top (Not tested by Hex, Use); a catalog
-    model already downloaded there says so and offers Use; a found file's
-    Delete is Forget (own-models.md)
-```
-
-Parakeet Unified English (chunked attention) and Nemotron 3.5 ASR (cache-aware)
-are the models marked `streams`
-(`only_the_streaming_parakeet_artifacts_are_marked_streaming`). The mark describes
-the artifact; dictation still streams only after the load probe succeeds on a GPU
-device ([Streaming Finish](dictation.md#streaming-finish)). The menu bar lists
-names only and shows no tags. Scenes: `hex app -- --snap OUT --scene picker`
-(also `picker-downloading`, `picker-japanese`, `picker-japanese-all`,
-`picker-custom-models`, `picker-found`).
-
-Nemotron 3.5 ASR (#834; NVIDIA's `nemotron-3.5-asr-streaming-0.6b`, OpenMDW-1.1)
-streams in 27 of Hex's languages and detects the language with Auto: Hex sends
-its language as the locale its prompt takes (`de` -> `de-DE`,
-`runtime_language`), and Auto sends none. It is not anyone's recommendation:
-Hex's own runs of transcribe.cpp's WER harness on apollo (Vulkan, 7045d1c) put
-it behind Parakeet v3 on every set measured: LibriSpeech test-clean 3.05%
-against 1.95%, FLEURS English 7.91% against 4.88%, and FLEURS German 10.39%
-against 5.17% (8.77% and 10.46% with Auto). It is there to stream with the
-language set, or across English and German in one model. Hex converted the
-pinned `.nemo` itself; the shipped file is handy-computer's, whose 653 tensors
-match that conversion byte for byte (`NEMOTRON_3_5_ASR_ARTIFACT`). Checks:
-`nemotron_takes_its_languages_as_locales_and_detects_with_auto`. Not observed:
-macOS (Metal), Windows, and Japanese, Korean, Chinese, or Vietnamese audio.
-
-Parakeet v3 remains available for Portuguese and its other existing language
-choices. Its card explains the limitation and suggests Whisper for
-language-guided transcription. This does not change saved selections or expand
-the Auto picker choices. Multilingual audio support is not language conditioning:
-the pinned v3 GGUF has no `stt.parakeet.prompt.num_prompts` metadata, which gates
-language prompting in `transcribe-cpp-sys` 0.1.3.
-
-Sources: [model catalog](../../src/transcription/models.rs),
-[shared picker](../../src/rune_ui/picker.rs), and the runtime
-options in [parakeet.rs](../../src/parakeet.rs) and
-[transcription/local_transcriber.rs](../../src/transcription/local_transcriber.rs). The regression
-`parakeet_v3_supports_portuguese_without_language_conditioning` checks that the
-Portuguese selection remains valid and available, sends no runtime language
-hint, and contrasts Whisper's `pt` hint. It does not run inference.
-The regression was observed failing with the old metadata and passing after the
-correction. The picker's layout is checked by Rune goldens (`rune-picker-*`), not on a
-Mac screen.
-
-**Unreproduced recognition report:** [#68](https://github.com/anomalyco/hex/issues/68)
-reports Portuguese speech misrecognized as English. Source and pinned-model
-metadata inspection establish the prompting limitation, not the cause or repair
-of those transcripts. No v3 audio reproduction or transcription-quality fix has
-been demonstrated.
-
-Bangla (`bn`) is offered because Whisper large-v3-turbo was trained on it; no
-other catalog model supports it, so Whisper is its only, recommended choice and a
-Mac whose first preferred language is Bangla starts on Whisper. Auto is not a
-substitute: in a manual test, Whisper's per-clip detection labeled Bangla speech
-as Arabic, Turkish, and Spanish. `bangla_is_transcribed_by_whisper_with_its_language_hint`
-checks the recommendation, the `bn` hint, and that Qwen3-ASR rejects it. It
-runs no inference, and Bangla accuracy has not been measured.
-
-Checks start in [desktop/onboarding.rs](../../src/desktop/onboarding.rs),
-[transcription.rs](../../src/transcription.rs), and
-[transcription/models.rs](../../src/transcription/models.rs). Setup/picker previews
-prove rendering, not clean-account permission grants or model preparation.
-
-The model step's list and its rules are in
-[own-models.md](own-models.md#onboarding-choice) (scenes
-`onboarding-model-found`, `-downloading`, `-recommended`, `-back`).
-
-The tour state is the pure `desktop::onboarding::Flow` (steps, row states,
-background download, practice outcomes, one-relaunch guard), fed by
-[rune_ui/onboarding.rs](../../src/rune_ui/onboarding.rs); what the person sees
-is the story in [rune_ui/onboarding_kit](../../src/rune_ui/onboarding_kit.rs),
-opened at launch by `Ui::new` and replayed by Run setup again. The guide
-beside System Settings is [permission_guide.m](../../native/permission_guide.m).
-On Windows the Microphone row shows only while the microphone switch in
-Settings › Privacy & security is off (device, user, or desktop apps;
-`CapabilityAccessManager\ConsentStore\microphone` says `Deny`); setup
-finishes once it is on (`a_switched_off_windows_microphone_adds_its_row_until_setup_ends`,
-`windows_onboarding_asks_only_for_the_microphone_switch`; the registry read is
-cross-compiled only, not run on a Windows PC).
-Unit tests (`desktop::onboarding::tests`) cover step order, the download starting on the
-welcome screen and retrying from any step, the auto-advance beat, live row
-flips, a refused microphone, practice outcomes, resume, the relaunch guard and
-resume marker, resuming past a setup the relaunch finished
-(`resuming_at_setup_after_a_relaunch_passes_grants_that_are_now_real`),
-grants waiting for a restart
-(`a_grant_the_process_cannot_use_yet_waits_for_a_restart`,
-`setup_offers_a_restart_once_every_permission_is_on`), an Accessibility grant
-advancing setup without one (`an_accessibility_grant_applies_without_a_restart`),
-the saved step (`the_tour_step_is_saved_for_the_next_launch`), and the upgrade
-check (`a_fresh_install_onboards_without_the_identity_check`,
-`an_upgrader_without_permissions_gets_the_tour_once`,
-`an_upgrader_whose_setup_is_ready_skips_the_tour`; a real 2.3.1 to
-`anomaly.hex` upgrade on a Mac is not yet observed). Rune tests drive the
-first run (`a_new_install_opens_the_first_run`,
-`the_mac_first_run_asks_each_permission_then_practices`,
-`the_practice_game_follows_hex_s_own_dictation_on_every_os`,
-`a_listener_that_will_not_start_relaunches_once_then_asks_to_reopen`,
-`a_refused_microphone_points_to_system_settings`,
-`a_grant_waiting_for_a_restart_makes_setup_restart_hex`,
-`onboarding_downloads_the_model_through_the_service`,
-`a_found_model_moves_on_without_a_download_and_back_returns_to_it`), and every
-page is a scene whose goldens `scripts/check-onboarding.sh` checks (its
-`SCENES` list in `rune_ui/tests/onboarding_check.rs`). Scenes are fixtures
-played on the story's own clock to one settled moment, not native proof.
-The default model comes from `desktop::i18n::preferred_language` (macOS:
-`NSLocale.preferredLanguages`) through `recommended_selection`; existing
-settings keep their saved model.
-Observed on Linux (apollo, 2026-11-01): a clean first run in a nested
-session, from Setting up Hex through the real download to Hex is ready. Not
-yet observed: a clean-account Mac run with real grants, a real practice
-answer on macOS or Windows, or a real self-relaunch after an event-tap
-refusal. The story's demo cards and the game's messages stay in English in
-every interface language; its headings, buttons, and hints are translated.
-
-```ts
-Menu bar > Transcription Model            // setup.quick-model-switch; macOS
-├── Downloaded models -> Last selected language shown beside each model
-├── Choose -> Verify installed artifact -> Prewarm -> Save selection
-│   ├── Success -> Checkmark moves; Settings reflects the saved selection
-│   └── Failure -> Previous selection remains; open Settings for the error
-├── Preparing -> Cancel Model Switch      // never cancels dictation/output jobs
-└── Manage Models… -> Settings picker      // downloads; languages in the Language row
-```
-
-The menu does not open Settings merely to switch models, download a missing model,
-or replace a corrupt artifact. Each model retains one last-used language/hints
-selection in `transcription_recents`; the current selection takes precedence.
-Older settings start with no remembered alternatives. Select an alternative's
-language in Settings' Language row once to establish it. No additional model is loaded at startup
-just to populate the menu, and the checkmark means selected, not live-worker readiness.
-
-[transcription/preparation.rs](../../src/transcription/preparation.rs) is shared
-by Settings and the menu bar: one worker plus one replaceable pending choice.
-Closing Settings does not abandon preparation. A superseded/cancelled completion
-cannot save, and delivered menu controls are drained before accepting completions.
-The desktop root commits through an existing editor to retain unrelated unsaved
-settings, or through persisted settings when no window exists.
-
-Sources: [macos_rune/status_item.rs](../../src/macos_rune/status_item.rs) and
-[macos_rune.rs](../../src/macos_rune.rs). Key checks are
-`preparation_has_one_worker_and_only_keeps_the_latest_pending_choice`,
-`cancelling_a_completed_unpolled_preparation_never_commits_it`,
-`model_switches_remember_language_and_hints_without_changing_other_settings`, and
-`failed_model_selection_save_preserves_selection_recents_and_unsaved_edits` in
-the preparation owner and [app_settings.rs](../../src/app_settings.rs).
-Additional checks cover worker failure/retry, installed-only checksum verification,
-and menu choice/tag projection. These do not establish a physical menu click or
-an installed-app switch. Remembering a language does not change the language
-conditioning limitations described above.
-
-**Observed September 4, 2026 (2.1.16), existing model picker:** all 455 Rust tests
-passed in debug and release, with ten opt-in tests skipped per profile. All twelve
-keyboard-layout child scenarios passed per profile; formatting, strict
-all-target/all-feature Clippy in both profiles, and the release build passed.
-The Cohere fixture inference check was run separately; see
-[dictation model windows](dictation.md#ongoing-jobs-and-output). Native menu
-interaction, installed-app switching, and Linux runtime behavior were not exercised.
-
-### Switch models with keyboard language
-
-```ts
-Labs > Switch model with keyboard language      // setup.input-source-model; macOS, Windows, Linux X11; off by default; General shows the mappings while on
-├── Each enabled keyboard input source -> Don't switch, or a downloaded model and language
-│   ├── New mapping -> The source's own language when the model has it
-│   ├── One-language model -> Its language shown fixed
-│   └── New/unmapped source -> Don't switch; keep the current model
-├── Source changes (shortcut, Input menu, automatic app/document switch)
-│   └── 300 ms after the last change -> Existing installed-only picker preparation
-│       ├── Same model and language already selected -> Nothing loads
-│       ├── Success -> Save the selection, keeping the model's remembered hints
-│       └── Failure -> Existing picker error; no download or guessed fallback
-├── Manual model choice -> Supersede pending automatic work; do not reapply at recording start
-├── Enable -> Apply the current source's mapping once it is observed
-├── Edit the active mapping -> Apply now
-├── Disable -> Cancel automatic work; stop observing; leave the selected model alone
-└── Relaunch -> Observe current source without applying it; preserve the manual choice
-```
-
-Mappings are keyed by native input-source IDs (macOS input-source IDs, Windows
-keyboard layout handles, X11 XKB layouts such as `de(neo)`), not inferred speech languages or
-physical keyboard keys, and store a model with a language it supports. Only
-downloaded models from the picker are offered (Apple Speech is never mapped);
-downloads stay in the picker. A mapped model that is no longer downloaded is
-labeled Not installed and can be cleared; a mapping to a model or language Hex no
-longer offers is dropped when settings load. Removing a source hides its row
-without erasing its saved mapping.
-
-Hex reads input sources only while the setting is on: the macOS main-thread TIS
-distributed-notification observer, the Windows runtime's poll of the foreground
-window's layout, and the Linux host's XKB connection (polled every 250 ms) exist
-only then and work without a Settings window; the window lists enabled sources
-only then. Windows lists the language bar's layouts, named by language and
-keyboard. On Linux the row appears only in X11 sessions: Wayland compositors keep
-the active layout to themselves, with no general protocol (IBus and Fcitx report
-input-method engines, not the compositor's layout), so Wayland is unavailable. Source changes cancel
-obsolete automatic work but keep manual preparation until a mapped choice is
-due. An unmapped source cancels only automatic work. This reuses the shared model
-selection, recording/stream fallback, and shared-engine behavior; it adds no
-recording-time routing, model cache, or notifications.
-
-Sources: observers for [macOS](../../src/keyboard_input_sources/macos.rs),
-[Windows](../../src/keyboard_input_sources/windows.rs), and
-[X11](../../src/keyboard_input_sources/x11.rs),
-[switch policy](../../src/transcription/keyboard_model_switching.rs),
-runtimes ([macOS](../../src/macos_rune.rs),
-[Windows](../../src/windows/app.rs), [Linux](../../src/linux/app.rs)), and
-[settings UI](../../src/rune_ui/settings.rs).
-Checks: the switch policy and settings/CLI validation tests, the runtime
-scheduling tests in [macos_rune/tests.rs](../../src/macos_rune/tests.rs) (macOS),
-the settings interaction tests in
-[keyboard_model_tests.rs](../../src/rune_ui/keyboard_model_tests.rs), and the
-`mac-input-source-models` golden, and the XKB symbols-name tests in the X11
-observer. No check delivers native input-source notifications or switches
-sources through the Input menu or a shortcut.
-
-**Observed October 30, 2026, X11 observer:** on a headless Xvnc with
-`setxkbmap -layout us,ru,de -variant ,,neo`, Hex listed English (US), Russian,
-and German (Neo 2) as `us`, `ru`, `de(neo)` with languages en, ru, de, and
-reported `us`, then `ru` after an XKB group lock. The Windows observer and both
-new runtime paths compile (x64 clippy) but were not run on Windows or a live X11
-desktop.
-
-### Delete downloaded models
-
-```ts
-Settings picker > Every model > Downloaded row   // setup.delete-model; macOS
-├── Delete -> "Delete <size>?" -> Delete again
-│   ├── Success -> Model file, receipt, and partial download removed; row offers Download
-│   └── Download in progress -> Nothing removed; "Model could not be deleted." with reason
-├── Selected dictation model (any language) -> No Delete
-├── Preparing or Apple Speech model -> No Delete
-├── Model choice or closing the picker -> Confirmation cleared
-└── Labs > Downloaded models only (off) -> "Downloaded models take <size>" (Hex's own   // labs.picker-downloaded
-    files) + "Only downloaded models", which leaves just the downloaded rows, each
-    with its Delete; reset when the picker opens (labs.md, #1018)
-```
-
-Deletion takes the shared model-directory download lock without waiting, so it
-cannot race a Settings or menu-bar download. The menu bar drops a
-deleted model because it reads installation state when it builds the menu. Linux
-Settings does not offer deletion: the service owns model files and has no delete
-request yet.
-
-Sources: [shared picker](../../src/rune_ui/picker.rs) and `remove_installed`
-in [transcription/models.rs](../../src/transcription/models.rs). The check is
-`removing_a_model_deletes_its_artifacts_unless_a_download_is_active` (real files
-and lock); no Rune test covers the picker's two-step confirmation yet.
-
-**Known gap:** `is_installed` checks size, not checksum. Not every native-load
-path requires verification. Picker Active means selected/installed, not live
-worker readiness; a later worker-load failure does not roll back saved selection.
+Sources: [transcription/cloud.rs](../../src/transcription/cloud.rs)
+(`CloudProvider`, `dictation`),
+[cloud/claude.rs](../../src/transcription/cloud/claude.rs),
+[cloud/codex.rs](../../src/transcription/cloud/codex.rs),
+[cloud/stream.rs](../../src/transcription/cloud/stream.rs), and the
+Transcribe with and Language rows in
+[rune_ui/general.rs](../../src/rune_ui/general.rs).
 
 ## Dictate
 
@@ -648,10 +272,6 @@ Labs > Second dictation shortcut (macOS, off)   // labs.md; issue 627
   -> General shows "Second dictation shortcut" under Shortcut (unbound, clearable)
   -> it dictates like the shortcut: Hold/Toggle, double-tap lock, release
   -> the shortcut that starts a capture finishes it; the other stands down meanwhile
-
-Labs > Unload model when idle (off; 5/15/30/60 min, default 15)   // labs.md; transcription/engine
-  -> nothing used the model that long and nothing records -> the model unloads
-  -> next press, capture, or API request -> reloads first; audio waits, nothing lost
 ```
 
 The [detailed map](dictation.md) covers timing, successive captures, output
@@ -673,10 +293,7 @@ Completed output                         // output
 └── History
     ├── Inspect / search / copy (row hover or the card) / delete
     ├── Retention ("Keep: 7 days" menu) -> Seven days by default, always hard-capped
-    ├── Off -> Stop new entries; preserve existing entries
-    └── Labs > Keep recordings (off) -> new entries keep their 16 kHz audio   // labs.keep-recordings
-        -> the card's "Transcribe again" menu runs it through any installed model
-        -> the new text with Copy and Replace; Clear all and retention delete the audio (labs.md, #1032)
+    └── Off -> Stop new entries; preserve existing entries
 ```
 
 Checks in [paste.rs](../../src/paste.rs), [parakeet.rs](../../src/parakeet.rs), and
@@ -718,9 +335,9 @@ Sidebar                                  // settings.nav
     // Command-1…9 follow the panes' order (labs::order)
 
 General                                  // settings
-├── Basics card -> Shortcut, Speech model, Language, Microphone, Launch at login
+├── Basics card -> Shortcut, Transcribe with, Language, Microphone, Launch at login
 │   ├── Each row leads with an icon; choices are inline dropdowns, not segments
-│   ├── Language -> fixed text for a one-language model, else a dropdown
+│   ├── Transcribe with -> Claude or Codex; Language -> a dropdown of codes, Auto first
 │   └── A row that hides or shows (Advanced, a microphone error)
 │       -> Folds under a clip as the rows below slide over it; no fade in place
 ├── Microphone -> Value names the input in use, with live level bars // settings.microphone
@@ -1432,21 +1049,7 @@ or the managed rows in the window.
 
 ```ts
 Linux beta                               // not macOS feature parity
-├── hex start -> One per-user Hex -> Alt-Space capture -> Stream (Vulkan GPU) -> Paste
-├── Speech engine (General › Advanced › Dictation; transcription_device) -> Auto | GPU | CPU (#856)
-│   ├── Auto -> best GPU unless gpu-failures.json lists it under its current driver
-│   │   (kernel + Vulkan driver libraries), then another GPU, then the CPU;
-│   │   the row says which GPU stopped responding
-│   ├── A GPU load, prewarm or run that fails with a device error (hang,
-│   │   reset, lost device, out of memory) -> reloads on the CPU; once the CPU
-│   │   works, that GPU is recorded
-│   ├── An integrated GPU whose warm 1.5 s run takes over 300 ms -> Auto times
-│   │   the CPU too and keeps the faster; a slower GPU is recorded (slow), so
-│   │   later loads go straight to the CPU (#484: UHD 620, Iris Plus 655)
-│   ├── GPU -> tries the GPU anyway; working, it clears that GPU's record
-│   └── CPU -> CPU only
-│   // checked on apollo with a planted record (RADV); a real i915 hang not reproduced
-│   └── CPU or a model that cannot stream -> Transcribe the whole clip after release
+├── hex start -> One per-user Hex -> Alt-Space capture -> Stream to the cloud service -> Paste
 ├── hex / hex app -> Window in the same process; closing it leaves Hex running
 │   └── Ctrl+Q in the window or Quit Hex in the sidebar -> quits Hex (#808)
 │       // check: ctrl_q_quits_hex (fixture; not run on a GNOME session)
@@ -1664,7 +1267,7 @@ never-pressed placeholder keysyms first so V lands on `KEY_V`;
 real Hyprland session.
 
 ```ts
-Windows beta                             // x64 (Vulkan GPU) and ARM64 (CPU)
+Windows beta                             // x64 and ARM64
 ├── Install -> Setup.exe or install-windows.ps1 -> hex.exe + install.json receipt
 ├── Launch -> DLLs load from System32 and Hex's folder only, never PATH (#587)
 │   └── DX12 compiles shaders with FXC (System32), never a dxcompiler.dll on PATH
@@ -1678,12 +1281,6 @@ Windows beta                             // x64 (Vulkan GPU) and ARM64 (CPU)
 ├── Present cadence -> after any change the window presents every refresh for
 │   1 s, then rests: windowed G-SYNC/FreeSync sees one rate change per
 │   interaction, not a swing per hover (#689; Rune e2ea18e4; not run on Windows)
-├── Transcription GPU -> ggml's Vulkan, discrete before integrated, CPU last;
-│   a failed GPU load retries on the CPU; the GPU record and Settings ›
-│   Speech engine work as on Linux (#856)
-│   └── A launch that crashed starting the GPU (gpu-start.pending left in the
-│       data folder, same version) -> CPU only, warned in process.log, until
-│       Hex updates or the file is deleted (#662; not run on Windows)
 ├── Hex app -> General, tray, HUD; Enabled = shortcut works in every app
 ├── HUD display -> the monitor under the pointer (GetCursorPos) at each capture
 │   start, inside that monitor's work area, at its own DPI (#486); while
@@ -1694,7 +1291,6 @@ Windows beta                             // x64 (Vulkan GPU) and ARM64 (CPU)
 ├── Tray menu (tray_menu, shared with Linux)    // maintain.tray
 │   ├── Recording / Transcribing… status line and tooltip while the listener works
 │   ├── Show Hex · Paste last dictation (refocuses the app the menu covered)
-│   ├── Speech model: downloaded models, ✓ on the selected one; none while one prepares
 │   └── Update item · Enable / Disable Hex · Quit Hex
 ├── Single-modifier shortcut -> Left / Either / Right side picker, as macOS
 ├── Recordable keys -> letters, digits, F1–F24, named keys, mouse buttons (#794)
@@ -1823,16 +1419,14 @@ Linux process                            // maintain.linux-service
 ├── hex dictation|paste-last -> Socket worker -> Listener queue (never the UI thread)
 ├── hex status -> Published status; hex quit / Quit Hex / launcher action -> Drain, exit 0
 ├── Open the window -> Maps at 980×760 (min = max), tiling WMs float it -> Resizable from 860×560
-├── Close the window -> Keep microphone, accepted jobs, model preparation, and HUD
+├── Close the window -> Keep microphone, accepted jobs, and HUD
 │   └── Uncommitted shortcut capture -> Cancel and restore the prior listening state
 ├── Crash -> systemd Restart=on-failure -> Hex without a window
 ├── Update -> Restart the unit -> Hex reopens the window
 ├── hex restart without a display (SSH) -> Keep the saved session.env
 ├── Saved XAUTHORITY file gone (a reboot: Xwayland's cookie is new each login)
 │   -> Take the user manager's current XAUTHORITY, else drop it (#465)
-├── Window fails (no display, no GPU) -> Logged; Hex keeps running
-└── Startup -> transcribe.cpp's Vulkan instance first, on the main thread
-    └── then the model load and the window's wgpu instance never create one at once
+└── Window fails (no display, no GPU) -> Logged; Hex keeps running
 ```
 
 Sources: the process, host, and window seam in [linux/app.rs](../../src/linux/app.rs),
@@ -1865,7 +1459,7 @@ not authorize recording with defaults. Feedback is initialized at these entry
 points, so a delayed listener start cannot reset a newer live volume selection.
 
 Checks: [test-linux-service.py](../../scripts/test-linux-service.py) exercises
-the real socket and process lifetime without a display, installed model, or
+the real socket and process lifetime without a display or
 audio device; it passed on apollo (Arch, niri) on 2026-10-22.
 It also checks custom-root isolation with a stale Xauthority path and an
 answering Wayland socket nearby: no `systemctl` call or adopted display.
@@ -1879,17 +1473,12 @@ has not run since the single-process change. A throwaway `Type=notify` user unit
 on apollo (`HEX_SYSTEMD_UNIT`) started ready through `hex start`, restarted
 after SIGABRT and SIGKILL without a window, stopped cleanly on
 `systemctl stop` and `hex quit`, and an older `Type=simple` unit still started.
-Before the Vulkan ordering fix, a launch with an installed model and
-`enable_on_launch` SIGSEGVed in the Vulkan loader 3/3 in a headless sway on
-apollo (the model load raced the window's wgpu instance); with it, 6/6 ran.
 These checks do not establish a physical desktop logout, cross-version signed
 update, or microphone/target-app success on the user's devices.
 
 `malformed_settings_cannot_start_even_after_dismissing_the_error` in
 [linux/app.rs](../../src/linux/app.rs) checks the failure gate and recovery after a
-simulated successful settings commit. It selects a model never installed on
-Linux, so the resumed start stops at `Model required` instead of opening the
-microphone on a machine with the real model; it passed on apollo on 2026-10-22
+simulated successful settings commit; it passed on apollo on 2026-10-22
 beside the live service.
 `listener_startup_ignores_the_previous_session_until_a_new_one_arrives` checks the
 listener owner's startup observation and stop signal; the exact production owner
@@ -2071,8 +1660,8 @@ seen or exercised, and no screenshot could be taken over SSH.
 `dev.rune-ui-windows` lives in [windows/rune.rs](../../src/windows/rune.rs) and
 [rune_ui/windows_host.rs](../../src/rune_ui/windows_host.rs). It has only
 been cross-compiled (`cargo xwin clippy -D warnings` for
-`x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, with the
-transcribe.cpp build stubbed out, last after GPUI's removal on 2026-10-22); it
+`x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, last after GPUI's
+removal on 2026-10-22); it
 has never run on Windows, and no test covers it. It replaces the GPUI app
 earlier Windows releases shipped.
 
