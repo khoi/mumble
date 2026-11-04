@@ -107,10 +107,6 @@ Sources: [website](../../site/src/Download.tsx), [installer](../../packaging/win
 [macOS release publisher](../../scripts/release-app.sh),
 [Linux installer](../../.github/release/install-linux.sh), and
 [updater](../../src/updater.rs).
-Model transfer failures in [transcription/models.rs](../../src/transcription/models.rs)
-explain the source host, retry, and
-separate prerequisites. These messages do not diagnose a particular firewall
-or establish a successful subsequent model download.
 Executed hosting checks and deployment details are recorded in
 [Download Hosting](../downloads.md). In-app feed defaults and recovery copy ship
 with 2.1.17; the initial 2.1.16 mirror preserves that release's original bytes.
@@ -121,9 +117,9 @@ Launch Hex, setup incomplete              // setup.tour; every build and OS, ful
 │   the tour state machine (desktop::onboarding::Flow); no flag, no other tour
 ├── Skip (quiet, top-right, only on the demo and the practice)    // setup.skip
 │   ├── Passes over that part to the next step setup still needs: permissions,
-│   │   then Almost ready while the model downloads, else Hex is ready
+│   │   then Almost ready, else Hex is ready
 │   ├── Never closes onboarding or records it done
-│   └── No Skip on permissions, the model step or download, or the paste
+│   └── No Skip on permissions or the paste
 │       permission. Check: `onboarding_skip` (scripts/check-onboarding.sh)
 ├── GNOME/KDE Wayland (pastes through the RemoteDesktop portal, no wtype)
 │   and no saved grant -> before Your turn, "Let Hex paste for you"     // setup.paste-access
@@ -296,7 +292,7 @@ Completed output                         // output
     └── Off -> Stop new entries; preserve existing entries
 ```
 
-Checks in [paste.rs](../../src/paste.rs), [parakeet.rs](../../src/parakeet.rs), and
+Checks in [paste.rs](../../src/paste.rs), [dictation_worker.rs](../../src/dictation_worker.rs), and
 [history.rs](../../src/history.rs) cover output and retention boundaries.
 They do not prove that an arbitrary target consumed its clipboard contents.
 Send is not an atomic target-app transaction. Chromium 155 and 156 get the text
@@ -703,7 +699,7 @@ deadline, and cancellation handling against a local fixture, not a live
 provider.
 
 `ordinary_processing_snapshots_modes_before_stage_and_keeps_transformations` in
-[parakeet.rs](../../src/parakeet.rs) checks processing-time profile acquisition,
+[dictation_worker.rs](../../src/dictation_worker.rs) checks processing-time profile acquisition,
 conditional Processing-stage emission, and retained transformation selection.
 It uses controlled profiles, not a live provider or custom transformation host.
 
@@ -962,7 +958,7 @@ defaults domain, normally through a configuration profile
 ([#100](https://github.com/anomalyco/hex/issues/100)), and on Windows as a
 non-zero DWORD under `SOFTWARE\Policies\Anomaly\Hex` in HKLM or HKCU. Hex
 reads it once at launch, so a forced value wins and a change applies after
-relaunch. Speech-model downloads are unaffected. Releases through 2.3.1 read
+relaunch. Releases through 2.3.1 read
 `com.kitlangton.hex2`; there is no fallback to it, so profiles must name
 `anomaly.hex`.
 
@@ -1305,7 +1301,7 @@ Windows beta                             // x64 and ARM64
 │   ├── Insert, Home, End, Page Up, Page Down alone -> Labs › Special keys
 │   │   alone; off, a saved one goes back to its default
 │   └── Any other key -> the recorder says "Unsupported key" and starts over
-├── Ctrl+Space -> Hold or Toggle -> Capture -> Stream (GPU) -> Paste
+├── Ctrl+Space -> Hold or Toggle -> Capture -> Stream (cloud) -> Paste
 ├── Toggle's cancel shortcut (Escape by default) -> Discards a toggled recording;
 │   the hook takes it only while one records. Otherwise Escape -> Nothing (#786)
 ├── One modifier alone (Right Alt, Right Ctrl) -> Shortcut; Alt/Win release masked (no menu, Start)
@@ -1593,7 +1589,7 @@ Linux `hex` -> the Linux window on Rune, in the Hex process // dev.rune-ui
 macOS `hex app` -> one menu-bar process, Rune window // dev.rune-ui-macos
 ├── rune::App on the main thread: accessory, windowless unless setup/onboarding/Dock icon open it
 ├── Same AppKit loop: status item, updater, Hex/File/Window menu, Dock reopen event, the HUD pump (16 ms timer; the HUD itself is a Rune overlay)
-├── Runtime thread: model preparation (menu bar: installed only), starts the listener once setup is ready
+├── Runtime thread: starts the listener once setup is ready
 ├── Listener, local API: their own threads
 ├── macos_host: AppKit event monitor records chords (Option, Fn); NativeHost does permissions,
 │   login item, Hex Microphone, relaunch
@@ -1604,7 +1600,7 @@ macOS `hex app` -> one menu-bar process, Rune window // dev.rune-ui-macos
 ├── ⌘Q / menu-bar Quit / Ctrl-C quit and join
 └── Modes app icons: Finder's icon (NSWorkspace) in the picker, chips, and mode rows
 Windows `hex app` -> one tray process, Rune window // dev.rune-ui-windows
-├── Runtime thread owns WindowsDesktopHost (listener, model preparation, OpenCode, transformations, updater)
+├── Runtime thread owns WindowsDesktopHost (listener, OpenCode, transformations, updater)
 ├── Named event: a second launch shows the window; tray Show / Enable-Disable / Quit
 ├── rune::App: --hidden starts windowless, close hides (keep_running); Quit or no tray ends it
 ├── General adds Launch at login; no terminal paste; chord capture polls

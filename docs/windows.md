@@ -2,8 +2,8 @@
 
 The Windows port is a beta with a Rune desktop app (a tray process; see
 [The app](#the-app)), WASAPI capture,
-local `transcribe.cpp` transcription, a global shortcut, and generation-safe
-automatic paste. Its daily-use surface includes live microphone, model, and
+cloud transcription (Claude or Codex), a global shortcut, and generation-safe
+automatic paste. Its daily-use surface includes live microphone, provider, and
 shortcut settings, Hold, Tap, and double-tap shortcut modes, Paste Last
 Dictation, recording tones, a click-through HUD, retained History, text
 replacements, a resident system tray, and per-user Launch at login. Global and
@@ -51,13 +51,13 @@ Anomaly's Azure Artifact Signing is configured are Authenticode-signed
 publisher builds SmartScreen reputation, SmartScreen may say it protected your
 PC; choose **More info**, then **Run anyway**.
 
-**x64** decodes on the GPU through Vulkan and needs a current NVIDIA, AMD, or
-Intel graphics driver (it supplies `vulkan-1.dll`); the installer stops with an
-explanation when it is missing. **ARM64** decodes on the CPU. Both are
+The **x64** installer requires a current NVIDIA, AMD, or Intel graphics driver
+that supplies `vulkan-1.dll` for the window and stops with an explanation when
+it is missing. **ARM64** has no such check. Both are
 self-contained: no Visual C++ Redistributable is required. Hex then keeps
 itself current through the signed update feed. Uninstalling removes every
 installed version, the shortcut, and Launch at login, and keeps settings, logs,
-history, and models in `%APPDATA%\hex`.
+and history in `%APPDATA%\hex`.
 
 The installer and the script below create the same managed layout, so either
 can replace the other. For a scripted install:
@@ -84,14 +84,13 @@ entry, or turn off activity sharing there. Hex works the same either way.
 
 ## Streaming Dictation
 
-With Parakeet Unified English on a GPU, Hex streams audio into the model while
-the shortcut is held, so release only decodes the last one to two seconds. The
-same engine streams on macOS (Metal) and Linux (Vulkan). Each dictation logs
-`source=stream` or `source=fallback` in `logs\process.log`; a stream that fails,
-stalls past its deadline, or returns nothing falls back to transcribing the
-whole clip. CPU devices (including ARM64) always use the whole-clip path. Set
-`HEX_STREAMING=0` to force the whole-clip path. See
-[dictation](features/dictation.md#streaming-finish).
+While the shortcut is held, Hex streams the audio to Claude or Codex, so
+release leaves only the last words to transcribe. On release Hex finishes with
+the complete clip; a stream the service refuses, that stalls past its deadline,
+that returns nothing, or that falls behind the speech it heard falls back to
+sending the whole clip to the service. There is no local fallback, so a clip
+the service cannot transcribe fails with that reason. The same path runs on
+macOS and Linux. See [dictation](features/dictation.md#streaming-finish).
 
 ## Requirements For Source Builds
 
@@ -99,15 +98,12 @@ whole clip. CPU devices (including ARM64) always use the whole-clip path. Set
 - PowerShell 7 or Windows PowerShell 5.1.
 - `winget` from Microsoft App Installer.
 - Visual Studio C++ Build Tools, CMake, and the stable MSVC Rust toolchain.
-- x64: the Vulkan SDK (`VULKAN_SDK` set), for the GPU backend.
-- ARM64: Visual Studio's clang-cl and Ninja; ggml's ARM CPU backend refuses
-  MSVC. Build with `CC=clang-cl`, `CXX=clang-cl`, `CMAKE_GENERATOR=Ninja`, and
-  `TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF -DGGML_OPENMP=OFF`, as
+- ARM64: Visual Studio's clang-cl and Ninja. Build with `CC=clang-cl`,
+  `CXX=clang-cl`, and `CMAKE_GENERATOR=Ninja`, as
   `.github/workflows/check-windows.yml` does.
 
-`.cargo/config.toml` links the C and C++ runtimes statically. Distributed builds
-also set `TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF`; without it ggml tunes its
-CPU kernels to the build machine and the binary can crash on older CPUs.
+`.cargo/config.toml` links the C and C++ runtimes statically, so the Visual C++
+Redistributable is unnecessary.
 
 Run the checked-in setup script from the repository root. It keeps an existing
 compatible Visual Studio installation and installs only missing prerequisites.
@@ -211,7 +207,7 @@ hex app
 ├── named event already held -> signal it (the running app shows its window) -> exit
 └── becomes the app                                   // windows::rune::open
     ├── the local API's POST /control -> control::host::answer
-    ├── runtime thread: WindowsDesktopHost (listener, model preparation, OpenCode, transformations, updater), publishes every 250 ms
+    ├── runtime thread: WindowsDesktopHost (listener, OpenCode, transformations, updater), publishes every 250 ms
     ├── main thread: rune::App's winit loop and the window; rune::Tray runs on its own thread
     ├── --hidden -> windowless start; close -> hide (keep_running)
     ├── tray Show or a relaunch -> AppHandle::open (shows and focuses)
@@ -226,8 +222,8 @@ hex app
   sidebar footer holds Check for updates, and Download update for unmanaged
   installs. Shortcuts are recorded by
   polling the keyboard with the listener's hook suspended, because modifier-only chords never reach the window as key events.
-- Models are prepared in-process through `transcription/preparation`; the
-  runtime saves the selection when it is ready and restarts the listener.
+- The runtime saves the transcription provider and language and restarts the
+  listener when they change.
 - Enable on launch waits until first-run setup has recorded completion.
 - The dictation HUD is a Rune overlay (`rune_hud.rs`, shared with Linux): a
   HUD thread steps the shared indicator model and Dot scope, and the
@@ -255,11 +251,7 @@ release. It is type-checked by cross-compiling on Linux with
 rustup target add x86_64-pc-windows-msvc && cargo install cargo-xwin
 # clang-cl, lld-link, and llvm-lib must be on PATH (llvm-lib can be a
 # symlink to rustup's llvm-tools llvm-ar).
-mkdir -p /tmp/no-transcribe/lib
-echo '{"libraries":[],"shared":false}' > /tmp/no-transcribe/lib/transcribe-link.json
-# TRANSCRIBE_DIR skips the transcribe.cpp/Vulkan CMake build; nothing links in check.
-TRANSCRIBE_DIR=/tmp/no-transcribe cargo xwin clippy --target x86_64-pc-windows-msvc \
-  --all-targets -- -D warnings
+cargo xwin clippy --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 ```
 
 For ARM64, add the `aarch64-pc-windows-msvc` target and set
@@ -270,7 +262,7 @@ NEON C that the xwin sysroot's `arm64_neon.h` macros break under that driver.
 
 That checks every Rust path, including Rune, wgpu's DX12 and Vulkan
 backends, and the Windows modules; it compiles C build scripts (ring) for
-the target but never links, builds transcribe.cpp, or runs anything.
+the target but never links or runs anything.
 
 ## macOS Parity
 
@@ -284,7 +276,7 @@ current-user startup registry, UI Automation, and Windows capture APIs.
 | Area | Windows status |
 | --- | --- |
 | Local hold-to-dictate, Toggle mode, timestamped boundaries, paste | Implemented |
-| Live model, shortcut, and microphone selection | Implemented |
+| Live transcription provider, shortcut, and microphone selection | Implemented |
 | Double-tap lock and Paste Last Dictation | Implemented |
 | Clipboard preservation and generation-safe restoration | Implemented |
 | Recording tones and click-through recording/processing HUD | Implemented; a CPU port of the macOS Metal shader drawn in a Rune overlay, never run on Windows |
@@ -292,18 +284,17 @@ current-user startup registry, UI Automation, and Windows capture APIs.
 | Text replacements | Implemented in the Windows Modes pane using the shared phrase-boundary replacement engine |
 | Application picker in Modes | Implemented; lists Start menu shortcuts, App Paths, and apps with an open window, with each executable's icon; "Choose a file…" opens the native dialog through `rune::FileDialogs` |
 | Interface language | Implemented on every OS; English, Polish, Chinese, Japanese, German, Spanish, and Ukrainian |
-| Resident tray and Launch at login | Implemented; the tray menu (shared with Linux) has Paste last dictation, the speech-model picker, and the recording state |
+| Resident tray and Launch at login | Implemented; the tray menu (shared with Linux) has Paste last dictation and the recording state |
 | Application modes with per-mode corrections, OpenCode rewriting, and transformations | Implemented on the shared ordered processing policy; global and contextual profiles persist their own corrections, model, reasoning variant, deadline, and ordered built-in/TypeScript transformations, while modes match by application name — physical end-to-end paste/UI validation remains |
-| Vocabulary as Whisper and Qwen3-ASR's context prompt | Implemented |
+| Vocabulary as Claude's transcription keyterms | Implemented |
 | Release microphone while idle | Implemented; mutually exclusive with audio pre-roll, as documented in Settings |
 | While-dictating audio control (mute other apps or pause media) | Implemented via WASAPI session volumes and GSMTC |
 | Signed automatic self-update for managed installs | Implemented for x64 and ARM64; the same ed25519 key and `https://anoma.ly/hex/files` origin as Linux, one feed per architecture, activating into a user-local versions directory. Checks 10 s after launch and every 6 h (or Check for updates); a staged update shows Restart to update in the tray menu and the window's sidebar footer, and the tray tooltip says an update is available. Source builds keep the GitHub release link (Download update); CI test builds never check |
 | Web-domain mode rules and browser context via UI Automation | Implemented; the page URL comes from the browser's UIA document element, bounded so a hung provider degrades to application-only context |
 | Managed installer with Start Menu integration and clean uninstall | Implemented as `.github/release/install-windows.ps1`; it creates the self-updating versions layout, and updates retarget the managed shortcut and Launch-at-login entry |
-| First-run onboarding | Implemented; a fresh install picks a dictation language, downloads its recommended model with live progress, and starts listening only once setup is recorded — the shared first-run story, with a Microphone page only while the privacy switch is off and the practice game on the real shortcut |
+| First-run onboarding | Implemented; a fresh install starts listening only once setup is recorded — the shared first-run story, with a Microphone page only while the privacy switch is off and the practice game on the real shortcut |
 | Activity pane with the live session and recent transcripts | Implemented in developer builds; the shared read-only pane |
-| Local transcription API and public TypeScript SDK host lifecycle on Windows | Missing; see Local Transcription Service |
-| Streaming finish with whole-clip fallback | Implemented on GPU devices with Parakeet Unified English |
+| Streaming finish with whole-clip fallback | Implemented; cloud streaming to Claude or Codex, with the whole clip sent on fallback |
 
 Settings live in `%APPDATA%\hex\settings.json`, the same file macOS and
 Linux use.

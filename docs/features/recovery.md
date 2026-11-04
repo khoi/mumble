@@ -78,7 +78,7 @@ and every accepted job pastes in submission order.
 Escape -> nothing: the capture and every accepted job go on
 older job + fresh capture -> both complete, in order
 ```
-Check in [parakeet.rs](../../src/parakeet.rs):
+Check in [dictation_worker.rs](../../src/dictation_worker.rs):
 `cancellation_replaces_waiting_output_and_ignores_late_completion` (ordered
 output). Proof limit: controlled ordered output; not target-app clipboard
 consumption.
@@ -396,20 +396,8 @@ cross-thread or native event ordering.
 
 ### Degrade Only The Failing Dependency
 
-Command-model preparation must not make hotkey dictation wait or fail with it.
-
-```ts
-command model loads in background
-  ├── slow/failing loader -> command preparation unavailable
-  └── listener remains responsive -> fresh hotkey capture -> expected output
-```
-Check in [recognition.rs](../../src/recognition.rs):
-`command_preparation_does_not_block_the_listener_or_propagate_failure`.
-Proof limit: controlled loader responsiveness, not a full model download or
-microphone session. See the [index](README.md) for dependency recovery actions.
-
 `recover.command-pressure`: command recognition is best-effort; dictation
-audio is not.
+audio is not. See the [index](README.md) for dependency recovery actions.
 
 ```ts
 microphone timeline

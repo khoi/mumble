@@ -766,7 +766,7 @@ above it, and such a capture still goes to the service.
 [dictation.rs](../../src/dictation.rs) checks the policy on synthetic samples.
 Key resolution: [keyboard.rs](../../src/keyboard.rs); non-Latin layout
 fallback details live in [shortcut recovery](recovery.md#keyboard-layout-resolution).
-Checks in [parakeet.rs](../../src/parakeet.rs):
+Checks in [dictation_worker.rs](../../src/dictation_worker.rs):
 `parallel_processing_results_are_released_in_submission_order`,
 `ordered_waiting_outputs_remain_bounded_after_channel_drain`.
 These cover output bookkeeping/admission, not sustained end-to-end inference/paste.

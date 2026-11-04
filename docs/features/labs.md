@@ -131,7 +131,7 @@ dictation (the dictation shortcut, Dictate without processing, or
 `hex dictation` without `--print`) is put on the clipboard and nothing is
 sent to the focused app: no ⌘V, no typed text (Chromium 155/156 included),
 and no 500 ms restore, so selected text is never replaced. The paste worker
-(`parakeet::finish_output`) reads `labs::copy_only()` as each dictation's
+(`dictation_worker::finish_output`) reads `labs::copy_only()` as each dictation's
 output commits and hands `paste::Paster` `PasteMode::CopyOnly`, which writes
 the transcript as an ordinary clipboard entry (no nspasteboard.org transient
 markers), drops any earlier snapshot and pending restore

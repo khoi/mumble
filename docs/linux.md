@@ -2,14 +2,10 @@
 
 The Linux beta targets x86_64 and ARM64 (aarch64) Linux: i3/X11 and compatible wlroots-based Wayland
 compositors such as Hyprland or Sway. Audio uses ALSA, including PipeWire systems
-with ALSA compatibility. Inference uses Vulkan when available and can fall back
-to the CPU. A GPU that hangs or fails while transcribing is remembered for
-its current driver, and Auto transcribes on the CPU on it until the driver
-changes. An integrated GPU slow enough to miss streaming deadlines is timed
-against the CPU once, and Auto keeps whichever is faster. General › Advanced ›
-**Speech engine** picks Auto, GPU, or CPU
-(`hex settings set transcription_device cpu`). The window still needs a Vulkan driver, even with CPU
-inference; `vulkan-icd-loader` alone is not a driver. Install a driver for your GPU
+with ALSA compatibility. Transcription is cloud-only: dictation goes to Claude
+or Codex through the sign-in those apps already hold, so Hex runs no local
+model. The window still needs a Vulkan driver to draw;
+`vulkan-icd-loader` alone is not a driver. Install a driver for your GPU
 or a software Vulkan driver. See the Wayland requirements below.
 
 x86_64 machines need a 2013 or newer processor with AVX2 (Intel Haswell / AMD Excavator or later); on an older processor Hex shows a message and quits instead of starting.
@@ -28,13 +24,13 @@ Hex's signed updater owns only the direct-install layout below.
 ## One Hex Process
 
 Hex on Linux is **one process per user** (and per data directory), not a
-system-wide/root daemon. It owns the microphone, shortcuts, model downloads and
-workers, sounds, paste, History, the recording pill, and the window. The window
-is optional: closing it stops neither dictation nor a model download, and
+system-wide/root daemon. It owns the microphone, shortcuts, workers, sounds,
+paste, History, the recording pill, and the window. The window
+is optional: closing it stops neither dictation nor accepted work, and
 launching Hex again opens it. When the desktop has a tray (a
 StatusNotifierItem host, such as Waybar, KDE, or Omarchy's bar), Hex shows a
 tray icon: click it to open the window, or use its menu: **Show Hex**,
-**Paste last dictation**, the downloaded speech models, the update once one
+**Paste last dictation**, the update once one
 is ready (**Restart to update**), **Enable / Disable Hex**, and **Quit Hex**;
 while Hex records or transcribes, the menu and tooltip say so. Without a
 tray, quit with **Quit Hex** at the bottom of the window's sidebar, the launcher's **Quit Hex** action, or `hex quit`.
@@ -134,8 +130,7 @@ mark it urgent), and closing it keeps the window's state for the next open.
 
 Published builds exist for x86_64 and ARM64, as a bare executable, a `.deb`,
 and an `.rpm`. They are built on Debian 12 and need glibc 2.36 or later:
-Debian 12, Ubuntu 23.04, Fedora 37, current Arch, or newer. ARM64 builds use
-Vulkan like x64 and fall back to the CPU.
+Debian 12, Ubuntu 23.04, Fedora 37, current Arch, or newer.
 
 ### Install script
 
@@ -628,17 +623,6 @@ libraries, Sway, `wl-clipboard`, `wtype`, `dbus-run-session`, and a Vulkan drive
 (Mesa's software driver is sufficient), and must run as a non-root user. It uses
 isolated app data and no microphone; CI runs it with the display-free suite and
 Xvfb hotkey tests.
-
-`scripts/test-linux-dictation.sh /path/to/hex /path/to/parakeet-unified-en-0.6b-Q8_0.gguf /path/to/jfk.wav`
-checks the complete X11 app dictation path with a private PulseAudio virtual
-microphone and Xvfb display. It opens the window in the running Hex through a
-second `hex app`, replays the public JFK sample from whisper.cpp, holds and releases the real
-shortcut, verifies the transcribed words in a GTK editor, and checks orderly
-application shutdown and microphone release. It needs PulseAudio, its ALSA
-plugin, `xdotool`, Xvfb, the GTK development libraries, and a Vulkan driver for
-the window (Mesa's software driver is sufficient). It runs as a normal user with
-temporary settings; it does not use physical audio devices or personal recordings.
-CI downloads and verifies the pinned model and sample for this check.
 
 `python3 scripts/test-linux-service.py /path/to/hex` is a display-free,
 device-free single-instance check: commands fail fast without Hex, `hex start`

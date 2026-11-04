@@ -51,20 +51,14 @@ app mirror link by hand; the Release workflow pushes
 
 ## Network Recovery
 
-App and model downloads have different hosts. Managed networks may need to allow:
+App downloads and updates may need managed networks to allow:
 
 - `anoma.ly` (paths `/release/` and, for 2.3.1, `/hex/files/`) for app
   downloads and updates (`downloads.hex.kitlangton.dev` too for releases up to
   2.3.1, which reach it through a redirect).
 - GitHub release downloads and their asset delivery host for the alternative DMG.
-- `huggingface.co` and its model download CDN for dictation-model setup.
 
-On September 11, 2026, a HEAD request for the pinned default Parakeet Unified
-English artifact followed `huggingface.co` to `us.aws.cdn.hf.co` and returned
-HTTP 200. This is an observed delivery host, not a permanent exhaustive CDN list.
-No model body was downloaded for that check.
-
-Model downloads, update checks, and transformation scripts' `fetch` go through
+Update checks and transformation scripts' `fetch` go through
 Hex's own HTTPS client (`src/net.rs`, #894), which behaves like a browser on a
 managed network:
 
@@ -80,20 +74,19 @@ managed network:
   IT installed is trusted. A missing root shows as "the certificate isn't
   trusted".
 - Failures: one line naming the host, the proxy, and the cause ("Couldn't
-  reach huggingface.co through the proxy proxy.corp:8080: …"), then what to
+  reach anoma.ly through the proxy proxy.corp:8080: …"), then what to
   try. Downloads go in 8 MB ranged pieces with a 5 minute bound each, so a
   stalled connection fails instead of hanging, and resume where they stopped.
 
-Observed on apollo (Linux), November 2026: the speech detector, the update
-manifest, and a `fetch` worked directly, through mitmproxy with its root in
+Observed on apollo (Linux), November 2026: the update
+manifest and a `fetch` worked directly, through mitmproxy with its root in
 the trust bundle, and with `NO_PROXY` past a dead proxy; with the root
 missing each failed naming the certificate, and with a dead proxy each named
 the refused proxy. Not observed: Windows' and macOS' system proxy settings on
 a real managed network (the Windows code is cross-compiled only).
 
 If the old update endpoint is blocked, install the new signed DMG manually.
-After restoring model-host access, retry preparation in Settings. Transfer failures preserve partial downloads. App download
-success does not establish model-host reachability, and our external checks do
+Transfer failures preserve partial downloads. Our external checks do
 not establish access from a particular enterprise network.
 
 ## Observed Migration Checks — September 11, 2026
