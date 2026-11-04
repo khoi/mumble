@@ -1,6 +1,6 @@
 # Contributing to Mumble
 
-We don't take pull requests. [Open an issue](https://github.com/khoi/mumble/issues/new/choose)
+We don't take pull requests. [Open an issue](https://github.com/supabitapp/mumble/issues/new/choose)
 describing the bug or idea, and our agents usually turn it around fast.
 
 Diagnoses and proposed fixes are welcome in the issue: redacted logs, the code

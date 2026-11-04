@@ -9,7 +9,7 @@ version=${1:?Usage: publish-app-mirror.sh VERSION DMG NOTES COMMIT}
 artifact_path=${2:?Pass the prepared signed DMG}
 notes=${3:?Pass release notes}
 commit=${4:?Pass the full release commit}
-repo=khoi/mumble
+repo=supabitapp/mumble
 tag="app-v$version"
 artifact="Mumble-$version-arm64.dmg"
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'

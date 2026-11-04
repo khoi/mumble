@@ -33,13 +33,13 @@ Or install with:
 - Homebrew: `brew install --cask anomalyco/tap/mumble`
 - AUR: `yay -S mumble-bin`
 - install script (Linux): `curl -fsSL https://anoma.ly/mumble/install-linux.sh | sh`
-- Nix: `nix profile add github:khoi/mumble`
+- Nix: `nix profile add github:supabitapp/mumble`
 
 More docs are in [`docs/`](docs/README.md).
 
 ## Contributing
 
-We don't take pull requests. [Open an issue](https://github.com/khoi/mumble/issues)
+We don't take pull requests. [Open an issue](https://github.com/supabitapp/mumble/issues)
 describing the bug or idea, and our agents usually turn it around fast.
 
 MIT licensed.

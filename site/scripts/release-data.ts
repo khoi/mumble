@@ -47,7 +47,7 @@ const data = {
   rpmX64: download("linux-x64-rpm"),
   rpmArm64: download("linux-arm64-rpm"),
   windowsInstaller: `${site}/install-windows.ps1`,
-  github: stable ? `https://github.com/khoi/mumble/releases/tag/v${current.release.version}` : "https://github.com/khoi/mumble/releases",
+  github: stable ? `https://github.com/supabitapp/mumble/releases/tag/v${current.release.version}` : "https://github.com/supabitapp/mumble/releases",
 }
 writeFileSync(new URL("src/release-data.json", root), `${JSON.stringify(data, null, 2)}\n`)
 copyFileSync(new URL("../.github/release/install-linux.sh", root), new URL("public/install-linux.sh", root))

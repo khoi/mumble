@@ -35,7 +35,7 @@ jq -e --arg version "$version" --arg commit "$commit" '
       (keys == ["title", "url"])
       and (.title | text(200))
       and (.url | type == "string"
-        and test("^https://github\\.com/khoi/mumble/(pull/[0-9]{1,7}|commit/[0-9a-f]{40})$"))))
+        and test("^https://github\\.com/supabitapp/mumble/(pull/[0-9]{1,7}|commit/[0-9a-f]{40})$"))))
 ' "$canonical" > /dev/null || die "The dev notes are not the expected shape for $version ($commit)."
 sh "$(dirname "$0")/r2-put.sh" \
   dev-notes.json "$canonical" "application/json; charset=utf-8" "public, max-age=60"

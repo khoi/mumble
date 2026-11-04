@@ -54,7 +54,7 @@ export default function App() {
           </a>
           <div className="header__tools" data-avoid>
             {shout.phase === "started" && <SoundToggle muted={shout.muted} onToggle={shout.toggleMuted} />}
-            <a className="header__github" href="https://github.com/khoi/mumble">
+            <a className="header__github" href="https://github.com/supabitapp/mumble">
               <GitHubMark />
               <span>GitHub</span>
             </a>

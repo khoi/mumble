@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   mumble-agent-policy:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     steps:
       - if: ${{ !startsWith(github.head_ref, 'agent/') }}
         run: echo "Not an agent pull request."

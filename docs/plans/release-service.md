@@ -55,7 +55,7 @@ that job succeeds (the `distribution` action):
 | `direct` | | (updates itself) |
 | `aur` | `package: mumble-bin` | `yay -Syu mumble-bin` |
 | `brew` | `cask: anomalyco/tap/mumble` | `brew upgrade --cask anomalyco/tap/mumble` |
-| `nix` | `attribute: github:khoi/mumble` | `nix profile upgrade mumble` |
+| `nix` | `attribute: github:supabitapp/mumble` | `nix profile upgrade mumble` |
 
 ## Direct-install receipt
 

@@ -32,7 +32,7 @@ jobs:
   linux:
     name: Linux
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04-16
     timeout-minutes: 45
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
