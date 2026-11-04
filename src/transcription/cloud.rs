@@ -14,6 +14,8 @@ mod socket;
 mod stream;
 
 use stream::Fallback;
+#[cfg(test)]
+pub(crate) use stream::fake;
 pub(crate) use stream::{CloudAnswer, CloudStream};
 
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -21,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::transcription::CancelToken;
+use crate::transcription::{CancelToken, TranscriptionSelection};
 
 /// How often the engine looks at its job while the service works.
 const WAIT_POLL: Duration = Duration::from_millis(50);
@@ -150,23 +152,23 @@ impl CloudError {
 }
 
 /// A finished dictation's text: its stream's answer, else the whole clip
-/// sent to the service. The dictation fails with the reason when the service
-/// can't transcribe it; there is no local fallback.
+/// sent to the service. One dictation uses one `selection` (provider and
+/// language), captured when the capture began, through both the stream and the
+/// whole-clip retry. The dictation fails with the reason when the service can't
+/// transcribe it; there is no local fallback.
 pub(crate) fn dictation(
+    selection: TranscriptionSelection,
     clip: &[f32],
     cancel: &CancelToken,
     streamed: Option<CloudAnswer>,
 ) -> Result<String, String> {
-    let provider = crate::app_settings::transcription_selection().1.provider;
+    let TranscriptionSelection { provider, language } = selection;
     dictation_with(
         provider,
         clip,
         cancel,
         streamed,
-        |provider, clip, deadline| {
-            let language = crate::app_settings::transcription_selection().1.language;
-            transcribe(provider, &clip, &language, deadline)
-        },
+        move |provider, clip, deadline| transcribe(provider, &clip, &language, deadline),
     )
 }
 
@@ -314,15 +316,31 @@ mod tests {
 
     #[test]
     fn a_failed_attempt_fails_the_dictation_with_its_reason() {
-        for error in [
-            CloudError::SignedOut,
-            CloudError::Language("vi".into()),
-            CloudError::RateLimited,
-            CloudError::Refused(403),
-            CloudError::NoSpeech,
-            CloudError::Failed("Couldn't reach chatgpt.com".into()),
+        // Expected messages are written out independently, not produced by the
+        // `reason` impl under test, so a change to that impl is caught here.
+        for (error, expected) in [
+            (
+                CloudError::SignedOut,
+                "not signed in to Claude Code, or its sign-in expired; open Claude Code to sign in",
+            ),
+            (
+                CloudError::Language("vi".into()),
+                "Claude doesn't transcribe \"vi\"",
+            ),
+            (
+                CloudError::RateLimited,
+                "Claude is rate limiting this account",
+            ),
+            (
+                CloudError::Refused(403),
+                "Claude refused the request (HTTP 403)",
+            ),
+            (CloudError::NoSpeech, "Claude heard no speech"),
+            (
+                CloudError::Failed("Couldn't reach chatgpt.com".into()),
+                "Couldn't reach chatgpt.com",
+            ),
         ] {
-            let expected = error.reason(CloudProvider::Claude);
             let text = dictation_with(
                 CloudProvider::Claude,
                 &[0.1; 4],
@@ -330,7 +348,7 @@ mod tests {
                 None,
                 move |_, _, _| Err(error),
             );
-            assert_eq!(text, Err(expected));
+            assert_eq!(text, Err(expected.to_string()));
         }
     }
 

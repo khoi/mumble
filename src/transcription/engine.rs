@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 use color_eyre::eyre::{Result, eyre};
 
-use crate::transcription::CancelToken;
 use crate::transcription::cloud::CloudAnswer;
+use crate::transcription::{CancelToken, TranscriptionSelection};
 
 /// How long a job may run once the engine starts it, before the clip's own
 /// share. Time queued behind other work is never counted: the deadline only
@@ -60,6 +60,10 @@ pub(crate) enum Command {
         /// The capture's released cloud stream, whose answer comes first;
         /// `None` when no stream was open (its service refused one).
         cloud: Option<CloudAnswer>,
+        /// The provider and language this one dictation uses, captured when
+        /// the capture began, so a mid-dictation settings change never mixes a
+        /// stream and its whole-clip retry across providers or languages.
+        selection: TranscriptionSelection,
     },
     Shutdown,
 }
@@ -191,6 +195,10 @@ pub struct LiveStream {
     /// [`Self::take_partial`] returned.
     partials: Option<(Partials, u64)>,
     cloud: crate::transcription::cloud::CloudStream,
+    /// The selection captured when this capture began, carried to the finish
+    /// so one dictation stays on one provider and language throughout. Boxed to
+    /// keep `LiveStream`, and the `DictationClip` that carries it, small.
+    selection: Box<TranscriptionSelection>,
 }
 
 impl LiveStream {
@@ -214,6 +222,22 @@ impl LiveStream {
         }
         self.fed += samples.len();
         self.cloud.feed(samples);
+    }
+}
+
+#[cfg(test)]
+impl LiveStream {
+    /// A live stream over a fake cloud boundary carrying a captured selection.
+    pub(crate) fn for_test(
+        cloud: crate::transcription::cloud::CloudStream,
+        selection: TranscriptionSelection,
+    ) -> Self {
+        Self {
+            fed: 0,
+            partials: None,
+            cloud,
+            selection: Box::new(selection),
+        }
     }
 }
 
@@ -304,12 +328,17 @@ impl TranscriptionEngine {
     /// a stream can't open (its service is refusing streams for this account).
     pub fn begin(&self) -> Option<LiveStream> {
         let partials = (self.live_text)().then(Partials::default);
-        let provider = crate::app_settings::transcription_selection().1.provider;
-        let cloud = crate::transcription::cloud::CloudStream::open(provider, partials.clone())?;
+        let selection = crate::app_settings::transcription_selection().1;
+        let cloud = crate::transcription::cloud::CloudStream::open(
+            selection.provider,
+            selection.language.clone(),
+            partials.clone(),
+        )?;
         Some(LiveStream {
             fed: 0,
             partials: partials.map(|partials| (partials, 0)),
             cloud,
+            selection: Box::new(selection),
         })
     }
 
@@ -318,13 +347,24 @@ impl TranscriptionEngine {
     /// clip, the whole clip is sent to the service.
     pub fn finish(&self, stream: Option<LiveStream>, clip: Vec<f32>) -> Result<PendingTranscript> {
         let fed = stream.as_ref().map_or(0, |stream| stream.fed);
+        // The stream carries the selection captured when the capture began;
+        // without one, this is the only attempt, so a single read is consistent.
+        let selection = stream.as_ref().map_or_else(
+            || crate::app_settings::transcription_selection().1,
+            |stream| stream.selection.as_ref().clone(),
+        );
         // Released at once, so the service finishes while earlier work runs.
         let cloud = stream.map(|stream| {
             let overfed = fed > clip.len() + MAX_OVERFED_SAMPLES;
             let tail = &clip[fed.min(clip.len())..];
             stream.cloud.end(tail, overfed)
         });
-        self.request(clip.len(), |job| Command::Finish { clip, job, cloud })
+        self.request(clip.len(), |job| Command::Finish {
+            clip,
+            job,
+            cloud,
+            selection,
+        })
     }
 
     fn request(
@@ -379,8 +419,13 @@ impl Worker {
     fn run(self, commands: Receiver<Command>) {
         while let Ok(command) = commands.recv() {
             match command {
-                Command::Finish { clip, job, cloud } => {
-                    self.run_dictation(clip, job, cloud);
+                Command::Finish {
+                    clip,
+                    job,
+                    cloud,
+                    selection,
+                } => {
+                    self.run_dictation(clip, job, cloud, selection);
                 }
                 Command::Shutdown => return,
             }
@@ -388,17 +433,21 @@ impl Worker {
     }
 
     /// Transcribes a finished dictation through the cloud service, in order.
-    fn run_dictation(&self, clip: Vec<f32>, job: Job, cloud: Option<CloudAnswer>) {
+    fn run_dictation(
+        &self,
+        clip: Vec<f32>,
+        job: Job,
+        cloud: Option<CloudAnswer>,
+        selection: TranscriptionSelection,
+    ) {
         let Some((job, started)) = self.admit(job) else {
             return;
         };
         self.running.enter(&job.cancel);
-        let result =
-            crate::transcription::cloud::dictation(&clip, &job.cancel, cloud).map(|text| {
-                Transcribed {
-                    text: text.trim().to_string(),
-                    finish_ms: started.elapsed().as_millis() as u64,
-                }
+        let result = crate::transcription::cloud::dictation(selection, &clip, &job.cancel, cloud)
+            .map(|text| Transcribed {
+                text: text.trim().to_string(),
+                finish_ms: started.elapsed().as_millis() as u64,
             });
         job.finish(result);
     }
@@ -420,6 +469,8 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transcription::CloudProvider;
+    use crate::transcription::cloud;
 
     #[test]
     fn finishing_hands_the_clip_to_the_worker() {
@@ -431,6 +482,76 @@ mod tests {
             [Command::Finish { clip, cloud: None, .. }] if clip.len() == 7
         ));
         drop(pending);
+    }
+
+    #[test]
+    fn a_finish_uses_the_streams_captured_selection_not_the_live_setting() {
+        let (engine, commands) = TranscriptionEngine::for_test();
+        // Not the default selection (Claude/en), so matching it proves finish
+        // read the stream's captured selection, not the live global setting.
+        let captured = TranscriptionSelection {
+            provider: CloudProvider::Codex,
+            language: "de".into(),
+        };
+        let (cloud, _heard) = cloud::fake(CloudProvider::Codex, Ok("x".into()));
+        let stream = LiveStream::for_test(cloud, captured.clone());
+        let pending = engine.finish(Some(stream), vec![0.0; 4]).unwrap();
+        let received = commands.try_iter().collect::<Vec<_>>();
+        match received.as_slice() {
+            [Command::Finish { selection, .. }] => assert_eq!(*selection, captured),
+            _ => panic!("expected one finish command carrying the captured selection"),
+        }
+        drop(pending);
+    }
+
+    fn selection(provider: CloudProvider) -> TranscriptionSelection {
+        TranscriptionSelection {
+            provider,
+            language: "en".into(),
+        }
+    }
+
+    fn live(reply: Result<String, cloud::CloudError>) -> LiveStream {
+        let (cloud, _heard) = cloud::fake(CloudProvider::Claude, reply);
+        LiveStream::for_test(cloud, selection(CloudProvider::Claude))
+    }
+
+    #[test]
+    fn the_real_worker_returns_the_clouds_transcript() {
+        let engine = TranscriptionEngine::start().unwrap();
+        let text = engine
+            .finish(Some(live(Ok(" hello there ".into()))), vec![0.0; 4])
+            .unwrap()
+            .wait()
+            .unwrap()
+            .text;
+        assert_eq!(text, "hello there");
+    }
+
+    #[test]
+    fn the_real_worker_finishes_jobs_in_submission_order() {
+        let engine = TranscriptionEngine::start().unwrap();
+        let first = engine
+            .finish(Some(live(Ok("first".into()))), vec![0.0; 4])
+            .unwrap();
+        let second = engine
+            .finish(Some(live(Ok("second".into()))), vec![0.0; 4])
+            .unwrap();
+        assert_eq!(first.wait().unwrap().text, "first");
+        assert_eq!(second.wait().unwrap().text, "second");
+    }
+
+    #[test]
+    fn the_real_worker_surfaces_a_cloud_failure_as_an_error() {
+        let engine = TranscriptionEngine::start().unwrap();
+        let result = engine
+            .finish(
+                Some(live(Err(cloud::CloudError::Failed("dropped".into())))),
+                vec![0.0; 4],
+            )
+            .unwrap()
+            .wait();
+        assert!(result.is_err());
     }
 
     #[test]

@@ -120,13 +120,17 @@ pub(crate) struct CloudStream {
 }
 
 impl CloudStream {
-    /// Connects to `provider` on its own thread and starts taking audio, or
-    /// `None` while its service refuses streams.
-    pub(crate) fn open(provider: CloudProvider, partials: Option<Partials>) -> Option<Self> {
+    /// Connects to `provider` on its own thread and starts taking audio in
+    /// `language` (the selection captured when the capture began), or `None`
+    /// while its service refuses streams.
+    pub(crate) fn open(
+        provider: CloudProvider,
+        language: String,
+        partials: Option<Partials>,
+    ) -> Option<Self> {
         if refused(provider) {
             return None;
         }
-        let language = crate::app_settings::transcription_selection().1.language;
         let keyterms = crate::dictation::vocabulary::terms();
         Self::spawn(provider, move |audio| match provider {
             CloudProvider::Claude => {
@@ -442,7 +446,7 @@ mod tests {
         assert_eq!(answer.wait(&CancelToken::new()), Err(Fallback::WholeClip));
         assert!(refused(CloudProvider::Codex));
         assert!(!refused(CloudProvider::Claude));
-        assert!(CloudStream::open(CloudProvider::Codex, None).is_none());
+        assert!(CloudStream::open(CloudProvider::Codex, "en".into(), None).is_none());
         *REFUSED.lock().unwrap() = [None, None];
     }
 }
