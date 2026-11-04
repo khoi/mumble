@@ -3,7 +3,7 @@
 //! or sent whole on release. There is no local model, so a dictation the
 //! service can't transcribe fails with the reason.
 //!
-//! Hex never refreshes or writes either sign-in: Claude Code and Codex own
+//! Mumble never refreshes or writes either sign-in: Claude Code and Codex own
 //! their tokens, so an expired one reads as signed out until its app renews
 //! it. The provider and language come from the saved transcription selection,
 //! read as each capture's stream opens and as each whole clip's run starts.

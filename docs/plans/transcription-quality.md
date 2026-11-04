@@ -4,12 +4,12 @@
 
 ## Summary
 
-Hex's default model (`ParakeetUnifiedEnglish`) is fast (~188x realtime on Metal) and accurate on general English (5.91% 8-set WER), but it has no vocabulary input today and misrecognizes domain terms and names into common English words (`"Hex"` -> `"Hanks"`, `"Cappuccino"` -> `"Capuchin"`, `"OpenCode"` -> `"open code"`). Blind find-and-replace cannot fix real-word collisions like `"Hanks"` or `"Capuchin"` without corrupting legitimate sentences. Meanwhile, in-call meeting transcripts are moving onto rolling Parakeet chunks on the shared `TranscriptionEngine` (with Moonshine being dropped from `src/meeting_live.rs`), leaving voice commands (`src/moonshine.rs`) as the last consumer of the ONNX Runtime + `libmoonshine` stack.
+Mumble's default model (`ParakeetUnifiedEnglish`) is fast (~188x realtime on Metal) and accurate on general English (5.91% 8-set WER), but it has no vocabulary input today and misrecognizes domain terms and names into common English words (`"Hex"` -> `"Hanks"`, `"Cappuccino"` -> `"Capuchin"`, `"OpenCode"` -> `"open code"`). Blind find-and-replace cannot fix real-word collisions like `"Hanks"` or `"Capuchin"` without corrupting legitimate sentences. Meanwhile, in-call meeting transcripts are moving onto rolling Parakeet chunks on the shared `TranscriptionEngine` (with Moonshine being dropped from `src/meeting_live.rs`), leaving voice commands (`src/moonshine.rs`) as the last consumer of the ONNX Runtime + `libmoonshine` stack.
 
 ```ts
 Transcription quality plan (ordered by value / effort)
 ├── Phase 1: Term & false-replacement eval harness (2d)
-│   └── Extends `hex benchmark-transcription` + corpus scripts with `expected_terms` and a term-free guard set
+│   └── Extends `mumble benchmark-transcription` + corpus scripts with `expected_terms` and a term-free guard set
 ├── Phase 2: Shared vocabulary, Rune UI, and replacement fixes (4d)
 │   └── App-wide vocabulary + "heard as" aliases in Settings, History 1-click add, #139/#177 fixes, OpenCode & meeting wiring
 ├── Phase 3: `transcribe-cpp` 0.2.4 -> 0.4.1 & catalog refresh (2d)
@@ -34,7 +34,7 @@ Transcription quality plan (ordered by value / effort)
 
 - **Goal:** Measure term recall and false-replacement regressions before shipping any vocabulary, post-processing, or decoder change.
 - **Changes:**
-  - Extend `ClipDefinition` in `src/transcription_benchmark.rs` (`hex benchmark-transcription`) with optional `expected_terms: Vec<String>` and add `--vocabulary <path>` to load a vocabulary/alias list into `Parakeet::load_for_benchmark`.
+  - Extend `ClipDefinition` in `src/transcription_benchmark.rs` (`mumble benchmark-transcription`) with optional `expected_terms: Vec<String>` and add `--vocabulary <path>` to load a vocabulary/alias list into `Parakeet::load_for_benchmark`.
   - Emit two new summary metrics in `src/transcription_benchmark.rs` JSONL output:
     - `term_recall`: fraction of `expected_terms` present in the output (case- and spacing-normalized).
     - `false_replacements`: count and rate of vocabulary terms appearing in transcripts when absent from `expected`.
@@ -61,7 +61,7 @@ Transcription quality plan (ordered by value / effort)
   - **Pipeline wiring (`src/parakeet.rs`, `src/transcription/local_transcriber.rs`, `src/dictation_processor.rs`, `src/meeting_transcript.rs`):**
     - **Model hints:** Pass `vocabulary` terms (capped at 64 terms to prevent Whisper silence hallucinations, #108/#193) to models with `supports_recognition_hints`.
     - **Global alias replacements:** Compile unambiguous `aliases -> term` pairs ( plus multi-word compound joins like `"open code" -> "OpenCode"`) into a shared `ReplacementSet` that runs before mode-specific `replacements` in `dictation_processor.rs`, `dictation_modes.rs`, and on rolling/final chunks in `meeting_transcript.rs`.
-    - **OpenCode rewrite prompt (`src/dictation_processor.rs`):** When a mode enables OpenCode rewriting, append a compact `Vocabulary` block (`"Prefer these exact spellings when a word sounds like one: Hex (heard as: Hanks), Cappuccino (heard as: Capuchin), OpenCode, Rune, Scrawl, Effect…"`). Because the LLM sees sentence context, it resolves real-word collisions (`"Hanks"`, `"Capuchin"`) without corrupting ordinary prose.
+    - **OpenCode rewrite prompt (`src/dictation_processor.rs`):** When a mode enables OpenCode rewriting, append a compact `Vocabulary` block (`"Prefer these exact spellings when a word sounds like one: Mumble (heard as: Hanks), Cappuccino (heard as: Capuchin), OpenCode, Rune, Scrawl, Effect…"`). Because the LLM sees sentence context, it resolves real-word collisions (`"Hanks"`, `"Capuchin"`) without corrupting ordinary prose.
   - **Rune UI (`src/rune_ui/settings.rs`, `src/rune_ui/history.rs`, `src/desktop_i18n.rs`):**
     - Follow [`docs/design-system.md`](../design-system.md): replace the Whisper-only `Recognition hints` row in `settings::dictation_section` with a `Vocabulary` `section` card visible for every model.
     - Compose existing `rune_ui/controls.rs` pieces: `card_header` with a Ghost `PLUS` `IconButton` (`"Add term"`) and a Secondary `"Import…"` / `"Export…"` action (`#160`); rows with `TextInput` for `Term (e.g. Cappuccino)` and optional `Heard as (e.g. Capuchin)`, plus `remove_button`.
@@ -69,7 +69,7 @@ Transcription quality plan (ordered by value / effort)
     - Add all five language translations in `src/desktop_i18n.rs` and update `--snap` scenes (`mac-settings`, `history`) in light and dark.
 - **Measurement & gate:**
   - Unit tests in `src/dictation/text_replacements.rs` covering CJK phrases (`#177`) and overlapping candidates (`#139`).
-  - Phase 1 benchmark: 100% recall on unambiguous aliases (`"open code" -> "OpenCode"`, `"scrawl"`, `"rune"`) and LLM-rewritten `"Hanks"` / `"Avatar"` sentences; `cargo test --bin hex rune_ui` green with updated light/dark goldens.
+  - Phase 1 benchmark: 100% recall on unambiguous aliases (`"open code" -> "OpenCode"`, `"scrawl"`, `"rune"`) and LLM-rewritten `"Hanks"` / `"Avatar"` sentences; `cargo test --bin mumble rune_ui` green with updated light/dark goldens.
 - **Effort:** 4 days.
 - **Risk:** Low. Users could enter a common word as an unconditional alias (e.g. `"Hanks" -> "Hex"`); mitigate in Phase 4 by routing single-word real-word collisions through acoustic margin gating when Parakeet is active, or warning inline when an alias is a common dictionary word.
 - **Unblocks:** Feeds a single user vocabulary into Qwen3-ASR hints (Phase 3), Parakeet decoder boosting (Phase 4), and meeting transcripts (Phase 5).
@@ -89,7 +89,7 @@ Transcription quality plan (ordered by value / effort)
     - Add **`ParakeetUltra`** (`handy-computer/parakeet-ultra-gguf`, `parakeet-ultra-Q8_0.gguf`, ~740 MB, CC-BY-4.0, 25 languages): Moondream's post-trained v3 that drops LibriSpeech clean WER from 1.94% to 1.80% (8-set leaderboard 5.32% vs v3's 6.32%) and cuts long audio at natural pauses (30 s segments).
     - Recommend `ParakeetUltra` in `choices_for_runtime` for the 24 non-English European languages where `ParakeetV3` is recommended today; keep `ParakeetV3` deserializable in `TranscriptionModelId` so existing `settings.json` files continue to work or migrate cleanly.
 - **Measurement & gate:**
-  - `hex benchmark-transcription` comparing `0.2.4` vs `0.4.1` on `ParakeetUnifiedEnglish`: no WER regression, `median_rtf` and `p95_clip_ms` within 5%, and 8 s stream prewarm (`STREAM_PREWARM_SAMPLES`) passing on Metal and Vulkan.
+  - `mumble benchmark-transcription` comparing `0.2.4` vs `0.4.1` on `ParakeetUnifiedEnglish`: no WER regression, `median_rtf` and `p95_clip_ms` within 5%, and 8 s stream prewarm (`STREAM_PREWARM_SAMPLES`) passing on Metal and Vulkan.
   - Verify `Qwen3Asr06B` with Phase 2 vocabulary hints on English/French/Mandarin product-name clips (`#129`).
   - Compare `ParakeetUltra` vs `ParakeetV3` on the benchmark manifest (WER and pause segmentation on >30 s clips).
 - **Effort:** 2 days.
@@ -106,12 +106,12 @@ Transcription quality plan (ordered by value / effort)
   - At every step, `joint_step` copies the joint network output into a host `std::vector<float> logits`, applies `log_softmax`, and selects `argmax_range(token_logits, n_token_cls)` with `blank_id = vocab`.
 - **Changes:**
   - **Step 4a: 5-day spike in a local `transcribe.cpp` 0.4.1 checkout:**
-    1. **SentencePiece encoder:** Implement tokenization for Parakeet's 1,024-piece SentencePiece vocabulary stored in the GGUF metadata (replacing the `INT_MIN` stub in `transcribe_tokenize`), generating casing variants (`"Hex"`, `" hex"`, `"Cappuccino"`, `" cappuccino"`).
+    1. **SentencePiece encoder:** Implement tokenization for Parakeet's 1,024-piece SentencePiece vocabulary stored in the GGUF metadata (replacing the `INT_MIN` stub in `transcribe_tokenize`), generating casing variants (`"Hex"`, `" mumble"`, `"Cappuccino"`, `" cappuccino"`).
     2. **Aho-Corasick / prefix trie shallow fusion (GPU-PB style, arXiv 2508.07014):** Build a token-level prefix trie with failure links from `RunOptions::vocabulary`.
     3. **Acoustic margin gate + prefix rollback:** At each `joint_step`, only apply `boost` (e.g. +1.5 to +3.0 nats) to a trie-advancing token `t` when `logits[best_non_blank] - logits[t] <= margin` (the acoustics already support `t`). To prevent a multi-token term (`"Cappuccino"`, `"OpenCode"`) from stranding a broken first subword if a later subword fails the acoustic margin gate, keep a single shadow predictor state while inside an active multi-token trie prefix and commit it only when the full term completes (zero extra compute outside active prefixes).
   - **Step 4b: Ship upstream + fork bridge (`Cargo.toml`, `src/parakeet.rs`, `src/transcription/local_transcriber.rs`):**
     - Wire `Parakeet` and `LocalTranscriber` to pass `settings.vocabulary` terms into `RunOptions::vocabulary` (both offline `run` and `with_stream`).
-    - **Upstream vs. fork strategy:** Open an upstream PR to `handy-computer/transcribe.cpp` filling Parakeet's currently empty `vocabulary` slot in `docs/prompting.md` and `transcribe_tokenize`. While upstream reviews, carry a narrow `[patch.crates-io]` git patch pointing to `anomalyco/transcribe.cpp` (pinned rev, updating `nix/package.nix` hashes if needed) so Hex ships immediately, then return to the crates.io pin once upstream releases.
+    - **Upstream vs. fork strategy:** Open an upstream PR to `handy-computer/transcribe.cpp` filling Parakeet's currently empty `vocabulary` slot in `docs/prompting.md` and `transcribe_tokenize`. While upstream reviews, carry a narrow `[patch.crates-io]` git patch pointing to `anomalyco/transcribe.cpp` (pinned rev, updating `nix/package.nix` hashes if needed) so Mumble ships immediately, then return to the crates.io pin once upstream releases.
     - **Fallback if greedy spike misses the gate:** Confidence-gated phonetic snap in Rust using `Transcript::tokens` (`Token::p`) and word timestamps already returned by `transcribe_segments` (`src/parakeet.rs:1190`), with FluidAudio-style guards (>=80% similarity for <=4-char words, >=85% with stop words).
 - **Measurement & gate:**
   - Must pass the Phase 1 gate on `ParakeetUnifiedEnglish`: **term recall >= 70% (including `"Hanks" -> "Hex"` and `"Capuchin" -> "Cappuccino"` real clips), false-replacement rate <= 0.5% on the 200-clip LibriSpeech + term-free guard set, overall WER delta <= +0.3 pt, and p95 decode overhead < 5 ms per clip.**
@@ -154,9 +154,9 @@ Transcription quality plan (ordered by value / effort)
   - Always-on commands cannot share the dictation model's single `Session::stream` lease without blocking dictation, and a second Parakeet `Model` costs +740 MB RAM and continuous 5.6 s left-context GPU recomputation.
   - At command latency (<300 ms), `moonshine-streaming-small` (199 MB Q8_0, 7.84% 8-set WER, 2.54% LibriSpeech clean) beats Parakeet Unified at 160 ms (8.44% WER) and runs at 129x realtime on Metal or 64x on CPU.
 - **Changes:**
-  - Add `moonshine-streaming-small-Q8_0.gguf` (199 MB, `handy-computer/moonshine-streaming-small-gguf`, pinned revision and SHA-256) to Hex's Hugging Face model downloader (`src/transcription_models.rs`).
+  - Add `moonshine-streaming-small-Q8_0.gguf` (199 MB, `handy-computer/moonshine-streaming-small-gguf`, pinned revision and SHA-256) to Mumble's Hugging Face model downloader (`src/transcription_models.rs`).
   - Rewrite `src/moonshine.rs` on top of `transcribe-cpp`'s `moonshine_streaming` architecture:
-    - Because `transcribe-cpp`'s Moonshine stream returns committed/tentative text and caps a single stream at 81.9 s without built-in VAD line events, drive line lifecycle with Hex's existing 16 kHz `PauseSegmenter` (or `transcribe-cpp`'s built-in Silero VAD v6.2).
+    - Because `transcribe-cpp`'s Moonshine stream returns committed/tentative text and caps a single stream at 81.9 s without built-in VAD line events, drive line lifecycle with Mumble's existing 16 kHz `PauseSegmenter` (or `transcribe-cpp`'s built-in Silero VAD v6.2).
     - Start a stream on speech onset (`TranscriptPhase::Started`), emit `TranscriptPhase::Updated` when tentative/committed text changes (preserving low-latency voice-delimited dictation triggers), and finalize on pause (`TranscriptPhase::Completed`) for ordinary command resolution in `src/recognition.rs`.
   - Delete `libmoonshine.dylib` dynamic loading (`libloading`), `MOONSHINE_ORT_SINGLE_THREAD` in `src/main.rs`, the 8-file `.ort` manifest, and the `download.moonshine.ai` host requirement.
 - **Measurement & gate:**
@@ -175,7 +175,7 @@ Transcription quality plan (ordered by value / effort)
 1. **Where should the shared Vocabulary UI live?**
    - *Recommendation:* Put the shared **Vocabulary** card in **Settings -> Dictation** (visible for every model, replacing the Whisper-only `Recognition hints` row) plus a 1-click **"Add to vocabulary"** button on History entries, while keeping per-mode **Corrections** in **Modes** for mode-specific text rules.
 2. **Carry a temporary `anomalyco/transcribe.cpp` `[patch.crates-io]` fork for Phase 4 Parakeet phrase boosting, or wait for upstream merge?**
-   - *Recommendation:* **Carry a pinned `[patch.crates-io]` fork while the upstream PR is in review** so Hex gets Parakeet vocabulary boosting immediately once the 5-day spike clears the benchmark gate.
+   - *Recommendation:* **Carry a pinned `[patch.crates-io]` fork while the upstream PR is in review** so Mumble gets Parakeet vocabulary boosting immediately once the 5-day spike clears the benchmark gate.
 3. **In-call meetings after Moonshine is dropped: is 5-8 s rolling Parakeet enough, or also add the Apple `SpeechTranscriber` (~2% CPU, 0 MB RAM) volatile tail?**
    - *Recommendation:* **Ship 5-8 s pause-cut rolling Parakeet with shared vocabulary first (1 day)**; add the Apple `SpeechTranscriber` volatile tail only if you miss seeing words appear mid-sentence before a pause.
 4. **Replace `Parakeet v3` in the picker with `parakeet-ultra` in Phase 3, or list both?**

@@ -4,7 +4,7 @@ import { guessPlatform, refinePlatform, type Platform } from "./platform"
 import { OptionKey, SoundToggle, useShout } from "./Shout"
 import signature from "./footer-signature.svg"
 
-function HexMark() {
+function MumbleMark() {
   return (
     <svg aria-hidden="true" viewBox="0 0 64 64" className="wordmark__icon">
       <path d="M32 4 57 18.5v27L32 60 7 45.5v-27Z" />
@@ -48,13 +48,13 @@ export default function App() {
       <main className="page" ref={root} data-phase={shout.phase}>
         <canvas ref={canvas} className="stage" aria-hidden="true" />
         <header className="header">
-          <a className="wordmark" href={import.meta.env.BASE_URL} aria-label="Hex home" data-avoid>
-            <HexMark />
-            <span>Hex</span>
+          <a className="wordmark" href={import.meta.env.BASE_URL} aria-label="Mumble home" data-avoid>
+            <MumbleMark />
+            <span>Mumble</span>
           </a>
           <div className="header__tools" data-avoid>
             {shout.phase === "started" && <SoundToggle muted={shout.muted} onToggle={shout.toggleMuted} />}
-            <a className="header__github" href="https://github.com/anomalyco/hex">
+            <a className="header__github" href="https://github.com/khoi/mumble">
               <GitHubMark />
               <span>GitHub</span>
             </a>
@@ -83,7 +83,7 @@ export default function App() {
             </h1>
             <p>
               Local voice dictation for {PLATFORM_NAMES[platform]}. Hold {SHORTCUTS[platform]}, say what you mean, and
-              Hex pastes it where you are.
+              Mumble pastes it where you are.
             </p>
           </div>
 

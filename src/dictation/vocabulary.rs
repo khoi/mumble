@@ -1,4 +1,4 @@
-//! The shared vocabulary: names Hex should know (people, projects,
+//! The shared vocabulary: names Mumble should know (people, projects,
 //! products), each with spellings a transcript may show instead ("sounds
 //! like"). Search uses it to find a term's likely mis-transcriptions, prompts
 //! can read it through [`terms`], and cloud transcription sends the list as
@@ -303,7 +303,7 @@ mod tests {
             serde_json::to_string(&file).unwrap(),
             r#"{"vocabulary":["Rune",{"term":"OpenCode","sounds_like":["open code"]},"Kaffar"]}"#
         );
-        // Replies to `hex vocabulary` keep the object form.
+        // Replies to `mumble vocabulary` keep the object form.
         assert_eq!(
             serde_json::to_string(&entry("Rune", &[])).unwrap(),
             r#"{"term":"Rune"}"#
@@ -393,7 +393,8 @@ mod tests {
 
     #[test]
     fn saved_entries_read_without_loading_settings() {
-        let directory = std::env::temp_dir().join(format!("hex-vocabulary-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("mumble-vocabulary-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("settings.json");
         assert_eq!(read_from(&path).unwrap(), []);

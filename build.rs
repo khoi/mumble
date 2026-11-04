@@ -16,7 +16,7 @@ fn main() {
     compile_permission_guide();
 }
 
-/// The version Hex reports (`HEX_BUILD_VERSION`): the crate version, which
+/// The version Mumble reports (`MUMBLE_BUILD_VERSION`): the crate version, which
 /// the Release workflow stamps (scripts/set-crate-version.sh), else, for any
 /// other build of the unstamped `0.0.0`, `0.0.0-dev-local-<commit>` with
 /// `-dirty` for uncommitted changes (`0.0.0-dev-local` without git, as in Nix).
@@ -53,19 +53,19 @@ fn check_windows_split() {
 }
 
 fn build_version() {
-    println!("cargo:rerun-if-env-changed=HEX_VERSION");
+    println!("cargo:rerun-if-env-changed=MUMBLE_VERSION");
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
-    // CI builds name their version in HEX_VERSION and check `hex --version`
+    // CI builds name their version in MUMBLE_VERSION and check `mumble --version`
     // against it, test builds included (they name the crate version).
-    if let Some(named) = std::env::var("HEX_VERSION")
+    if let Some(named) = std::env::var("MUMBLE_VERSION")
         .ok()
         .filter(|named| !named.is_empty())
     {
-        println!("cargo:rustc-env=HEX_BUILD_VERSION={named}");
+        println!("cargo:rustc-env=MUMBLE_BUILD_VERSION={named}");
         return;
     }
     if version != "0.0.0" {
-        println!("cargo:rustc-env=HEX_BUILD_VERSION={version}");
+        println!("cargo:rustc-env=MUMBLE_BUILD_VERSION={version}");
         return;
     }
     let git = |args: &[&str]| {
@@ -98,17 +98,17 @@ fn build_version() {
             }
         }
     }
-    println!("cargo:rustc-env=HEX_BUILD_VERSION={version}");
+    println!("cargo:rustc-env=MUMBLE_BUILD_VERSION={version}");
 }
 
-/// A test or local build carries its commit (`HEX_COMMIT`), which the sidebar shows
+/// A test or local build carries its commit (`MUMBLE_COMMIT`), which the sidebar shows
 /// beside the version.
 fn test_build_commit() {
-    println!("cargo:rerun-if-env-changed=HEX_BUILD_CHANNEL");
-    println!("cargo:rerun-if-env-changed=HEX_TEST_BUILD");
-    println!("cargo:rerun-if-env-changed=HEX_LOCAL_BUILD");
-    if std::env::var("HEX_TEST_BUILD").as_deref() != Ok("1")
-        && std::env::var("HEX_LOCAL_BUILD").as_deref() != Ok("1")
+    println!("cargo:rerun-if-env-changed=MUMBLE_BUILD_CHANNEL");
+    println!("cargo:rerun-if-env-changed=MUMBLE_TEST_BUILD");
+    println!("cargo:rerun-if-env-changed=MUMBLE_LOCAL_BUILD");
+    if std::env::var("MUMBLE_TEST_BUILD").as_deref() != Ok("1")
+        && std::env::var("MUMBLE_LOCAL_BUILD").as_deref() != Ok("1")
     {
         return;
     }
@@ -124,7 +124,7 @@ fn test_build_commit() {
     let Some(commit) = git(&["rev-parse", "--short=7", "HEAD"]) else {
         return;
     };
-    println!("cargo:rustc-env=HEX_COMMIT={commit}");
+    println!("cargo:rustc-env=MUMBLE_COMMIT={commit}");
     let reference = git(&["symbolic-ref", "-q", "HEAD"]);
     for name in ["HEAD", "packed-refs"]
         .into_iter()
@@ -138,13 +138,13 @@ fn test_build_commit() {
     }
 }
 
-/// Gives the executable its icon and the "Hex" name Explorer and Task
+/// Gives the executable its icon and the "Mumble" name Explorer and Task
 /// Manager show, whatever the file is called.
 #[cfg(windows)]
 fn embed_windows_resources() {
     let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let output_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    let icon = manifest_dir.join("resources/windows/hex.ico");
+    let icon = manifest_dir.join("resources/windows/mumble.ico");
     println!("cargo:rerun-if-changed={}", icon.display());
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let numeric = version
@@ -168,12 +168,12 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "FileDescription", "Hex"
-      VALUE "ProductName", "Hex"
+      VALUE "FileDescription", "Mumble"
+      VALUE "ProductName", "Mumble"
       VALUE "FileVersion", "{version}"
       VALUE "ProductVersion", "{version}"
-      VALUE "OriginalFilename", "hex.exe"
-      VALUE "InternalName", "hex"
+      VALUE "OriginalFilename", "mumble.exe"
+      VALUE "InternalName", "mumble"
     END
   END
   BLOCK "VarFileInfo"
@@ -184,7 +184,7 @@ END
 "#,
         icon = icon.display().to_string().replace('\\', "/"),
     );
-    let resource = output_dir.join("hex.rc");
+    let resource = output_dir.join("mumble.rc");
     std::fs::write(&resource, script).expect("write the Windows resource script");
     embed_resource::compile(&resource, embed_resource::NONE)
         .manifest_optional()
@@ -204,5 +204,5 @@ fn compile_permission_guide() {
     cc::Build::new()
         .file("native/permission_guide.m")
         .flag("-fobjc-arc")
-        .compile("hex_permission_guide");
+        .compile("mumble_permission_guide");
 }

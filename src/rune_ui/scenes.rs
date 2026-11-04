@@ -11,7 +11,7 @@ pub(super) const SCENES: &[Scene] = &[
     // (`--snap`): waits for its first snapshot instead of drawing
     // "Connecting…" at virtual time zero.
     ("live", |ui| {
-        // Reads the saved settings and the running Hex; writes neither.
+        // Reads the saved settings and the running Mumble; writes neither.
         let settings = AppSettings::read().unwrap_or_default();
         crate::desktop::i18n::apply(settings.ui_language.as_deref());
         *ui = Ui::with(settings, Service::Fixture(Vec::new()));
@@ -67,7 +67,7 @@ pub(super) const SCENES: &[Scene] = &[
         ui.microphones = Ok(crate::audio::InputDevices {
             names: vec!["Built-in Audio Analog Stereo".into(), "Shure MV7".into()],
             system_default: Some("Shure MV7".into()),
-            default_is_hex_microphone: false,
+            default_is_mumble_microphone: false,
             ..Default::default()
         });
     }),
@@ -169,7 +169,7 @@ pub(super) const SCENES: &[Scene] = &[
         );
     }),
     // The first run on Linux (Windows is the same window): the demo, the
-    // practice game, and Hex is ready. Transcription is cloud-only, so there
+    // practice game, and Mumble is ready. Transcription is cloud-only, so there
     // is no model download step.
     ("onboarding", |ui| {
         first_run(ui, FirstRun::Ready, Page::Demo)
@@ -343,13 +343,13 @@ pub(super) const SCENES: &[Scene] = &[
         ui.platform.tuning.mode = crate::audio::voice_filter::VoiceFilterMode::Muted;
         ui.platform.demo = Some(fun::preview_demo(
             false,
-            Some(crate::audio::hex_microphone::DemoPlaybackTrack::CallHears),
+            Some(crate::audio::mumble_microphone::DemoPlaybackTrack::CallHears),
         ));
         ui.pane = Pane::VoiceFilter;
     }),
     ("mac-voice-filter-driver-missing", |ui| {
         *ui = mac_fixture();
-        if let Some(driver) = &mut ui.platform.hex_microphone {
+        if let Some(driver) = &mut ui.platform.mumble_microphone {
             driver.driver_bundle_installed = false;
             driver.driver_loaded = false;
             driver.installed_version = None;
@@ -362,20 +362,20 @@ pub(super) const SCENES: &[Scene] = &[
         *ui = fixture(DesktopShortcuts::Commands);
         ui.platform = platform::PlatformState::preview(platform::Capabilities::LINUX);
         ui.host = platform::PlatformHost::Fixture(Vec::new());
-        ui.settings.experimental.hex_microphone = true;
+        ui.settings.experimental.mumble_microphone = true;
         ui.pane = Pane::VoiceFilter;
     }),
     ("voice-filter-unavailable", |ui| {
         *ui = fixture(DesktopShortcuts::Commands);
         ui.platform = platform::PlatformState::preview(platform::Capabilities::LINUX);
         ui.host = platform::PlatformHost::Fixture(Vec::new());
-        if let Some(source) = &mut ui.platform.hex_microphone {
+        if let Some(source) = &mut ui.platform.mumble_microphone {
             source.driver_loaded = false;
-            source.action_state = crate::audio::hex_microphone::DriverActionState::Failed(
-                "pw-cat was not found; Hex Microphone needs PipeWire".into(),
+            source.action_state = crate::audio::mumble_microphone::DriverActionState::Failed(
+                "pw-cat was not found; Mumble Microphone needs PipeWire".into(),
             );
         }
-        ui.settings.experimental.hex_microphone = true;
+        ui.settings.experimental.mumble_microphone = true;
         ui.pane = Pane::VoiceFilter;
     }),
     ("mac-hud-lab", |ui| {
@@ -422,7 +422,7 @@ pub(super) const SCENES: &[Scene] = &[
         };
     }),
     // The first run on macOS: each permission state, the practice game, and
-    // Hex is ready.
+    // Mumble is ready.
     ("mac-onboarding-permissions", |ui| {
         mac_first_run(ui, onboarding::MacStep::Setup, Page::Permissions)
     }),
@@ -451,7 +451,7 @@ pub(super) const SCENES: &[Scene] = &[
 enum FirstRun {
     /// Setup is ready.
     Ready,
-    /// Setup is ready, and the desktop asks before Hex's first paste (GNOME
+    /// Setup is ready, and the desktop asks before Mumble's first paste (GNOME
     /// and KDE on Wayland).
     PasteAccess,
 }
@@ -478,7 +478,7 @@ pub(super) fn mac_fixture() -> Ui {
     ui.host = platform::PlatformHost::Fixture(Vec::new());
     ui.settings.dictation_hotkey = AppSettings::default().dictation_hotkey;
     ui.settings.paste_with_shift = false;
-    ui.settings.experimental.hex_microphone = true;
+    ui.settings.experimental.mumble_microphone = true;
     ui.microphones = Ok(crate::audio::InputDevices {
         names: vec![
             "Kit Pods".into(),
@@ -486,7 +486,7 @@ pub(super) fn mac_fixture() -> Ui {
             "Studio Display Microphone".into(),
         ],
         system_default: Some("Kit Pods".into()),
-        default_is_hex_microphone: false,
+        default_is_mumble_microphone: false,
         ..Default::default()
     });
     ui

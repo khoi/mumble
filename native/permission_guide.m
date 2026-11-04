@@ -6,19 +6,19 @@
 #import <QuartzCore/QuartzCore.h>
 #import <dlfcn.h>
 
-typedef NS_ENUM(NSInteger, HexPermission) {
-    HexPermissionAccessibility = 1,
-    HexPermissionMicrophone = 2,
-    HexPermissionSystemAudio = 3,
+typedef NS_ENUM(NSInteger, MumblePermission) {
+    MumblePermissionAccessibility = 1,
+    MumblePermissionMicrophone = 2,
+    MumblePermissionSystemAudio = 3,
 };
 
 static NSPanel *guidePanel;
 static NSTimer *guideTimer;
 static BOOL sawSettingsWindow;
-static HexPermission activePermission;
+static MumblePermission activePermission;
 static NSView *guideTile;
 
-/// The tile flies on its own from the click in Hex's window to its place in
+/// The tile flies on its own from the click in Mumble's window to its place in
 /// the guide, so the eye can follow it to System Settings.
 static NSPanel *flightPanel;
 static CALayer *flightLayer;
@@ -32,7 +32,7 @@ static const CFTimeInterval flightDuration = 0.62;
 /// Settings that has not opened by then gets no flight.
 static const CFTimeInterval flightPatience = 4;
 
-@interface HexDragView : NSView <NSDraggingSource>
+@interface MumbleDragView : NSView <NSDraggingSource>
 @property(nonatomic, strong) NSURL *bundleURL;
 @property(nonatomic, strong) NSImage *appIcon;
 @property(nonatomic, copy) NSString *appName;
@@ -40,12 +40,12 @@ static const CFTimeInterval flightPatience = 4;
 @end
 
 /// The name System Settings lists the app under.
-static NSString *hexAppName(NSURL *bundleURL) {
+static NSString *mumbleAppName(NSURL *bundleURL) {
     NSString *name = [[NSFileManager defaultManager] displayNameAtPath:bundleURL.path];
     if ([name.pathExtension.lowercaseString isEqualToString:@"app"]) {
         name = name.stringByDeletingPathExtension;
     }
-    return name.length > 0 ? name : @"Hex";
+    return name.length > 0 ? name : @"Mumble";
 }
 
 /// macOS 27 renamed the Accessibility list.
@@ -55,13 +55,13 @@ static BOOL accessibilityRenamed(void) {
 }
 
 /// The name of the Privacy & Security list each permission lives in.
-const char *hex_permission_list_name(int permission) {
-    switch ((HexPermission)permission) {
-        case HexPermissionAccessibility:
+const char *mumble_permission_list_name(int permission) {
+    switch ((MumblePermission)permission) {
+        case MumblePermissionAccessibility:
             return accessibilityRenamed() ? "Device Control and Data Access" : "Accessibility";
-        case HexPermissionMicrophone:
+        case MumblePermissionMicrophone:
             return "Microphone";
-        case HexPermissionSystemAudio:
+        case MumblePermissionSystemAudio:
             return "System Audio Recording Only";
     }
     return "Privacy & Security";
@@ -69,14 +69,14 @@ const char *hex_permission_list_name(int permission) {
 
 /// Asks macOS to register this running binary in Accessibility and show its
 /// prompt when untrusted.
-bool hex_prompt_accessibility_trust(void) {
+bool mumble_prompt_accessibility_trust(void) {
     NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
     return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
 }
 
 /// Writes the running `.app` bundle's identifier as UTF-8 into `buf`,
 /// returning its byte length, or 0 outside a `.app` bundle.
-size_t hex_running_app_bundle_id(char *buf, size_t cap) {
+size_t mumble_running_app_bundle_id(char *buf, size_t cap) {
     if (buf == NULL || cap == 0) {
         return 0;
     }
@@ -124,7 +124,7 @@ static void drawTile(NSRect bounds, NSImage *icon, NSString *name, BOOL dark) {
     [name drawAtPoint:NSMakePoint(52, 14) withAttributes:attributes];
 }
 
-@implementation HexDragView
+@implementation MumbleDragView
 
 - (instancetype)initWithFrame:(NSRect)frame bundleURL:(NSURL *)bundleURL {
     self = [super initWithFrame:frame];
@@ -132,7 +132,7 @@ static void drawTile(NSRect bounds, NSImage *icon, NSString *name, BOOL dark) {
         _bundleURL = bundleURL;
         _appIcon = [[NSWorkspace sharedWorkspace] iconForFile:bundleURL.path];
         _appIcon.size = NSMakeSize(32, 32);
-        _appName = hexAppName(bundleURL);
+        _appName = mumbleAppName(bundleURL);
     }
     return self;
 }
@@ -242,8 +242,8 @@ static BOOL settingsHasWindow(void) {
 
 /// Bit 0: System Settings has an open window.
 /// Bit 1: System Settings is the frontmost application.
-/// Bit 2: Hex is the active application.
-int hex_permission_settings_state(void) {
+/// Bit 2: Mumble is the active application.
+int mumble_permission_settings_state(void) {
     NSCAssert(NSThread.isMainThread, @"settings state must run on the main thread");
     BOOL open = settingsHasWindow();
     NSRunningApplication *front = NSWorkspace.sharedWorkspace.frontmostApplication;
@@ -316,13 +316,13 @@ static BOOL systemAudioGranted(void) {
 static BOOL permissionGranted(void) {
     switch (activePermission) {
         // What System Settings shows now: the preflights keep their launch
-        // answer until Hex restarts.
-        case HexPermissionAccessibility:
+        // answer until Mumble restarts.
+        case MumblePermissionAccessibility:
             return AXIsProcessTrusted();
-        case HexPermissionMicrophone:
+        case MumblePermissionMicrophone:
             return [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] ==
                    AVAuthorizationStatusAuthorized;
-        case HexPermissionSystemAudio:
+        case MumblePermissionSystemAudio:
             return systemAudioGranted();
     }
     return NO;
@@ -408,8 +408,8 @@ static void stepFlight(void) {
     }
 }
 
-/// The click that asked for the guide, when it was in one of Hex's windows.
-static BOOL clickInHexWindow(NSPoint point) {
+/// The click that asked for the guide, when it was in one of Mumble's windows.
+static BOOL clickInMumbleWindow(NSPoint point) {
     for (NSWindow *window in NSApp.windows) {
         if (window.visible && window != guidePanel && window != flightPanel &&
             NSPointInRect(point, window.frame)) {
@@ -419,14 +419,14 @@ static BOOL clickInHexWindow(NSPoint point) {
     return NO;
 }
 
-/// Lifts a copy of the tile out of Hex's window at `origin`.
+/// Lifts a copy of the tile out of Mumble's window at `origin`.
 static void beginFlight(NSPoint origin, NSURL *bundleURL, NSSize tileSize) {
     flightOrigin = origin;
     flightShownAt = CACurrentMediaTime();
     flightStartedAt = 0;
     NSImage *icon = [[NSWorkspace sharedWorkspace] iconForFile:bundleURL.path];
     icon.size = NSMakeSize(32, 32);
-    NSString *name = hexAppName(bundleURL);
+    NSString *name = mumbleAppName(bundleURL);
     BOOL dark = isDark(NSApp.effectiveAppearance);
     NSImage *image = [NSImage imageWithSize:tileSize
                                     flipped:NO
@@ -516,32 +516,32 @@ static void updateGuidePosition(void) {
     [guidePanel orderFrontRegardless];
 }
 
-void hex_show_permission_guide(int permission) {
+void mumble_show_permission_guide(int permission) {
     NSCAssert(NSThread.isMainThread, @"permission guide must run on the main thread");
     NSPoint click = NSEvent.mouseLocation;
-    BOOL fly = clickInHexWindow(click) &&
+    BOOL fly = clickInMumbleWindow(click) &&
                !NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
     closeGuide();
-    activePermission = (HexPermission)permission;
+    activePermission = (MumblePermission)permission;
 
     NSURL *bundleURL = NSBundle.mainBundle.bundleURL.standardizedURL;
-    NSString *listName = [NSString stringWithUTF8String:hex_permission_list_name(permission)];
-    NSString *appName = hexAppName(bundleURL);
+    NSString *listName = [NSString stringWithUTF8String:mumble_permission_list_name(permission)];
+    NSString *appName = mumbleAppName(bundleURL);
     NSString *pane;
     switch (activePermission) {
-        case HexPermissionAccessibility:
+        case MumblePermissionAccessibility:
             pane = @"Privacy_Accessibility";
             break;
-        case HexPermissionMicrophone:
+        case MumblePermissionMicrophone:
             pane = @"Privacy_Microphone";
             break;
-        case HexPermissionSystemAudio:
+        case MumblePermissionSystemAudio:
             pane = @"Privacy_AudioCapture";
             break;
     }
     // The Microphone list only holds apps that asked, so a refused
     // microphone is switched on rather than dragged in.
-    BOOL draggable = activePermission != HexPermissionMicrophone;
+    BOOL draggable = activePermission != MumblePermissionMicrophone;
     NSURL *settingsURL = [NSURL URLWithString:[NSString stringWithFormat:
         @"x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?%@", pane]];
     openSettingsPane(settingsURL);
@@ -585,7 +585,7 @@ void hex_show_permission_guide(int permission) {
     [content addSubview:instruction];
 
     if (draggable) {
-        HexDragView *dragView = [[HexDragView alloc]
+        MumbleDragView *dragView = [[MumbleDragView alloc]
             initWithFrame:NSMakeRect(18, 17, panelSize.width - 36, 44)
                  bundleURL:bundleURL];
         [content addSubview:dragView];

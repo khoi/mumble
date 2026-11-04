@@ -4,6 +4,6 @@
   "serve": {
     "command": "bun perf/serve.ts {port}",
     "cwd": "site",
-    "ready": "http://127.0.0.1:{port}/hex/"
+    "ready": "http://127.0.0.1:{port}/mumble/"
   }
 }

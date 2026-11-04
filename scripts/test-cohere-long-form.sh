@@ -9,10 +9,10 @@ fi
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 model=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$1")
 test -f "$model"
-fixtures=$(mktemp -d "${TMPDIR:-/tmp}/hex-cohere-fixtures.XXXXXX")
+fixtures=$(mktemp -d "${TMPDIR:-/tmp}/mumble-cohere-fixtures.XXXXXX")
 cleanup() {
   result=$?
-  if [ "$result" -eq 0 ] && [ "${HEX_KEEP_COHERE_FIXTURES:-0}" != 1 ]; then
+  if [ "$result" -eq 0 ] && [ "${MUMBLE_KEEP_COHERE_FIXTURES:-0}" != 1 ]; then
     rm -rf "$fixtures"
   else
     echo "Synthetic fixture evidence retained at $fixtures" >&2
@@ -51,7 +51,7 @@ PY
 
 # This runs inference on generated speech only, without a listener or microphone.
 cd "$root"
-HEX_APPLICATION_SUPPORT_DIR="$fixtures/support" \
-HEX_COHERE_MODEL="$model" HEX_COHERE_FIXTURES="$fixtures" \
-  cargo test --locked --release --bin hex \
+MUMBLE_APPLICATION_SUPPORT_DIR="$fixtures/support" \
+MUMBLE_COHERE_MODEL="$model" MUMBLE_COHERE_FIXTURES="$fixtures" \
+  cargo test --locked --release --bin mumble \
     cohere_long_form_keeps_all_sections_with_and_without_pauses -- --ignored --nocapture

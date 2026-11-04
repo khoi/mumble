@@ -103,7 +103,7 @@ const OSES: { id: Os; label: string; mark: ReactNode }[] = [
 function rows(os: Os, intelMac: boolean, { arch, setArch, pkg, setPkg }: Choices): Row[] {
   const linux = RELEASE.linux
   const archSwitch = { choices: ARCHES, chosen: arch, choose: (id: string) => setArch(id as Arch) }
-  // Hex runs only on Apple silicon, so an Intel Mac gets the reason, not a download.
+  // Mumble runs only on Apple silicon, so an Intel Mac gets the reason, not a download.
   if (os === "mac" && intelMac) return [{ label: "Download", note: "Requires an Apple silicon Mac" }]
   if (os === "mac")
     return [

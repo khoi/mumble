@@ -1,4 +1,4 @@
-//! The macOS host of `hex` control commands ([`crate::control`]). The main
+//! The macOS host of `mumble` control commands ([`crate::control`]). The main
 //! thread answers what it owns (the window and settings saves) and hands commands that wait on the listener or the
 //! window to a short-lived thread, so a slow answer never stalls the run loop.
 
@@ -26,7 +26,7 @@ const WINDOW_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long `model use` waits to confirm, inside
 /// the local API's own control deadline.
 const CONFIRM_WAIT: Duration = Duration::from_secs(8);
-/// Lets the local API write the reply before Hex quits.
+/// Lets the local API write the reply before Mumble quits.
 const QUIT_GRACE: Duration = Duration::from_millis(250);
 
 impl Pump {
@@ -63,7 +63,7 @@ impl Pump {
                         if restart && !crate::desktop::onboarding::spawn_relaunch() {
                             return Err(ControlError::new(
                                 "unsupported",
-                                "only an installed Hex.app can restart itself; quit it and open \
+                                "only an installed Mumble.app can restart itself; quit it and open \
                                  it again",
                             ));
                         }
@@ -72,8 +72,8 @@ impl Pump {
                     let quitting = answer.is_ok();
                     let _ = reply.send(
                         match answer {
-                            Ok(()) if restart => ControlReply::done("Restarting Hex"),
-                            Ok(()) => ControlReply::done("Quitting Hex"),
+                            Ok(()) if restart => ControlReply::done("Restarting Mumble"),
+                            Ok(()) => ControlReply::done("Quitting Mumble"),
                             Err(error) => error.into(),
                         }
                         .into(),
@@ -174,10 +174,12 @@ impl Pump {
                     ControlReply::error("unsupported", "updates are managed by your organization")
                 }
                 DesktopUpdateStatus::Unavailable | DesktopUpdateStatus::SourceBuild => {
-                    ControlReply::error("unavailable", "this Hex build doesn't update itself")
+                    ControlReply::error("unavailable", "this Mumble build doesn't update itself")
                 }
                 _ => match crate::macos_rune::update_action(&DesktopAction::CheckForUpdates) {
-                    Ok(()) => ControlReply::done("Checking for updates; Hex shows what it finds"),
+                    Ok(()) => {
+                        ControlReply::done("Checking for updates; Mumble shows what it finds")
+                    }
                     Err(error) => ControlReply::error("unavailable", format!("{error:#}")),
                 },
             }),
@@ -281,7 +283,7 @@ impl Pump {
         Ok(ControlReply::done("Opened the window"))
     }
 
-    /// `hex window story`: what a `hex://story/…` link does.
+    /// `mumble window story`: what a `mumble://story/…` link does.
     fn show_story(&mut self, link: StoryLink) -> ControlReply {
         let enabled = crate::rune_ui::playground::enabled();
         let mut message = format!("Opened the playground at {}", link.story);
@@ -293,7 +295,7 @@ impl Pump {
         }
         self.window.update(move |_, tx| {
             if let Err(why) = story_link::open(&link, tx) {
-                tracing::warn!(story = %link.story, %why, "hex window story opened only the window");
+                tracing::warn!(story = %link.story, %why, "mumble window story opened only the window");
             }
         });
         bring_window_forward();
@@ -314,7 +316,7 @@ fn reply_with(result: Result<ControlReply, ControlError>) -> ControlReply {
 
 fn spawn(work: impl FnOnce() + Send + 'static) {
     if let Err(error) = thread::Builder::new()
-        .name("hex-control".into())
+        .name("mumble-control".into())
         .spawn(work)
     {
         tracing::error!(%error, "could not start a control thread");
@@ -347,12 +349,12 @@ fn listener_ready(runtime: &RuntimeHandle) -> Result<(), ControlError> {
     if let Some(failure) = listener.and_then(|listener| listener.warning.as_ref()) {
         return Err(ControlError::new(
             "listener-stopped",
-            format!("the listener stopped ({failure}); restart Hex"),
+            format!("the listener stopped ({failure}); restart Mumble"),
         ));
     }
     Err(ControlError::new(
         "not-ready",
-        "Hex is waiting for setup (permissions or the dictation model); run `hex status`",
+        "Mumble is waiting for setup (permissions or the dictation model); run `mumble status`",
     ))
 }
 
@@ -368,7 +370,7 @@ fn ask<T: Send + 'static>(
     receiver.recv_timeout(LISTENER_TIMEOUT).map_err(|_| {
         ControlError::new(
             "unavailable",
-            "the listener didn't answer in time; check `hex status`",
+            "the listener didn't answer in time; check `mumble status`",
         )
     })
 }
@@ -433,7 +435,7 @@ fn launch_at_login(enabled: Option<bool>) -> Result<ControlReply, ControlError> 
     if !bundled {
         return Err(ControlError::new(
             "unsupported",
-            "only an installed Hex.app can launch at login",
+            "only an installed Mumble.app can launch at login",
         ));
     }
     let after = crate::desktop::login_item::set_now(Some(enabled)).map_err(|error| {
@@ -488,7 +490,7 @@ fn status(
 ) -> Result<ControlReply, ControlError> {
     let published = runtime
         .published()
-        .ok_or_else(|| ControlError::new("not-ready", "Hex is still starting; try again"))?;
+        .ok_or_else(|| ControlError::new("not-ready", "Mumble is still starting; try again"))?;
     // A stopped listener cannot say what it was doing.
     let snapshot = match &published.listener.warning {
         Some(failure) => Err(ControlError::new("listener-stopped", failure.clone())),

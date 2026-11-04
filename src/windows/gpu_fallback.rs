@@ -1,6 +1,6 @@
-//! Which GPU Hex draws on. Rune takes the lowest-power adapter, which keeps a
+//! Which GPU Mumble draws on. Rune takes the lowest-power adapter, which keeps a
 //! hybrid laptop's discrete GPU asleep. A broken integrated GPU driver can
-//! crash Hex before its first frame (#662), and a driver crash can't be
+//! crash Mumble before its first frame (#662), and a driver crash can't be
 //! caught, so the app marks its launch until a frame reaches the screen or
 //! it quits cleanly. A marker this build left behind means that launch
 //! crashed while drawing: this one draws on the high-performance GPU, and so
@@ -53,7 +53,7 @@ pub(crate) fn arm() {
         SETTLED.store(true, Ordering::Relaxed);
         tracing::warn!(
             marker = %marker().map(|path| path.display().to_string()).unwrap_or_default(),
-            "a previous launch of this Hex crashed before drawing; drawing on the high-performance GPU until Hex updates or the marker is deleted"
+            "a previous launch of this Mumble crashed before drawing; drawing on the high-performance GPU until Mumble updates or the marker is deleted"
         );
         return;
     }
@@ -70,7 +70,7 @@ pub(crate) fn arm() {
     }
 }
 
-/// A frame reached the screen, or Hex quit cleanly: this launch's GPU works.
+/// A frame reached the screen, or Mumble quit cleanly: this launch's GPU works.
 pub(crate) fn disarm() {
     if SETTLED.swap(true, Ordering::Relaxed) {
         return;

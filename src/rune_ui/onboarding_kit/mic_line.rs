@@ -85,7 +85,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_level_rests_until_hex_listens_then_follows_speech() {
+    fn the_level_rests_until_mumble_listens_then_follows_speech() {
         assert_eq!(level(None), 0.0);
         assert!((level(Some(0.1)) - 0.3).abs() < 1e-6);
         assert_eq!(level(Some(0.9)), 1.0);

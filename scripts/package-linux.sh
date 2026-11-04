@@ -1,10 +1,10 @@
 #!/bin/sh
-# Wraps a Linux release executable in the hex .deb and .rpm
+# Wraps a Linux release executable in the mumble .deb and .rpm
 # (packaging/linux/nfpm.yaml):
 #
 #   package-linux.sh <executable> <version> <x64|arm64> <dist>
 #
-# writes <dist>/hex-<version>-linux-<arch>.deb and .rpm, which the Release
+# writes <dist>/mumble-<version>-linux-<arch>.deb and .rpm, which the Release
 # workflow publishes as the linux-<arch>-deb and linux-<arch>-rpm targets.
 # Requires nfpm (NFPM names another binary).
 set -eu
@@ -32,9 +32,9 @@ test "$(head -c 4 "$executable" | od -An -tx1 | tr -d ' ')" = 7f454c46
 
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
-install -m755 "$executable" "$temporary/hex"
-sed 's#@HEX_BIN@#/usr/bin/hex#g' "$root/packaging/anomaly.hex.desktop" > "$temporary/anomaly.hex.desktop"
-cp "$root/packaging/hex.service" "$root/LICENSE" "$root/packaging/linux/refresh-desktop.sh" "$temporary/"
+install -m755 "$executable" "$temporary/mumble"
+sed 's#@MUMBLE_BIN@#/usr/bin/mumble#g' "$root/packaging/anomaly.mumble.desktop" > "$temporary/anomaly.mumble.desktop"
+cp "$root/packaging/mumble.service" "$root/LICENSE" "$root/packaging/linux/refresh-desktop.sh" "$temporary/"
 cp -R "$root/packaging/linux/icons" "$temporary/icons"
 
 # Debian and RPM order a tilde before a release, and neither allows a hyphen
@@ -45,9 +45,9 @@ package_version=$(printf '%s' "$version" | sed -e 's/-/~/' -e 's/-/./g')
 for format in deb rpm; do
   (
     cd "$temporary"
-    HEX_PACKAGE_ARCH=$arch HEX_PACKAGE_VERSION=$package_version \
+    MUMBLE_PACKAGE_ARCH=$arch MUMBLE_PACKAGE_VERSION=$package_version \
       "$nfpm" package --config "$root/packaging/linux/nfpm.yaml" --packager "$format" \
-      --target "$dist/hex-$version-linux-$label.$format" >&2
+      --target "$dist/mumble-$version-linux-$label.$format" >&2
   )
-  echo "$dist/hex-$version-linux-$label.$format"
+  echo "$dist/mumble-$version-linux-$label.$format"
 done

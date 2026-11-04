@@ -2,7 +2,7 @@
 
 ```ts
 Agent or terminal                                // transcripts.cli; macOS release
-└── hex history -> Timestamp, app, recorded mode, final text
+└── mumble history -> Timestamp, app, recorded mode, final text
     ├── --since / --until / --app / --grep -> Filter, then limit
     ├── --search <query> -> Rank filtered entries with a stemmed, fuzzy BM25;
     │   exact stems first (raw + final text count as one document)
@@ -12,13 +12,13 @@ Agent or terminal                                // transcripts.cli; macOS relea
     └── stats [--since/--until] [--json] -> Labs › Dictation stats (labs.history_stats):
         dictations, words, words per minute, changed by Output, daily streak,
         top apps over every retained entry; toggle off -> fails naming
-        `hex labs on history-stats` before History is read
+        `mumble labs on history-stats` before History is read
 ```
 
 Commands work beside the running app and independently of feature opt-ins,
-except `hex history stats`, which needs its Labs toggle.
+except `mumble history stats`, which needs its Labs toggle.
 `control/transcript_cli` dispatches before logging, instance locking, local
-API, GUI, permissions, and Hex Microphone. Nothing is created or repaired.
+API, GUI, permissions, and Mumble Microphone. Nothing is created or repaired.
 
 History uses one open-file snapshot and the saved retention, so concurrent atomic
 replacement cannot expose a partial write and expiry is enforced before disk

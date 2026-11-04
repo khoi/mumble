@@ -1,7 +1,7 @@
-// The site lives under /hex on anoma.ly (production) and dev.anoma.ly (dev), and
-// the release files under /hex/files. Pages keep root-relative paths internally;
+// The site lives under /mumble on anoma.ly (production) and dev.anoma.ly (dev), and
+// the release files under /mumble/files. Pages keep root-relative paths internally;
 // these helpers add and remove the prefix at the edges.
-export const BASE_PATH = "/hex"
+export const BASE_PATH = "/mumble"
 export const FILES_PATH = `${BASE_PATH}/files`
 // The Anomaly release service. Its dev stage (dev.anoma.ly/release) is only for
 // testing the service itself, so both site environments read production.

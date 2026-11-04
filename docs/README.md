@@ -5,7 +5,7 @@ override shipped behavior.
 
 ## User Guides
 
-- [`../README.md`](../README.md): install and use Hex on macOS, Windows, and Linux.
+- [`../README.md`](../README.md): install and use Mumble on macOS, Windows, and Linux.
 - [`windows.md`](windows.md): Windows x64 and ARM64 beta requirements, installation, and source builds.
 - [`linux.md`](linux.md): Linux X11 and native Wayland beta requirements and installation.
 - [`nix.md`](nix.md): Nix packaging, development, and per-user autostart.
@@ -17,7 +17,7 @@ override shipped behavior.
   commands, and diagnostics. This is the implementation authority.
 - [`../ROADMAP.md`](../ROADMAP.md): prioritized product and engineering work.
 - [`design-system.md`](design-system.md): Rune + `rune-kit` + OpenCode theme
-  components, Hex pieces, copy rules, and `--snap` scene verification.
+  components, Mumble pieces, copy rules, and `--snap` scene verification.
 - [`features/README.md`](features/README.md): existing user-facing capabilities,
   entry points, available verification, and gaps; detailed dictation and recovery maps.
 - [`downloads.md`](downloads.md): public download paths, R2 custom domains,
@@ -33,7 +33,7 @@ override shipped behavior.
 
 - [`plans/rune-ui.md`](plans/rune-ui.md): implemented; Rune desktop UI port,
   surfaces, goldens, and remaining real-window checklist.
-- [`plans/single-process.md`](plans/single-process.md): implemented; one Hex
+- [`plans/single-process.md`](plans/single-process.md): implemented; one Mumble
   process per user on macOS, Windows, and Linux hosting Rune windows and overlays.
 - [`plans/rune-dependency.md`](plans/rune-dependency.md): decision record for
   Rune as a public MIT Git dependency and Nix output-hash updates.

@@ -1,4 +1,4 @@
-// The Hex hero: Kit's notifications (GitHub issues, X replies, Slack pings) pile up around a
+// The Mumble hero: Kit's notifications (GitHub issues, X replies, Slack pings) pile up around a
 // floating head; it voices replies into them and dictates prompts into an OpenCode window that
 // fixes the complaints. The arc runs calm → clipped → SHOUTING → SUPER SAIYAN rapid-fire →
 // gibberish → the Tommy-gun wipe → dizzy exhale, then restarts.
@@ -286,8 +286,8 @@ const ARC = [
 // OpenCode prompts. `issue` is spawned a few seconds before so the prompt has something to fix;
 // `lead` is how early the OpenCode window arrives for the first one.
 const BEATS = [
-  { at: 5.5, lead: 2.5, issueAt: 0.6, line: "p1-linux", agents: 1, fix: 1, version: "2.3.1", issue: ["anomalyco/hex", "#65", "Linux: listener stuck in “stopping” after suspend", "linux"] },
-  { at: 13, line: "p1-clip", agents: 2, fix: 2, version: "2.3.2", issue: ["anomalyco/hex", "#168", "⌘V right after dictating pastes the transcript again", "bug"] },
+  { at: 5.5, lead: 2.5, issueAt: 0.6, line: "p1-linux", agents: 1, fix: 1, version: "2.3.1", issue: ["khoi/mumble", "#65", "Linux: listener stuck in “stopping” after suspend", "linux"] },
+  { at: 13, line: "p1-clip", agents: 2, fix: 2, version: "2.3.2", issue: ["khoi/mumble", "#168", "⌘V right after dictating pastes the transcript again", "bug"] },
   { at: 21, line: "p2-close", agents: 3, fix: 3, version: "2.3.3" },
   { at: 27, line: "p2-all", agents: 5, fix: 4, version: "2.3.4" },
   { at: 40, line: "p3-every", agents: 10, fix: 6, version: "2.4.0" },

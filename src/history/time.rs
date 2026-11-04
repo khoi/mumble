@@ -1,4 +1,4 @@
-//! Times for `hex history`'s filters: local ISO stamps, and `--since` /
+//! Times for `mumble history`'s filters: local ISO stamps, and `--since` /
 //! `--until` values such as `2026-10-15`, `today`, or `7d`.
 
 use color_eyre::eyre::{Result, eyre};

@@ -82,7 +82,7 @@ fn open(
         .and_then(|code| code.parse::<u16>().ok());
     match status {
         Some(200) => Ok(stream),
-        Some(407) => Err("the proxy needs a sign-in Hex can't give".into()),
+        Some(407) => Err("the proxy needs a sign-in Mumble can't give".into()),
         Some(code) => Err(format!("the proxy refused (HTTP {code})")),
         None => Err("the proxy's answer wasn't HTTP".into()),
     }

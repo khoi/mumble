@@ -1,22 +1,22 @@
 #!/bin/sh
-# Build one Windows release executable, dist/hex-<version>-windows-<x64|arm64>.exe,
-# from Git Bash on Windows: HEX_WINDOWS_ARCH=x86_64 (default; Vulkan SDK
+# Build one Windows release executable, dist/mumble-<version>-windows-<x64|arm64>.exe,
+# from Git Bash on Windows: MUMBLE_WINDOWS_ARCH=x86_64 (default; Vulkan SDK
 # required) or aarch64 (clang-cl and Ninja, best on an ARM64 host). CI then
 # Authenticode-signs it and wraps it in the Setup.exe installer; the Release
 # workflow publishes both (docs/plans/release-service.md).
 set -eu
 
 script_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-root=${HEX_RELEASE_SOURCE:-$script_root}
-version=${HEX_VERSION:-$(cargo metadata --no-deps --format-version 1 --manifest-path "$root/Cargo.toml" | jq -r '.packages[] | select(.name == "hex") | .version')}
-dist=${HEX_RELEASE_DIST:-"$root/dist"}
+root=${MUMBLE_RELEASE_SOURCE:-$script_root}
+version=${MUMBLE_VERSION:-$(cargo metadata --no-deps --format-version 1 --manifest-path "$root/Cargo.toml" | jq -r '.packages[] | select(.name == "mumble") | .version')}
+dist=${MUMBLE_RELEASE_DIST:-"$root/dist"}
 target_dir=${CARGO_TARGET_DIR:-"$root/target"}
-arch=${HEX_WINDOWS_ARCH:-x86_64}
+arch=${MUMBLE_WINDOWS_ARCH:-x86_64}
 case "$arch" in
   x86_64) label=x64 ;;
   aarch64) label=arm64 ;;
   *)
-    echo "HEX_WINDOWS_ARCH must be x86_64 or aarch64." >&2
+    echo "MUMBLE_WINDOWS_ARCH must be x86_64 or aarch64." >&2
     exit 1
     ;;
 esac
@@ -62,8 +62,8 @@ fi
 # Cargo reads .cargo/config.toml (the static Windows runtime) from the
 # working directory, not from --manifest-path.
 (cd "$root" && TRANSCRIBE_CMAKE_ARGS="$cmake_args" cargo build --locked --release --target "$triple")
-executable="$dist/hex-$version-windows-$label.exe"
-cp "$target_dir/$triple/release/hex.exe" "$executable"
+executable="$dist/mumble-$version-windows-$label.exe"
+cp "$target_dir/$triple/release/mumble.exe" "$executable"
 test "$(head -c 2 "$executable")" = MZ
 # An executable for the other architecture cannot run here; the installer
 # test checks it on its own runner.

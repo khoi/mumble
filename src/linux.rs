@@ -33,15 +33,15 @@ use crate::linux::service::{Activation, Launch};
 
 #[derive(Parser)]
 #[command(
-    name = "hex",
+    name = "mumble",
     version = crate::VERSION,
     about = "Local, observable voice recognition (Linux beta)",
     long_about = "Local, observable voice recognition (Linux beta).\n\n\
         Control commands (status, dictation, settings, model, window, …) drive the one running \
-        Hex over its owner-only socket and never launch it, except `start` and `restart`. Every \
+        Mumble over its owner-only socket and never launch it, except `start` and `restart`. Every \
         one takes --json for a versioned reply (docs/cli.md). Exit codes: 0 done or nothing to \
-        change, 1 refused or failed, 2 usage, 3 Hex isn't running.",
-    after_help = "Run `hex <command> --help` for details, or `hex settings list` for every setting."
+        change, 1 refused or failed, 2 usage, 3 Mumble isn't running.",
+    after_help = "Run `mumble <command> --help` for details, or `mumble settings list` for every setting."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -52,18 +52,18 @@ struct Cli {
 enum Command {
     #[command(flatten)]
     Control(ControlCli),
-    /// Open the Hex window, starting Hex when it is not running (the default).
+    /// Open the Mumble window, starting Mumble when it is not running (the default).
     App {
-        /// Start Hex in the background without opening the window.
+        /// Start Mumble in the background without opening the window.
         #[arg(long)]
         hidden: bool,
         /// Arguments for a headless render, such as `--snap out.png --scene dark`.
         #[arg(last = true)]
         rune_args: Vec<String>,
     },
-    /// Run Hex in the foreground without opening the window (systemd's entry point).
+    /// Run Mumble in the foreground without opening the window (systemd's entry point).
     Service,
-    /// Quit Hex after its accepted work finishes (same as `hex quit`).
+    /// Quit Mumble after its accepted work finishes (same as `mumble quit`).
     #[command(hide = true)]
     Stop,
     /// Run X11 or Wayland hotkey dictation and automatic paste until interrupted.
@@ -84,8 +84,8 @@ pub(crate) fn run(shutdown: &'static AtomicBool) -> Result<()> {
         hidden: false,
         rune_args: Vec::new(),
     });
-    // Control and read commands talk to the running Hex or read files: no
-    // log, lock, or Hex of their own.
+    // Control and read commands talk to the running Mumble or read files: no
+    // log, lock, or Mumble of their own.
     let command = match command {
         Command::Control(command) => crate::control::cli::finish(crate::control::cli::run(command)),
         Command::Stop => crate::control::cli::finish(crate::control::cli::send(
@@ -159,7 +159,7 @@ pub(crate) fn run(shutdown: &'static AtomicBool) -> Result<()> {
     }
 }
 
-/// Forwards to the running Hex, starts its systemd unit, or becomes Hex.
+/// Forwards to the running Mumble, starts its systemd unit, or becomes Mumble.
 fn launch(
     activation: &Activation,
     show: bool,
@@ -194,21 +194,21 @@ mod tests {
         Cli::command().debug_assert();
         let parse = |arguments: &[&str]| Cli::try_parse_from(arguments).map(|cli| cli.command);
         for arguments in [
-            &["hex", "status", "--json"][..],
-            &["hex", "dictation", "stop", "--print"],
-            &["hex", "paste-last"],
-            &["hex", "settings", "set", "sound_effects", "off"],
-            &["hex", "window", "show", "history"],
-            &["hex", "vocabulary", "add", "Rune"],
-            &["hex", "history", "clear", "--yes"],
-            &["hex", "check-for-updates"],
-            &["hex", "launch-at-login", "on"],
-            &["hex", "logs", "-n", "5"],
-            &["hex", "commands", "check"],
-            &["hex", "onboarding", "reset"],
-            &["hex", "labs"],
-            &["hex", "restart", "--force"],
-            &["hex", "start"],
+            &["mumble", "status", "--json"][..],
+            &["mumble", "dictation", "stop", "--print"],
+            &["mumble", "paste-last"],
+            &["mumble", "settings", "set", "sound_effects", "off"],
+            &["mumble", "window", "show", "history"],
+            &["mumble", "vocabulary", "add", "Rune"],
+            &["mumble", "history", "clear", "--yes"],
+            &["mumble", "check-for-updates"],
+            &["mumble", "launch-at-login", "on"],
+            &["mumble", "logs", "-n", "5"],
+            &["mumble", "commands", "check"],
+            &["mumble", "onboarding", "reset"],
+            &["mumble", "labs"],
+            &["mumble", "restart", "--force"],
+            &["mumble", "start"],
         ] {
             assert!(
                 matches!(parse(arguments), Ok(Some(Command::Control(_)))),
@@ -216,14 +216,17 @@ mod tests {
             );
         }
         assert!(matches!(
-            parse(&["hex", "quit", "--force"]),
+            parse(&["mumble", "quit", "--force"]),
             Ok(Some(Command::Control(ControlCli::Quit { force: true, .. })))
         ));
-        assert!(matches!(parse(&["hex", "stop"]), Ok(Some(Command::Stop))));
         assert!(matches!(
-            parse(&["hex", "app", "--hidden"]),
+            parse(&["mumble", "stop"]),
+            Ok(Some(Command::Stop))
+        ));
+        assert!(matches!(
+            parse(&["mumble", "app", "--hidden"]),
             Ok(Some(Command::App { hidden: true, .. }))
         ));
-        assert!(matches!(parse(&["hex"]), Ok(None)));
+        assert!(matches!(parse(&["mumble"]), Ok(None)));
     }
 }

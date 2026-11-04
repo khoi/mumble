@@ -50,7 +50,7 @@ pub fn proxy_for(url: &str) -> Option<ureq::Proxy> {
     match ureq::Proxy::new(&proxy) {
         Ok(proxy) => Some(proxy),
         Err(error) => {
-            tracing::warn!(%error, proxy = %redact(&proxy), "ignoring a proxy Hex can't use");
+            tracing::warn!(%error, proxy = %redact(&proxy), "ignoring a proxy Mumble can't use");
             None
         }
     }

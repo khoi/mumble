@@ -14,13 +14,13 @@ or user-defined TypeScript transformations.
 The default shortcut is `Ctrl+Space`. In **Hold** mode, hold both keys while
 speaking and release Space to transcribe and paste. In **Toggle** mode, press
 `Ctrl+Space` to start and again to finish, or press the **Cancel** shortcut
-(Escape by default) to throw the recording away; Hex takes that key only while
+(Escape by default) to throw the recording away; Mumble takes that key only while
 a recording runs. Hold mode has no cancel (every dictation finishes and
-pastes), and holding a modifier on its own does nothing. Hex consumes the chord while it matches, so
+pastes), and holding a modifier on its own does nothing. Mumble consumes the chord while it matches, so
 applications and input methods no longer see `Ctrl+Space`; rebind it in Settings
 if you rely on that chord elsewhere. To let another app use the same key, such as
 a Discord push-to-talk key, turn on **Share dictation shortcut with other apps**
-under Advanced: Hex still reacts to it but passes its key-down and key-up on,
+under Advanced: Mumble still reacts to it but passes its key-down and key-up on,
 which can also trigger that binding in other apps. In Hold mode, tap the shortcut twice within
 300 ms to lock recording, then press it again to finish. Paste Last defaults to
 `Ctrl+Alt+V`. Settings changes apply live or through an automatic listener
@@ -31,20 +31,20 @@ app and **Disabled** when it does nothing.
 
 ## Install
 
-x86_64 PCs need a 2013 or newer processor with AVX2 (Intel Haswell / AMD Excavator or later); on an older processor Hex shows a message and quits instead of starting.
+x86_64 PCs need a 2013 or newer processor with AVX2 (Intel Haswell / AMD Excavator or later); on an older processor Mumble shows a message and quits instead of starting.
 
 Download and run the installer for your PC:
 
-- x64: [`HexSetup.exe`](https://anoma.ly/hex/download/windows-x64-setup)
-- ARM64: [`HexSetup.exe`](https://anoma.ly/hex/download/windows-arm64-setup)
+- x64: [`MumbleSetup.exe`](https://anoma.ly/mumble/download/windows-x64-setup)
+- ARM64: [`MumbleSetup.exe`](https://anoma.ly/mumble/download/windows-arm64-setup)
 
-Until Hex's first stable release these are the newest dev build, which keeps
+Until Mumble's first stable release these are the newest dev build, which keeps
 updating itself from the Dev channel; afterwards, the stable release.
 
-[anoma.ly/hex](https://anoma.ly/hex/) picks the right one. The
+[anoma.ly/mumble](https://anoma.ly/mumble/) picks the right one. The
 installer needs no administrator rights: it installs for the current user,
-adds Hex to the Start menu and to **Settings › Apps** for uninstalling, and
-opens Hex. Hex transcribes with the chosen cloud service (Claude or Codex), so
+adds Mumble to the Start menu and to **Settings › Apps** for uninstalling, and
+opens Mumble. Mumble transcribes with the chosen cloud service (Claude or Codex), so
 sign in to that app for dictation to work. Releases built once
 Anomaly's Azure Artifact Signing is configured are Authenticode-signed
 ([windows-signing.md](windows-signing.md)). Until then, and while a new
@@ -54,16 +54,16 @@ PC; choose **More info**, then **Run anyway**.
 The **x64** installer requires a current NVIDIA, AMD, or Intel graphics driver
 that supplies `vulkan-1.dll` for the window and stops with an explanation when
 it is missing. **ARM64** has no such check. Both are
-self-contained: no Visual C++ Redistributable is required. Hex then keeps
+self-contained: no Visual C++ Redistributable is required. Mumble then keeps
 itself current through the signed update feed. Uninstalling removes every
 installed version, the shortcut, and Launch at login, and keeps settings, logs,
-and history in `%APPDATA%\hex`.
+and history in `%APPDATA%\mumble`.
 
 The installer and the script below create the same managed layout, so either
 can replace the other. For a scripted install:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iwr https://anoma.ly/hex/files/install-windows.ps1 -OutFile install-windows.ps1; ./install-windows.ps1"
+powershell -ExecutionPolicy Bypass -Command "iwr https://anoma.ly/mumble/files/install-windows.ps1 -OutFile install-windows.ps1; ./install-windows.ps1"
 ```
 
 Uninstall a script install with `install-windows.ps1 -Uninstall`.
@@ -72,20 +72,20 @@ Uninstall a script install with `install-windows.ps1 -Uninstall`.
 
 **Discord shows "Playing HEX: Shards of Fate"**
 ([#445](https://github.com/anomalyco/hex/issues/445)). With game activity
-detection on, Discord Desktop matches the running `hex.exe` to the verified game
+detection on, Discord Desktop matches the running `mumble.exe` to the verified game
 *HEX: Shards of Fate*. It then shows that game on your profile for as long as
-Hex runs. The reporter's local test suggests Discord matches on the executable
-name. Hex keeps the name `hex.exe` because the installer, updater, Start Menu
+Mumble runs. The reporter's local test suggests Discord matches on the executable
+name. Mumble keeps the name `mumble.exe` because the installer, updater, Start Menu
 shortcut, and Launch at login all use the managed
-`%APPDATA%\hex\versions\<version>\hex.exe` path. The problem has been reported
+`%APPDATA%\mumble\versions\<version>\mumble.exe` path. The problem has been reported
 to Discord. Until Discord fixes its game list, open Discord's
 **Settings › Registered Games** (or **Activity Privacy**) and hide the detected
-entry, or turn off activity sharing there. Hex works the same either way.
+entry, or turn off activity sharing there. Mumble works the same either way.
 
 ## Streaming Dictation
 
-While the shortcut is held, Hex streams the audio to Claude or Codex, so
-release leaves only the last words to transcribe. On release Hex finishes with
+While the shortcut is held, Mumble streams the audio to Claude or Codex, so
+release leaves only the last words to transcribe. On release Mumble finishes with
 the complete clip; a stream the service refuses, that stalls past its deadline,
 that returns nothing, or that falls behind the speech it heard falls back to
 sending the whole clip to the service. There is no local fallback, so a clip
@@ -141,7 +141,7 @@ cargo run -- app
 
 The Settings card reads **Enabled** when the shortcut works system-wide in every
 app and **Disabled** when it does nothing; its button and the tray's
-**Enable / Disable Hex** switch between them. Hex enables itself on launch by
+**Enable / Disable Mumble** switch between them. Mumble enables itself on launch by
 default (**Enable on launch**). The microphone records only while you dictate.
 Changing the
 transcription provider or language, microphone, dictation shortcut, double-tap
@@ -160,7 +160,7 @@ cargo run -- listen
 Press Enter once to start, then again to stop. Captures shorter than 300 ms are
 discarded. `--device` accepts a case-insensitive fragment from `devices`.
 
-Runtime data is stored under `%APPDATA%\hex`. Observations are in
+Runtime data is stored under `%APPDATA%\mumble`. Observations are in
 `logs\live.ndjson`, and native/runtime diagnostics are in `logs\process.log`,
 including every panic with its thread and backtrace. A worker that stops
 unexpectedly leaves its cause there. The app detaches from its console at
@@ -171,22 +171,22 @@ by default.
 
 ## Control commands
 
-The `hex` control commands ([docs/cli.md](cli.md)) drive the running tray app
+The `mumble` control commands ([docs/cli.md](cli.md)) drive the running tray app
 as they do on macOS: `status`, `start`, `quit`, `restart`, `dictation
 start|stop|cancel|toggle` (with `stop --print`), `paste-last`, `settings`,
 `window`, `vocabulary`, `history clear`, `check-for-updates`,
 `launch-at-login` (the Run key), `onboarding reset`, `logs`, `commands
 init|check`, and `history`. They reach it through its local API (`local-api.json` in
-`%APPDATA%\hex` and the bearer-authenticated `POST /control`). Dictation commands go
+`%APPDATA%\mumble` and the bearer-authenticated `POST /control`). Dictation commands go
 to the listener's own loop as a shortcut press would. `history` works
-as on macOS. `hex restart`
-quits, waits for the drain, and starts `hex app --hidden` again.
+as on macOS. `mumble restart`
+quits, waits for the drain, and starts `mumble app --hidden` again.
 
 ## Custom Transformations
 
 The Transformations card in Modes always offers the built-in transformations.
-Choose **Set up** there to create `~/.config/hex/hex.config.ts` and load any
-transformations registered by that config. Hex runs the config in its embedded
+Choose **Set up** there to create `~/.config/mumble/mumble.config.ts` and load any
+transformations registered by that config. Mumble runs the config in its embedded
 JavaScript engine (QuickJS), so nothing else needs installing.
 
 Transformations run in the displayed order after mode corrections and the
@@ -199,11 +199,11 @@ the card.
 
 ## The App
 
-`hex app` (`--hidden` for a login launch) runs the tray app on Rune. Snapshot
-fixtures without starting anything: `hex app -- --snap out.png --scene modes`.
+`mumble app` (`--hidden` for a login launch) runs the tray app on Rune. Snapshot
+fixtures without starting anything: `mumble app -- --snap out.png --scene modes`.
 
 ```ts
-hex app
+mumble app
 ├── named event already held -> signal it (the running app shows its window) -> exit
 └── becomes the app                                   // windows::rune::open
     ├── the local API's POST /control -> control::host::answer
@@ -214,7 +214,7 @@ hex app
     └── tray Quit / Ctrl-C / restart into an update -> AppHandle::quit -> runtime stops the listener
 ```
 
-- Quit Hex in the window or the tray stops the listener and ends the app;
+- Quit Mumble in the window or the tray stops the listener and ends the app;
   closing the window only hides it.
 - The window uses the shared Rune panes (General, Modes,
   History, the transcription picker, first-run setup) with Windows rows:
@@ -238,7 +238,7 @@ hex app
   blended into the window: DWM paints the caption the theme's `bg_deep`
   (`DWMWA_CAPTION_COLOR`, Windows 11; Windows 10 keeps its own caption
   color). The view repaints it when the system theme switches.
-- Without a tray (creation failed) closing the window quits Hex.
+- Without a tray (creation failed) closing the window quits Mumble.
   See the [single-process plan](plans/single-process.md#windows-under-rune).
 
 **This app has never run on Windows.** Earlier releases shipped a GPUI app
@@ -289,14 +289,14 @@ current-user startup registry, UI Automation, and Windows capture APIs.
 | Vocabulary as Claude's transcription keyterms | Implemented |
 | Release microphone while idle | Implemented; mutually exclusive with audio pre-roll, as documented in Settings |
 | While-dictating audio control (mute other apps or pause media) | Implemented via WASAPI session volumes and GSMTC |
-| Signed automatic self-update for managed installs | Implemented for x64 and ARM64; the same ed25519 key and `https://anoma.ly/hex/files` origin as Linux, one feed per architecture, activating into a user-local versions directory. Checks 10 s after launch and every 6 h (or Check for updates); a staged update shows Restart to update in the tray menu and the window's sidebar footer, and the tray tooltip says an update is available. Source builds keep the GitHub release link (Download update); CI test builds never check |
+| Signed automatic self-update for managed installs | Implemented for x64 and ARM64; the same ed25519 key and `https://anoma.ly/mumble/files` origin as Linux, one feed per architecture, activating into a user-local versions directory. Checks 10 s after launch and every 6 h (or Check for updates); a staged update shows Restart to update in the tray menu and the window's sidebar footer, and the tray tooltip says an update is available. Source builds keep the GitHub release link (Download update); CI test builds never check |
 | Web-domain mode rules and browser context via UI Automation | Implemented; the page URL comes from the browser's UIA document element, bounded so a hung provider degrades to application-only context |
 | Managed installer with Start Menu integration and clean uninstall | Implemented as `.github/release/install-windows.ps1`; it creates the self-updating versions layout, and updates retarget the managed shortcut and Launch-at-login entry |
 | First-run onboarding | Implemented; a fresh install starts listening only once setup is recorded — the shared first-run story, with a Microphone page only while the privacy switch is off and the practice game on the real shortcut |
 | Activity pane with the live session and recent transcripts | Implemented in developer builds; the shared read-only pane |
 | Streaming finish with whole-clip fallback | Implemented; cloud streaming to Claude or Codex, with the whole clip sent on fallback |
 
-Settings live in `%APPDATA%\hex\settings.json`, the same file macOS and
+Settings live in `%APPDATA%\mumble\settings.json`, the same file macOS and
 Linux use.
 
 The Windows window uses the shared design system

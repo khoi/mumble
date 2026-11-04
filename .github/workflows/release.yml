@@ -1,6 +1,6 @@
 name: Release
 
-# Builds, signs, and publishes Hex for macOS, Windows, and Linux from one
+# Builds, signs, and publishes Mumble for macOS, Windows, and Linux from one
 # exact commit to the Anomaly release service (docs/releasing.md,
 # docs/plans/release-service.md), split the way OpenCode's release is:
 #
@@ -22,9 +22,9 @@ name: Release
 #
 # There is one environment, release, like OpenCode's: no approval, deployment
 # policy dev and production. The service authorizes the publish jobs by their
-# OIDC token: anomalyco/hex, this file, environment release, the dev channel
-# from dev and stable from production (anomalyco/release registry/hex.json).
-# Hex never uses the service's dev stage.
+# OIDC token: khoi/mumble, this file, environment release, the dev channel
+# from dev and stable from production (anomalyco/release registry/mumble.json).
+# Mumble never uses the service's dev stage.
 #
 # Channels (.github/release/plan.sh):
 # - dev: every push to dev (except docs/site/Markdown-only) publishes
@@ -72,7 +72,7 @@ defaults:
     shell: bash
 
 env:
-  HEX_TEAM_ID: 5NZ4Q7NXJ4
+  MUMBLE_TEAM_ID: 5NZ4Q7NXJ4
 
 jobs:
   plan:
@@ -192,15 +192,15 @@ jobs:
             /tmp/rune-settings-*-actual.png
           if-no-files-found: ignore
 
-  # Hex.app as the release identity (anomaly.hex), ad-hoc signed; sign-macos
+  # Mumble.app as the release identity (anomaly.mumble), ad-hoc signed; sign-macos
   # signs it with the Developer ID.
   build-macos:
     needs: plan
     runs-on: macos-26
     timeout-minutes: 120
     env:
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
-      HEX_BUILD_CHANNEL: ${{ needs.plan.outputs.release-channel }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_BUILD_CHANNEL: ${{ needs.plan.outputs.release-channel }}
     outputs:
       digest: ${{ steps.upload.outputs.digest }}
     steps:
@@ -214,13 +214,13 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Install the Metal toolchain
         run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
-      - name: Build Hex.app
+      - name: Build Mumble.app
         run: |
           scripts/setup.sh
-          scripts/set-crate-version.sh "$PWD" "$HEX_VERSION"
-          bundle=$(HEX_RELEASE_UNSIGNED=1 scripts/build-app.sh)
+          scripts/set-crate-version.sh "$PWD" "$MUMBLE_VERSION"
+          bundle=$(MUMBLE_RELEASE_UNSIGNED=1 scripts/build-app.sh)
           mkdir -p "$RUNNER_TEMP/macos"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$bundle" "$RUNNER_TEMP/macos/Hex.app.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$bundle" "$RUNNER_TEMP/macos/Mumble.app.zip"
           # The DMG window's background and Finder layout: data for sign-macos.sh.
           cp packaging/macos/dmg/background.tiff "$RUNNER_TEMP/macos/dmg-background.tiff"
           cp packaging/macos/dmg/DS_Store "$RUNNER_TEMP/macos/dmg-DS_Store"
@@ -232,7 +232,7 @@ jobs:
 
   # ---- Sign: release environment; only .github/release/ is checked out -------
 
-  # Signs Hex.app inside-out with the Developer ID, notarizes and staples it,
+  # Signs Mumble.app inside-out with the Developer ID, notarizes and staples it,
   # and makes the updater zip and the DMG from the stapled app. Without the
   # Apple values, dev and check go on without macOS; stable fails.
   sign-macos:
@@ -242,7 +242,7 @@ jobs:
     timeout-minutes: 90
     environment: release
     env:
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
       CHANNEL: ${{ needs.plan.outputs.channel }}
     outputs:
       signed: ${{ steps.credentials.outputs.available }}
@@ -293,10 +293,10 @@ jobs:
           APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
       - name: Sign, notarize, and staple
         if: steps.credentials.outputs.available == 'true'
-        run: bash .github/release/sign-macos.sh "$RUNNER_TEMP/in/build-macos-arm64/Hex.app.zip" "$RUNNER_TEMP/out"
+        run: bash .github/release/sign-macos.sh "$RUNNER_TEMP/in/build-macos-arm64/Mumble.app.zip" "$RUNNER_TEMP/out"
         env:
-          HEX_NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
-          HEX_NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
+          MUMBLE_NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+          MUMBLE_NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
       - name: Remove the credentials
         if: always() && steps.credentials.outputs.available == 'true'
         run: |
@@ -384,8 +384,8 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: Hex
-          description-url: https://github.com/anomalyco/hex
+          description: Mumble
+          description-url: https://github.com/khoi/mumble
           exclude-environment-credential: true
           exclude-workload-identity-credential: true
           exclude-managed-identity-credential: true
@@ -463,7 +463,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     env:
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -475,24 +475,24 @@ jobs:
           digests: sign-macos=${{ needs.sign-macos.outputs.digest }}
       - name: Check the signed app and DMG
         run: |
-          dmg="$RUNNER_TEMP/in/sign-macos/hex-$HEX_VERSION-macos-arm64.dmg"
-          zip="$RUNNER_TEMP/in/sign-macos/hex-$HEX_VERSION-macos-arm64.zip"
+          dmg="$RUNNER_TEMP/in/sign-macos/mumble-$MUMBLE_VERSION-macos-arm64.dmg"
+          zip="$RUNNER_TEMP/in/sign-macos/mumble-$MUMBLE_VERSION-macos-arm64.zip"
           xcrun stapler validate "$dmg"
           spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
           check=$(mktemp -d)
           hdiutil attach -quiet -nobrowse -readonly -mountpoint "$check/dmg" "$dmg"
           /usr/bin/ditto -x -k "$zip" "$check/update"
-          build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$check/dmg/Hex.app/Contents/Info.plist")
-          scripts/validate-app.sh "$check/dmg/Hex.app" Hex.app "$HEX_VERSION" "$build"
-          scripts/validate-app.sh "$check/update/Hex.app" Hex.app "$HEX_VERSION" "$build"
-          xcrun stapler validate "$check/update/Hex.app"
+          build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$check/dmg/Mumble.app/Contents/Info.plist")
+          scripts/validate-app.sh "$check/dmg/Mumble.app" Mumble.app "$MUMBLE_VERSION" "$build"
+          scripts/validate-app.sh "$check/update/Mumble.app" Mumble.app "$MUMBLE_VERSION" "$build"
+          xcrun stapler validate "$check/update/Mumble.app"
           # What the in-app updater requires before it swaps the bundle in.
-          codesign --verify --deep --strict -R="$(cat app/update-requirement.txt)" "$check/update/Hex.app"
-          spctl --assess --type execute --verbose=2 "$check/dmg/Hex.app"
-          diff -qr "$check/dmg/Hex.app" "$check/update/Hex.app"
-          scripts/smoke-macos-app.sh "$check/dmg/Hex.app"
+          codesign --verify --deep --strict -R="$(cat app/update-requirement.txt)" "$check/update/Mumble.app"
+          spctl --assess --type execute --verbose=2 "$check/dmg/Mumble.app"
+          diff -qr "$check/dmg/Mumble.app" "$check/update/Mumble.app"
+          scripts/smoke-macos-app.sh "$check/dmg/Mumble.app"
           hdiutil detach -quiet "$check/dmg"
-          codesign -dv "$check/update/Hex.app" 2>&1 | grep -E '^(Identifier|TeamIdentifier|Authority=Developer)' >> "$GITHUB_STEP_SUMMARY"
+          codesign -dv "$check/update/Mumble.app" 2>&1 | grep -E '^(Identifier|TeamIdentifier|Authority=Developer)' >> "$GITHUB_STEP_SUMMARY"
 
   # ---- Publish: release environment; only .github/release/ is checked out ----
 
@@ -518,8 +518,8 @@ jobs:
       id-token: write
     env: &publish-env
       RELEASE: ${{ needs.plan.outputs.service }}
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
-      HEX_RELEASE_CHANNEL: ${{ needs.plan.outputs.release-channel }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_RELEASE_CHANNEL: ${{ needs.plan.outputs.release-channel }}
     outputs:
       linux-x64-url: ${{ steps.publish.outputs.linux-x64-url }}
       linux-arm64-url: ${{ steps.publish.outputs.linux-arm64-url }}
@@ -542,7 +542,7 @@ jobs:
         run: bash .github/release/assemble.sh "$RUNNER_TEMP/in" "$RUNNER_TEMP/dist"
       - name: Sign the Linux executables
         env:
-          HEX_RELEASE_SIGNING_KEY: ${{ secrets.HEX_RELEASE_SIGNING_KEY }}
+          MUMBLE_RELEASE_SIGNING_KEY: ${{ secrets.MUMBLE_RELEASE_SIGNING_KEY }}
         run: bash .github/release/sign-linux.sh "$RUNNER_TEMP/dist"
       - id: publish
         name: Publish
@@ -560,7 +560,7 @@ jobs:
         if: needs.plan.outputs.channel == 'stable'
         run: |
           for kind in nix deb-x64 deb-arm64 rpm-x64 rpm-arm64; do
-            bash .github/release/release-service.sh distribution "$kind" "$HEX_VERSION"
+            bash .github/release/release-service.sh distribution "$kind" "$MUMBLE_VERSION"
           done
 
   # Last, once every platform and the release service published: tags
@@ -581,10 +581,10 @@ jobs:
       contents: write
     env:
       SHA: ${{ needs.plan.outputs.sha }}
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
-      HEX_RELEASE_COMMIT: ${{ needs.plan.outputs.sha }}
-      HEX_RELEASE_TAG: ${{ needs.plan.outputs.tag }}
-      HEX_RELEASE_SOURCE: ${{ github.workspace }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_RELEASE_COMMIT: ${{ needs.plan.outputs.sha }}
+      MUMBLE_RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+      MUMBLE_RELEASE_SOURCE: ${{ github.workspace }}
     steps:
       # Credentials stay so the job can push the tag; it runs no repository
       # code beyond .github/release/.
@@ -597,7 +597,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Tag
         env:
-          HEX_RELEASE_TAG_TEST: ${{ needs.plan.outputs.channel == 'check' && '1' || '' }}
+          MUMBLE_RELEASE_TAG_TEST: ${{ needs.plan.outputs.channel == 'check' && '1' || '' }}
         run: bash .github/release/tag-release.sh
       - name: Download
         if: needs.plan.outputs.channel == 'stable'
@@ -619,7 +619,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/release/publish-github-release.sh "$RUNNER_TEMP/dist"
 
-  # Builds and installs hex-bin from the published x64 file, without
+  # Builds and installs mumble-bin from the published x64 file, without
   # secrets; its PKGBUILD also names the published arm64 file.
   aur-stage:
     name: AUR package
@@ -628,7 +628,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: archlinux:base-devel
     env:
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
       LINUX_X64_URL: ${{ needs.publish.outputs.linux-x64-url }}
       LINUX_ARM64_URL: ${{ needs.publish.outputs.linux-arm64-url }}
     outputs:
@@ -648,10 +648,10 @@ jobs:
           digests: >-
             build-linux-x86_64=${{ needs.build.outputs.linux-x64-digest }}
             build-linux-aarch64=${{ needs.build.outputs.linux-arm64-digest }}
-      - name: Stage and test hex-bin
+      - name: Stage and test mumble-bin
         run: |
-          x64="$RUNNER_TEMP/in/build-linux-x86_64/hex-$HEX_VERSION-linux-x64"
-          arm64="$RUNNER_TEMP/in/build-linux-aarch64/hex-$HEX_VERSION-linux-arm64"
+          x64="$RUNNER_TEMP/in/build-linux-x86_64/mumble-$MUMBLE_VERSION-linux-x64"
+          arm64="$RUNNER_TEMP/in/build-linux-aarch64/mumble-$MUMBLE_VERSION-linux-arm64"
           # makepkg refuses root, so builder stages and builds in its own home from
           # copies; the runner's files in the workspace and RUNNER_TEMP keep their owner.
           src=/home/builder/src
@@ -659,16 +659,16 @@ jobs:
           mkdir "$src"
           cp -R scripts packaging LICENSE "$x64" "$arm64" "$src/"
           chown -R builder: "$src"
-          runuser -u builder -- "$src/scripts/release-aur.sh" stage "$HEX_VERSION" \
+          runuser -u builder -- "$src/scripts/release-aur.sh" stage "$MUMBLE_VERSION" \
             "$src/${x64##*/}" "$LINUX_X64_URL" "$src/${arm64##*/}" "$LINUX_ARM64_URL" "$stage"
           runuser -u builder -- "$src/scripts/release-aur.sh" test "$stage"
-          pacman -U --noconfirm "$stage"/hex-bin-*.pkg.tar.zst
-          test "$(hex --version | awk 'NF { value=$NF } END { print value }')" = "$HEX_VERSION"
+          pacman -U --noconfirm "$stage"/mumble-bin-*.pkg.tar.zst
+          test "$(mumble --version | awk 'NF { value=$NF } END { print value }')" = "$MUMBLE_VERSION"
           # The PKGBUILD's sources are the published files.
           curl -fsS "$LINUX_X64_URL" | cmp - "$x64"
           curl -fsS "$LINUX_ARM64_URL" | cmp - "$arm64"
           mkdir -p "$RUNNER_TEMP/aur-out"
-          (cd "$stage" && cp PKGBUILD .SRCINFO anomaly.hex.desktop hex.service LICENSE hex-bin.install anomaly.hex-*.png "$RUNNER_TEMP/aur-out/")
+          (cd "$stage" && cp PKGBUILD .SRCINFO anomaly.mumble.desktop mumble.service LICENSE mumble-bin.install anomaly.mumble-*.png "$RUNNER_TEMP/aur-out/")
           { echo '### AUR PKGBUILD'; echo '```'; cat "$stage/PKGBUILD"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - id: upload
         uses: ./.github/release/upload
@@ -705,7 +705,7 @@ jobs:
     env: *publish-env
     steps:
       - *checkout-release
-      - run: bash .github/release/release-service.sh distribution aur "$HEX_VERSION"
+      - run: bash .github/release/release-service.sh distribution aur "$MUMBLE_VERSION"
 
   # Renders the cask from the published DMG and checks it with brew, without
   # secrets.
@@ -716,7 +716,7 @@ jobs:
     runs-on: macos-15
     env:
       RELEASE: ${{ needs.plan.outputs.service }}
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
       RELEASE_CHANNEL: ${{ needs.plan.outputs.release-channel }}
     outputs:
       digest: ${{ steps.upload.outputs.digest }}
@@ -727,35 +727,35 @@ jobs:
           persist-credentials: false
       - name: Render the cask from the published DMG
         run: |
-          curl -fsS "$RELEASE/hex/desktop/$RELEASE_CHANNEL.json" -o "$RUNNER_TEMP/manifest.json"
+          curl -fsS "$RELEASE/mumble/desktop/$RELEASE_CHANNEL.json" -o "$RUNNER_TEMP/manifest.json"
           version=$(jq -er .release.version "$RUNNER_TEMP/manifest.json")
-          test "$version" = "$HEX_VERSION"
+          test "$version" = "$MUMBLE_VERSION"
           dmg=$(jq -ec '.release.targets["macos-arm64-dmg"]' "$RUNNER_TEMP/manifest.json") || {
-            echo "::error::Hex $version has no macos-arm64-dmg build."
+            echo "::error::Mumble $version has no macos-arm64-dmg build."
             exit 1
           }
           url="${RELEASE%/release}$(printf '%s' "$dmg" | jq -r .url)"
           sha256=$(printf '%s' "$dmg" | jq -r .sha256)
           mkdir -p "$RUNNER_TEMP/cask"
-          scripts/release-homebrew.sh render "$version" "$url" "$sha256" "$RUNNER_TEMP/cask/hex.rb"
-          { echo '### Casks/hex.rb'; echo '```ruby'; cat "$RUNNER_TEMP/cask/hex.rb"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          scripts/release-homebrew.sh render "$version" "$url" "$sha256" "$RUNNER_TEMP/cask/mumble.rb"
+          { echo '### Casks/mumble.rb'; echo '```ruby'; cat "$RUNNER_TEMP/cask/mumble.rb"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Check it with brew
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_FROM_API: "1"
         run: |
           brew tap anomalyco/tap
-          cp "$RUNNER_TEMP/cask/hex.rb" "$(brew --repo anomalyco/tap)/Casks/hex.rb"
+          cp "$RUNNER_TEMP/cask/mumble.rb" "$(brew --repo anomalyco/tap)/Casks/mumble.rb"
           # Homebrew 6 refuses to load casks from third-party taps until they
           # are trusted; this runner trusts our own tap. Older Homebrew has no
           # `brew trust` and no such check.
           if brew trust --help > /dev/null 2>&1; then brew trust anomalyco/tap; fi
-          brew style --cask anomalyco/tap/hex
+          brew style --cask anomalyco/tap/mumble
           # Skipped audits: the DMG URL names its own SHA-256 rather than the
-          # version, so a pinned sha256 is right; and the token "hex" belongs to
-          # this tap's cask, not homebrew/core's unrelated hex formula.
+          # version, so a pinned sha256 is right; and the token "mumble" belongs to
+          # this tap's cask, not homebrew/core's unrelated mumble formula.
           brew audit --cask --strict --online \
-            --except=sha256_no_check_if_unversioned,token_conflicts anomalyco/tap/hex
+            --except=sha256_no_check_if_unversioned,token_conflicts anomalyco/tap/mumble
       - id: upload
         uses: ./.github/release/upload
         with:
@@ -769,7 +769,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: release
     env:
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
     steps:
       - *checkout-release
       - uses: ./.github/release/download
@@ -779,7 +779,7 @@ jobs:
       - name: Push to anomalyco/homebrew-tap
         env:
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
-        run: bash .github/release/push-homebrew.sh "$RUNNER_TEMP/in/build-homebrew/hex.rb" "$HEX_VERSION"
+        run: bash .github/release/push-homebrew.sh "$RUNNER_TEMP/in/build-homebrew/mumble.rb" "$MUMBLE_VERSION"
 
   # Tells Homebrew installs about the version only once the tap serves it.
   record-brew:
@@ -793,7 +793,7 @@ jobs:
     env: *publish-env
     steps:
       - *checkout-release
-      - run: bash .github/release/release-service.sh distribution brew "$HEX_VERSION"
+      - run: bash .github/release/release-service.sh distribution brew "$MUMBLE_VERSION"
 
   # ---- Dev notes: what each dev build changed ---------------------------------
 
@@ -804,7 +804,7 @@ jobs:
     if: needs.plan.outputs.channel == 'dev'
     runs-on: ubuntu-24.04
     env:
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
       SHA: ${{ needs.plan.outputs.sha }}
     outputs:
       digest: ${{ steps.upload.outputs.digest }}
@@ -818,7 +818,7 @@ jobs:
       - name: Write the notes
         run: |
           mkdir -p "$RUNNER_TEMP/notes"
-          bash scripts/release-dev-notes.sh "$HEX_VERSION" "$SHA" "$RUNNER_TEMP/notes/dev-notes.json"
+          bash scripts/release-dev-notes.sh "$MUMBLE_VERSION" "$SHA" "$RUNNER_TEMP/notes/dev-notes.json"
           { echo '### Dev notes'; jq -r '.builds[0].items[] | "- \(.title) (\(.url))"' "$RUNNER_TEMP/notes/dev-notes.json"; } >> "$GITHUB_STEP_SUMMARY"
       - id: upload
         uses: ./.github/release/upload
@@ -827,7 +827,7 @@ jobs:
           path: ${{ runner.temp }}/notes
 
   # Once the build is the dev channel's release, its notes join
-  # https://anoma.ly/hex/files/dev-notes.json, which https://anoma.ly/hex/dev
+  # https://anoma.ly/mumble/files/dev-notes.json, which https://anoma.ly/mumble/dev
   # and the app's update item read.
   dev-notes:
     needs: [plan, publish, dev-notes-stage]
@@ -837,9 +837,9 @@ jobs:
     runs-on: ubuntu-24.04
     environment: release
     env:
-      HEX_VERSION: ${{ needs.plan.outputs.release-version }}
+      MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
       SHA: ${{ needs.plan.outputs.sha }}
-      HEX_RELEASE_BUCKET: hex-production-files
+      MUMBLE_RELEASE_BUCKET: mumble-production-files
     steps:
       - *checkout-release
       - uses: ./.github/release/download
@@ -850,4 +850,4 @@ jobs:
         env:
           R2_ACCESS_KEY_ID: ${{ vars.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: bash .github/release/publish-dev-notes.sh "$RUNNER_TEMP/in/build-dev-notes/dev-notes.json" "$HEX_VERSION" "$SHA"
+        run: bash .github/release/publish-dev-notes.sh "$RUNNER_TEMP/in/build-dev-notes/dev-notes.json" "$MUMBLE_VERSION" "$SHA"

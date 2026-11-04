@@ -1,8 +1,8 @@
 name: Installers
 
 # Serves the current install scripts at the production URLs the README names,
-# https://anoma.ly/hex/files/install-linux.sh and install-windows.ps1, from
-# the hex-production-files bucket. Those keys held the 2.3.1 installers;
+# https://anoma.ly/mumble/files/install-linux.sh and install-windows.ps1, from
+# the mumble-production-files bucket. Those keys held the 2.3.1 installers;
 # nothing reads them but people following install instructions (the 2.3.1
 # updaters read the feeds and appcast, which stay frozen). The installers read
 # the release service, so they install the stable release, or the newest dev
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: release
     env:
-      HEX_RELEASE_BUCKET: hex-production-files
+      MUMBLE_RELEASE_BUCKET: mumble-production-files
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,6 +63,6 @@ jobs:
           sh .github/release/r2-put.sh install-linux.sh "$in/install-linux.sh" text/x-shellscript "public, max-age=300"
           sh .github/release/r2-put.sh install-windows.ps1 "$in/install-windows.ps1" "text/plain; charset=utf-8" "public, max-age=300"
           for name in install-linux.sh install-windows.ps1; do
-            curl -fsS -H 'Cache-Control: no-cache' "https://anoma.ly/hex/files/$name?check=$GITHUB_RUN_ID" | cmp - "$in/$name"
-            echo "https://anoma.ly/hex/files/$name is the current installer." >> "$GITHUB_STEP_SUMMARY"
+            curl -fsS -H 'Cache-Control: no-cache' "https://anoma.ly/mumble/files/$name?check=$GITHUB_RUN_ID" | cmp - "$in/$name"
+            echo "https://anoma.ly/mumble/files/$name is the current installer." >> "$GITHUB_STEP_SUMMARY"
           done

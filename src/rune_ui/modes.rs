@@ -42,7 +42,7 @@ const STATUS_INTERVAL: Duration = Duration::from_secs(1);
 
 static PLUS: &rune::Icon = &rune_theme_opencode::icons::PLUS;
 static GRIP: rune::Icon = rune::Icon {
-    name: "hex-grip",
+    name: "mumble-grip",
     view: 16.0,
     body: r#"<path d="M4 5.5H12M4 8H12M4 10.5H12" stroke="currentColor"/>"#,
 };
@@ -185,7 +185,7 @@ impl ModesPane {
     pub(super) fn load_personal_commands(&mut self) {
         self.focused_app_known = super::host::focused_application_known();
         self.workspace = crate::app_paths::personal_commands_workspace()
-            .unwrap_or_else(|_| PathBuf::from("~/.config/hex"));
+            .unwrap_or_else(|_| PathBuf::from("~/.config/mumble"));
         self.read_status();
     }
 
@@ -1176,8 +1176,8 @@ pub(super) fn fixture(ui: &mut Ui) {
             output: "OpenCode".into(),
         },
         TextReplacement {
-            matched_phrase: "hex app".into(),
-            output: "Hex".into(),
+            matched_phrase: "mumble app".into(),
+            output: "Mumble".into(),
         },
     ];
     chat.transformations = vec!["smart-punctuation".into()];

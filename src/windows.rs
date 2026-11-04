@@ -30,15 +30,15 @@ use crate::transcription::engine::TranscriptionEngine;
 
 #[derive(Parser)]
 #[command(
-    name = "hex",
+    name = "mumble",
     version = crate::VERSION,
-    about = "Local Hex dictation for Windows",
-    long_about = "Local Hex dictation for Windows.\n\n\
+    about = "Local Mumble dictation for Windows",
+    long_about = "Local Mumble dictation for Windows.\n\n\
         Control commands (status, dictation, settings, model, window, …) drive the one running \
-        Hex over its owner-only pipe and never launch it, except `start` and `restart`. Every \
+        Mumble over its owner-only pipe and never launch it, except `start` and `restart`. Every \
         one takes --json for a versioned reply (docs/cli.md). Exit codes: 0 done or nothing to \
-        change, 1 refused or failed, 2 usage, 3 Hex isn't running.",
-    after_help = "Run `hex <command> --help` for details, or `hex settings list` for every setting."
+        change, 1 refused or failed, 2 usage, 3 Mumble isn't running.",
+    after_help = "Run `mumble <command> --help` for details, or `mumble settings list` for every setting."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -77,10 +77,10 @@ enum Command {
     Devices,
 }
 
-/// Loads DLLs only from System32 and Hex's own folder, never the current
+/// Loads DLLs only from System32 and Mumble's own folder, never the current
 /// folder or PATH. Another app's incompatible `dxcompiler.dll` on PATH
-/// crashed Hex at its first shader compile (#587), and a DLL planted on PATH
-/// must not load into Hex. Hex's own imports (vulkan-1.dll included) loaded
+/// crashed Mumble at its first shader compile (#587), and a DLL planted on PATH
+/// must not load into Mumble. Mumble's own imports (vulkan-1.dll included) loaded
 /// before this; Windows, the GPU drivers, and COM load theirs by full path.
 pub(crate) fn restrict_dll_search() {
     use windows_sys::Win32::System::LibraryLoader::{
@@ -92,7 +92,7 @@ pub(crate) fn restrict_dll_search() {
     } == 0
     {
         eprintln!(
-            "hex: SetDefaultDllDirectories failed: {}",
+            "mumble: SetDefaultDllDirectories failed: {}",
             std::io::Error::last_os_error()
         );
     }
@@ -105,8 +105,8 @@ pub fn run(shutdown: &'static AtomicBool) -> Result<()> {
         hidden: false,
         rune_args: Vec::new(),
     });
-    // Control and read commands talk to the running Hex or read files: no
-    // log, lock, or Hex of their own.
+    // Control and read commands talk to the running Mumble or read files: no
+    // log, lock, or Mumble of their own.
     if let Command::Control(command) = command {
         crate::control::cli::finish(crate::control::cli::run(command));
     }

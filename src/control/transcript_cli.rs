@@ -43,7 +43,7 @@ pub struct HistoryArgs {
     pub action: Option<HistoryAction>,
 }
 
-/// History changes, carried out by the running Hex (`crate::control`).
+/// History changes, carried out by the running Mumble (`crate::control`).
 #[derive(Subcommand, Debug)]
 pub enum HistoryAction {
     /// Delete every retained dictation.
@@ -247,12 +247,12 @@ fn require_history_stats(on: bool) -> Result<()> {
         Ok(())
     } else {
         Err(eyre!(
-            "Dictation stats are a Labs feature and are off. Turn them on with `hex labs on history-stats` or in Settings › Labs."
+            "Dictation stats are a Labs feature and are off. Turn them on with `mumble labs on history-stats` or in Settings › Labs."
         ))
     }
 }
 
-/// `hex history stats`.
+/// `mumble history stats`.
 fn history_stats(since: Option<&str>, until: Option<&str>, json: bool) -> Result<()> {
     require_history_stats(crate::labs::history_stats())?;
     let root = crate::app_paths::support_dir()?;

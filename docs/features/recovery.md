@@ -57,11 +57,11 @@ Launch -> read settings.json
 
 Loading repaired settings does not itself rewrite the file. A later settings
 save (including a migration save) takes the backup before replacing it.
-Backups are never automatically removed. On Linux, the running Hex checks
+Backups are never automatically removed. On Linux, the running Mumble checks
 `settings.json` every two seconds and adopts an edit made outside the window
 (by hand or by an agent), so its modes reach the listener and the next save
 keeps it (#970); macOS and Windows still read it only at launch or through
-`hex settings set`.
+`mumble settings set`.
 
 Source and checks: [settings persistence](../../src/app_settings/persistence.rs)
 and its [tests](../../src/app_settings/persistence/tests.rs): old-shape retention,
@@ -133,7 +133,7 @@ Command-Tab -> Tab still tracked (IDLE, DIRTY, or LOCKED)
                      -> 100 ms poll as before
 tracked key down in combined-session state but up in HID state  // #612
   -> reads as up for both the press check and the poll   // a latched Tab or Q
-     no longer blocks every press until Hex restarts
+     no longer blocks every press until Mumble restarts
 tracked keyboard key reads down in both states but sent no key event,  // #1008
 not even a key repeat, for 5 s (TRACKED_KEY_REPEAT_TIMEOUT)
   -> the press check treats it as released               // logged; mouse buttons excluded
@@ -197,7 +197,7 @@ Proof limit: reducer response to a supplied interruption, not macOS disabling
 and re-enabling a real tap.
 
 `recover.tap-health`: macOS can disable a tap (callback timeout, user input)
-or silently disable or invalidate it while Hex idles, after sleep, secure
+or silently disable or invalidate it while Mumble idles, after sleep, secure
 input, or an Accessibility change. The tap thread repairs all three taps (key,
 modifier, HID) and logs each repair to `process.log`.
 
@@ -237,7 +237,7 @@ device refuses a stream in its own default format     // #988, Intel Smart Sound
   -> none opens -> the default format's error, with its format, goes to recovery
 no input device at all (macOS)
   -> devices whose name can't be read are skipped     // audio::device_name, never Display
-  -> bounded recovery; `hex status` listener: "No microphone"
+  -> bounded recovery; `mumble status` listener: "No microphone"
 no input opens, at startup or after an interruption (Linux) // #937
   -> one "could not open the microphone: …" failure per outage // take_failure
   -> last failure filled in while it keeps retrying; reset once one opens
@@ -250,12 +250,12 @@ saved microphone missing or will not open
                     └── Windows, Linux: bounded backoff, logged only on a switch
   -> found -> switch back once capture is idle        // not during a pending start or tail
 MacBook lid closed (macOS)                            // built-in mic is off but still listed
-  -> built-in mic is passed over like Hex Microphone  // AppleClamshellState, read per resolve
+  -> built-in mic is passed over like Mumble Microphone  // AppleClamshellState, read per resolve
   ├── headphone-jack mic (BuiltInHeadphoneInputDevice UID, or the built-in
   │   input's emic/line data source) -> stays usable: listed, selectable,
   │   followed as the default, and can stand in (#712)
   ├── default or saved mic is built in -> first other real input stands in
-  │     -> Settings: "… is off while the lid is closed, so Hex listens to …"
+  │     -> Settings: "… is off while the lid is closed, so Mumble listens to …"
   ├── no other input -> "the built-in microphone is off while the lid is closed"
   └── lid opens or closes -> re-resolve like a device-list change // IOKit clamshell notification
         -> switch once capture is idle
@@ -344,7 +344,7 @@ Checks in [dictation/audio.rs](../../src/dictation/audio.rs):
 first hold after minutes of idle failed with the error tone. The reporter's logs
 show the cold stream reporting "A buffer underrun or overrun occurred" 20–76 ms
 after opening. cpal 0.18 reports that as `ErrorKind::Xrun` from CoreAudio's
-`kAudioDeviceProcessorOverload` listener; the stream keeps running, but Hex
+`kAudioDeviceProcessorOverload` listener; the stream keeps running, but Mumble
 treated every error callback as fatal. In release-when-idle mode the owner then
 closed the device without retrying, and recognition suspended the held gesture.
 Overloads and refused real-time promotion are now logged and ignored; actual
@@ -371,7 +371,7 @@ keeps it by design).
 **Fixed after dev ([#1122](https://github.com/anomalyco/hex/issues/1122)):**
 after a WhatsApp desktop call ended, the warm built-in microphone stream kept
 running without an error but delivered only exact zeros, so every dictation
-was discarded as near-silent (`zero_fraction` 1.0) until Hex restarted. A
+was discarded as near-silent (`zero_fraction` 1.0) until Mumble restarted. A
 finished dictation whose audio through the release is exactly zero now
 reopens the stream the way a stream failure does; a cold microphone
 (release-while-idle) already opens fresh for each press. The first such
@@ -441,13 +441,13 @@ listener worker fails -> reap worker -> show failure
   ├── Retry -> new managed listener -> fresh capture -> expected output
   └── Dismiss -> clear error                            // not evidence of recovery
 
-close the window -> Hex keeps running
+close the window -> Mumble keeps running
   └── uncommitted shortcut capture -> cancel edit -> restore prior listening
 
-Hex crashes -> systemd restart-on-failure (no window) OR explicit hex start
-  -> hex / hex status -> live state, not stale log state
+Mumble crashes -> systemd restart-on-failure (no window) OR explicit mumble start
+  -> mumble / mumble status -> live state, not stale log state
 
-hex quit / Quit Hex -> drain accepted work -> release microphone and hotkeys -> exit 0
+mumble quit / Quit Mumble -> drain accepted work -> release microphone and hotkeys -> exit 0
 ```
 Sources/checks: [linux/app.rs](../../src/linux/app.rs),
 [Linux CI](../../.github/workflows/check-linux.yml),
@@ -459,16 +459,16 @@ single-instance socket is same-user only; bounded I/O and queues keep client
 stalls off the audio loop.
 
 **Escape on Linux since #786:** Escape stays with applications on X11 and
-Wayland. Hex grabs it on X11 only as Toggle's cancel shortcut while a toggled
+Wayland. Mumble grabs it on X11 only as Toggle's cancel shortcut while a toggled
 recording runs (#1022); a grab conflict is logged once and the recording goes
 on. The portal never binds Escape or any cancel shortcut, and the shortcut set
 is bound once in one session.
 
 ```ts
-listener starts -> one session, one BindShortcuts: Hex's shortcuts only
+listener starts -> one session, one BindShortcuts: Mumble's shortcuts only
   └── KDE -> remove the stale `cancel` and `cancel-dictation` entries first
 desktop closes the shortcuts session -> cancel active capture
-  -> listener stops with an error -> Retry / hex start binds again
+  -> listener stops with an error -> Retry / mumble start binds again
 X11, a toggled recording runs -> grab its cancel key (AnyModifier, else bare + lock variants)
   └── BadAccess -> warn once, keep recording; other grab errors stop the listener
 ```
@@ -478,7 +478,7 @@ looked for again instead of leaving shortcuts off for the session (#875).
 
 ```ts
 listener starts -> no GlobalShortcuts portal
-  -> warn (desktop name, restart-the-portal hint) -> hex commands drive dictation
+  -> warn (desktop name, restart-the-portal hint) -> mumble commands drive dictation
   -> check again on its own thread: after 15 s, doubling up to every 2 min
      └── portal appears (e.g. xdg-desktop-portal restarted) -> bind shortcuts as usual
 ```
@@ -486,15 +486,15 @@ listener starts -> no GlobalShortcuts portal
 **Fixed after dev-520** ([#875](https://github.com/anomalyco/hex/issues/875)):
 on KDE Plasma Wayland, xdg-desktop-portal started before Plasma exported its
 session environment picked the wrong backend and offered no shortcuts
-interface; Hex fell back to commands and never checked again. Source:
+interface; Mumble fell back to commands and never checked again. Source:
 `Backend::wait_for_portal` in [linux/input.rs](../../src/linux/input.rs);
 `commands_alone_drive_a_listener_without_shortcuts` covers the command loop,
 not the portal appearing. Not run on a live Plasma session.
 
 **Fixed after dev-249** ([#482](https://github.com/anomalyco/hex/issues/482),
-reported by ohlmann on KDE Plasma): Hex bound Escape in a second portal session
+reported by ohlmann on KDE Plasma): Mumble bound Escape in a second portal session
 when recording started. KDE keys shortcuts by app, so that session's
-BindShortcuts removed Hex's other shortcuts, so recording never started. Hex
+BindShortcuts removed Mumble's other shortcuts, so recording never started. Mumble
 binds every shortcut once in one session and never binds Escape there.
 
 Checks in [linux/input.rs](../../src/linux/input.rs):
@@ -576,14 +576,14 @@ It posts no key events and does not launch the installed app or capture audio.
 
 **Contributor-reported September 9, 2026 (PR #81, ASCII-capable fallback):** with the Russian
 layout active on macOS 26.6.2 (25G83), Apple M3, a locally built
-`/Applications/Hex.app` resolved `paste_key_code=9` at startup and held
+`/Applications/Mumble.app` resolved `paste_key_code=9` at startup and held
 Option-dictations pasted into the focused app; the retained
 `keyboard_layout` regression still passed all twelve child runs. The
 fallback mirrors AppKit's own resolution of shortcuts such as ⌘V on
 non-Latin layouts, so a Latin-active snapshot is unchanged.
 
 **Local startup check, September 1, 2026:** Developer ID-signed version 2.1.11,
-local build `20111.1`, was installed and launched from `/Applications/Hex.app`.
+local build `20111.1`, was installed and launched from `/Applications/Mumble.app`.
 Bundle identity/signature and the installed executable's match to the signed
 build were validated. The new process reported resolved keyboard layout,
 loaded transcription model, and Listening, with no startup errors or panic.

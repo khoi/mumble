@@ -29,7 +29,7 @@ const UPDATE_INTERVAL: Duration = Duration::from_millis(20);
 struct Job {
     transcript: PendingTranscript,
     audio_ms: u64,
-    /// `hex dictation stop --print`: the text goes here, never pasted.
+    /// `mumble dictation stop --print`: the text goes here, never pasted.
     print: Option<PrintReply>,
     /// Dictate without processing: paste the transcript as heard.
     raw: bool,
@@ -44,7 +44,7 @@ enum OutputJob {
 #[derive(Clone, Copy, PartialEq)]
 enum OutputKind {
     Dictation,
-    /// A dictation printed by `hex dictation stop --print`.
+    /// A dictation printed by `mumble dictation stop --print`.
     Printed,
     PasteLast,
 }
@@ -390,7 +390,7 @@ pub(crate) fn run(
     })?;
     emit_state(&mut events, VoiceState::Listening, &device_label)?;
     println!(
-        "Hex dictation is ready on {device_label}. Hold {hotkey_label} to dictate; Ctrl-C stops."
+        "Mumble dictation is ready on {device_label}. Hold {hotkey_label} to dictate; Ctrl-C stops."
     );
 
     while !shutdown.load(Ordering::Relaxed) {
@@ -565,7 +565,7 @@ pub(crate) fn run(
                 action => (action, None),
             };
             match action {
-                // A client's dictation records: the shortcut and `hex
+                // A client's dictation records: the shortcut and `mumble
                 // dictation` neither start nor end anything.
                 HotkeyEvent::Start { .. } | HotkeyEvent::Finish | HotkeyEvent::Cancel
                     if service.is_active() =>
@@ -969,7 +969,7 @@ mod tests {
                 owner.control(
                     DictationControl::Start {
                         source: "test".into(),
-                        owner_token: "hex_a".into(),
+                        owner_token: "mumble_a".into(),
                         levels,
                         reply,
                     },

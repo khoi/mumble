@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
     gtk_init(&argc, &argv);
     if (argc != 2) return 2;
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), "Hex Wayland Test");
+    gtk_window_set_title(GTK_WINDOW(window), "Mumble Wayland Test");
     gtk_window_set_default_size(GTK_WINDOW(window), 640, 320);
     GtkWidget *view = gtk_text_view_new();
     gtk_container_add(GTK_CONTAINER(window), view);

@@ -1,6 +1,6 @@
 name: Test builds
 
-# Downloadable, unsigned builds of dev for teammates to try: Hex Test.app
+# Downloadable, unsigned builds of dev for teammates to try: Mumble Test.app
 # for Apple silicon Macs, Windows x64 and ARM64 executables and installers,
 # and the Linux x64 and ARM64 executables with their .deb and .rpm. Nothing is published, signed with a
 # release key, or uploaded anywhere but this run's artifacts. See
@@ -33,7 +33,7 @@ jobs:
           {
             echo "sha=$(git rev-parse HEAD)"
             echo "short=$(git rev-parse --short=7 HEAD)"
-            echo "version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "hex") | .version')"
+            echo "version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "mumble") | .version')"
           } >> "$GITHUB_OUTPUT"
 
   desktop:
@@ -43,7 +43,7 @@ jobs:
       sha: ${{ needs.resolve.outputs.sha }}
       version: ${{ needs.resolve.outputs.version }}
       test-build: true
-      artifact-prefix: hex-test-${{ needs.resolve.outputs.short }}
+      artifact-prefix: mumble-test-${{ needs.resolve.outputs.short }}
       retention-days: 14
 
   installers:
@@ -52,9 +52,9 @@ jobs:
     with:
       sha: ${{ needs.resolve.outputs.sha }}
       version: ${{ needs.resolve.outputs.version }}
-      pattern: hex-test-${{ needs.resolve.outputs.short }}-windows-*
-      digests: hex-test-${{ needs.resolve.outputs.short }}-windows-x86_64=${{ needs.desktop.outputs.windows-x64-digest }} hex-test-${{ needs.resolve.outputs.short }}-windows-aarch64=${{ needs.desktop.outputs.windows-arm64-digest }}
-      artifact-name: hex-test-${{ needs.resolve.outputs.short }}-windows-installers
+      pattern: mumble-test-${{ needs.resolve.outputs.short }}-windows-*
+      digests: mumble-test-${{ needs.resolve.outputs.short }}-windows-x86_64=${{ needs.desktop.outputs.windows-x64-digest }} mumble-test-${{ needs.resolve.outputs.short }}-windows-aarch64=${{ needs.desktop.outputs.windows-arm64-digest }}
+      artifact-name: mumble-test-${{ needs.resolve.outputs.short }}-windows-installers
       retention-days: 14
 
   macos:
@@ -63,9 +63,9 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     env:
-      HEX_TEST_BUILD: "1"
-      HEX_VERSION: ${{ needs.resolve.outputs.version }}
-      DMG: hex-test-${{ needs.resolve.outputs.short }}-arm64.dmg
+      MUMBLE_TEST_BUILD: "1"
+      MUMBLE_VERSION: ${{ needs.resolve.outputs.version }}
+      DMG: mumble-test-${{ needs.resolve.outputs.short }}-arm64.dmg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -81,19 +81,19 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Install the Metal toolchain
         run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
-      - name: Build Hex Test.app
+      - name: Build Mumble Test.app
         run: |
           scripts/setup.sh
           bundle=$(scripts/build-app.sh)
-          "$bundle/Contents/MacOS/hex" --version
+          "$bundle/Contents/MacOS/mumble" --version
           scripts/smoke-macos-app.sh "$bundle"
           mkdir -p dist/staging
           /usr/bin/ditto "$bundle" "dist/staging/$(basename "$bundle")"
           ln -s /Applications dist/staging/Applications
-          hdiutil create -quiet -fs APFS -format ULFO -volname "Hex Test" -srcfolder dist/staging "dist/$DMG"
+          hdiutil create -quiet -fs APFS -format ULFO -volname "Mumble Test" -srcfolder dist/staging "dist/$DMG"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: hex-test-${{ needs.resolve.outputs.short }}-macos-arm64
+          name: mumble-test-${{ needs.resolve.outputs.short }}-macos-arm64
           path: dist/${{ env.DMG }}
           retention-days: 14
           if-no-files-found: error
@@ -114,19 +114,19 @@ jobs:
         run: |
           link() {
             id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
-              --jq ".artifacts[] | select(.name == \"hex-test-$SHORT-$1\") | .id")
+              --jq ".artifacts[] | select(.name == \"mumble-test-$SHORT-$1\") | .id")
             if [ -n "$id" ]; then
-              echo "[hex-test-$SHORT-$1]($RUN/artifacts/$id)"
+              echo "[mumble-test-$SHORT-$1]($RUN/artifacts/$id)"
             else
-              echo "hex-test-$SHORT-$1 (build failed)"
+              echo "mumble-test-$SHORT-$1 (build failed)"
             fi
           }
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## Hex test builds of $SHORT (version $VERSION)
+          ## Mumble test builds of $SHORT (version $VERSION)
 
           Unsigned builds for testing; they never update themselves. Sign in to GitHub to download. Kept 14 days. Full instructions: [docs/test-builds.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/dev/docs/test-builds.md).
 
-          - **macOS (Apple silicon):** $(link macos-arm64). Quit Hex, open the DMG, drag **Hex Test** to Applications, run \`xattr -dr com.apple.quarantine "/Applications/Hex Test.app"\`, then open it and grant the permissions again.
-          - **Windows:** installers $(link windows-installers); bare executables x64 $(link windows-x86_64), ARM64 $(link windows-aarch64). Quit Hex from the tray, run \`hex-setup-$VERSION-windows-<x64|arm64>.exe\`, and choose More info, Run anyway at the SmartScreen warning. The bare \`hex-*.exe\` also runs without installing.
-          - **Linux:** x86_64 $(link linux-x86_64), ARM64 $(link linux-aarch64), each the bare executable plus a .deb and .rpm. Run \`hex quit\`, \`chmod +x hex-*-linux-<x64|arm64>\`, start it with \`./hex-*-linux-<x64|arm64> service\`, and open the window with \`./hex-*-linux-<x64|arm64>\` in another terminal.
+          - **macOS (Apple silicon):** $(link macos-arm64). Quit Mumble, open the DMG, drag **Mumble Test** to Applications, run \`xattr -dr com.apple.quarantine "/Applications/Mumble Test.app"\`, then open it and grant the permissions again.
+          - **Windows:** installers $(link windows-installers); bare executables x64 $(link windows-x86_64), ARM64 $(link windows-aarch64). Quit Mumble from the tray, run \`mumble-setup-$VERSION-windows-<x64|arm64>.exe\`, and choose More info, Run anyway at the SmartScreen warning. The bare \`mumble-*.exe\` also runs without installing.
+          - **Linux:** x86_64 $(link linux-x86_64), ARM64 $(link linux-aarch64), each the bare executable plus a .deb and .rpm. Run \`mumble quit\`, \`chmod +x mumble-*-linux-<x64|arm64>\`, start it with \`./mumble-*-linux-<x64|arm64> service\`, and open the window with \`./mumble-*-linux-<x64|arm64>\` in another terminal.
           EOF

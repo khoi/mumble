@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Mumble
+Comment=Local voice dictation
+Exec=@MUMBLE_BIN@
+Icon=anomaly.mumble
+Terminal=false
+Categories=Utility;Accessibility;
+StartupNotify=true
+StartupWMClass=anomaly.mumble
+Actions=quit;
+
+[Desktop Action quit]
+Name=Quit Mumble
+Exec=@MUMBLE_BIN@ quit

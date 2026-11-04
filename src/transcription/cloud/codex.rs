@@ -344,7 +344,7 @@ fn saved_login() -> Result<Login, CloudError> {
 }
 
 /// The access token and ChatGPT account in Codex's `auth.json`, unless it
-/// expired: Codex renews it, Hex never does.
+/// expired: Codex renews it, Mumble never does.
 fn login(auth: &str, now_ms: f64) -> Result<Login, CloudError> {
     #[derive(Deserialize)]
     struct AuthFile {

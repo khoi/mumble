@@ -1,10 +1,10 @@
-//! Hex's app icon on Linux: `anomaly.hex` in the hicolor theme, the name its
+//! Mumble's app icon on Linux: `anomaly.mumble` in the hicolor theme, the name its
 //! desktop entries and window app id use. Packages install it under
 //! `/usr/share/icons`; a direct or source install and a downloaded executable
-//! have no package, so Hex writes the same PNGs into the user's icon theme at
-//! startup (#652). Each PNG carries an `X-Hex-Managed=true` text chunk, so
-//! Hex replaces, and the installer removes, only icons Hex wrote: a user's own
-//! `anomaly.hex.png` or a symlink stays.
+//! have no package, so Mumble writes the same PNGs into the user's icon theme at
+//! startup (#652). Each PNG carries an `X-Mumble-Managed=true` text chunk, so
+//! Mumble replaces, and the installer removes, only icons Mumble wrote: a user's own
+//! `anomaly.mumble.png` or a symlink stays.
 
 use std::io::{ErrorKind, Write};
 use std::path::Path;
@@ -22,7 +22,7 @@ macro_rules! icon {
                 $size,
                 "x",
                 $size,
-                "/apps/anomaly.hex.png"
+                "/apps/anomaly.mumble.png"
             ))
             .as_slice(),
         )
@@ -41,7 +41,7 @@ const ICONS: [(&str, &[u8]); 8] = [
     icon!("512"),
 ];
 
-/// Writes Hex's icon into the user's hicolor theme, unless a package
+/// Writes Mumble's icon into the user's hicolor theme, unless a package
 /// already installs it; rewrites only icons that differ.
 pub(crate) fn install() -> Result<()> {
     let Some(home) = dirs::data_dir() else {
@@ -60,7 +60,7 @@ pub(crate) fn install() -> Result<()> {
     install_in(&home)
 }
 
-const MANAGED_MARK: &[u8] = b"X-Hex-Managed=true";
+const MANAGED_MARK: &[u8] = b"X-Mumble-Managed=true";
 
 fn install_in(data: &Path) -> Result<()> {
     let mut wrote = false;
@@ -145,22 +145,22 @@ mod tests {
     }
 
     #[test]
-    fn icons_hex_did_not_write_stay() {
+    fn icons_mumble_did_not_write_stay() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let data = std::env::temp_dir().join(format!("hex-icons-own-{unique}"));
-        let own = data.join("icons/hicolor/48x48/apps/anomaly.hex.png");
-        let linked = data.join("icons/hicolor/64x64/apps/anomaly.hex.png");
+        let data = std::env::temp_dir().join(format!("mumble-icons-own-{unique}"));
+        let own = data.join("icons/hicolor/48x48/apps/anomaly.mumble.png");
+        let linked = data.join("icons/hicolor/64x64/apps/anomaly.mumble.png");
         std::fs::create_dir_all(own.parent().unwrap()).unwrap();
         std::fs::create_dir_all(linked.parent().unwrap()).unwrap();
         std::fs::write(&own, b"mine").unwrap();
         std::os::unix::fs::symlink(&own, &linked).unwrap();
-        // An older icon Hex wrote is replaced.
-        let older = data.join("icons/hicolor/32x32/apps/anomaly.hex.png");
+        // An older icon Mumble wrote is replaced.
+        let older = data.join("icons/hicolor/32x32/apps/anomaly.mumble.png");
         std::fs::create_dir_all(older.parent().unwrap()).unwrap();
-        std::fs::write(&older, b"old X-Hex-Managed=true").unwrap();
+        std::fs::write(&older, b"old X-Mumble-Managed=true").unwrap();
         install_in(&data).unwrap();
         assert_eq!(std::fs::read(&own).unwrap(), b"mine");
         assert!(linked.is_symlink());
@@ -174,9 +174,10 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let data = std::env::temp_dir().join(format!("hex-icons-{unique}"));
+        let data = std::env::temp_dir().join(format!("mumble-icons-{unique}"));
         install_in(&data).unwrap();
-        let written = std::fs::read(data.join("icons/hicolor/48x48/apps/anomaly.hex.png")).unwrap();
+        let written =
+            std::fs::read(data.join("icons/hicolor/48x48/apps/anomaly.mumble.png")).unwrap();
         assert_eq!(written, ICONS[3].1);
         std::fs::remove_dir_all(data).unwrap();
     }

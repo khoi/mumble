@@ -1,4 +1,4 @@
-// The `@hex/commands` module scripts import. `hex.d.ts` types it.
+// The `@mumble/commands` module scripts import. `mumble.d.ts` types it.
 
 const frozen = (value) => Object.freeze(value)
 
@@ -28,4 +28,4 @@ export function choice(input) {
 
 export const union = (...members) => frozen({ type: "union", members })
 
-export const defineHexConfig = (config) => config
+export const defineMumbleConfig = (config) => config

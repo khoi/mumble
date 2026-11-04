@@ -5,9 +5,9 @@
   ...
 }:
 let
-  cfg = config.programs.hex;
+  cfg = config.programs.mumble;
   json = pkgs.formats.json { };
-  supportDir = "${config.xdg.dataHome}/hex";
+  supportDir = "${config.xdg.dataHome}/mumble";
   settings =
     lib.filterAttrs (_: value: value != null) {
       dictation_hotkey = cfg.shortcut;
@@ -16,7 +16,7 @@ let
     }
     // cfg.settings;
   waitForSession = pkgs.writeShellApplication {
-    name = "hex-wait-for-session";
+    name = "mumble-wait-for-session";
     runtimeInputs = [
       pkgs.coreutils
       pkgs.gnugrep
@@ -26,13 +26,13 @@ let
   };
 in
 {
-  options.programs.hex = {
-    enable = lib.mkEnableOption "Hex voice dictation";
+  options.programs.mumble = {
+    enable = lib.mkEnableOption "Mumble voice dictation";
     package = lib.mkOption {
       type = lib.types.package;
-      description = "Hex package to install.";
+      description = "Mumble package to install.";
     };
-    autostart = lib.mkEnableOption "Hex startup with the graphical session";
+    autostart = lib.mkEnableOption "Mumble startup with the graphical session";
     systemdTarget = lib.mkOption {
       type = lib.types.str;
       default = "graphical-session.target";
@@ -54,9 +54,9 @@ in
         }
       '';
       description = ''
-        Settings applied on every activation, keyed as `hex settings list`
-        names them. Declared keys overwrite Hex's values; settings changed in
-        the window that aren't declared here keep their values. A running Hex
+        Settings applied on every activation, keyed as `mumble settings list`
+        names them. Declared keys overwrite Mumble's values; settings changed in
+        the window that aren't declared here keep their values. A running Mumble
         adopts them at once; otherwise they are written to settings.json.
       '';
     };
@@ -75,7 +75,7 @@ in
       example = "claude";
       description = ''
         The cloud service that transcribes dictations, the
-        `transcription.provider` setting. Hex uses the sign-in the chosen
+        `transcription.provider` setting. Mumble uses the sign-in the chosen
         app (Claude Code or Codex) already holds.
       '';
     };
@@ -94,22 +94,22 @@ in
           "x86_64-linux"
           "aarch64-linux"
         ];
-        message = "The Hex Nix package supports x86_64-linux and aarch64-linux only.";
+        message = "The Mumble Nix package supports x86_64-linux and aarch64-linux only.";
       }
     ];
     home.packages = [ cfg.package ];
-    # After reloadSystemd, so a restarted Hex is the one that answers.
-    home.activation.hexSettings = lib.mkIf (settings != { }) (
+    # After reloadSystemd, so a restarted Mumble is the one that answers.
+    home.activation.mumbleSettings = lib.mkIf (settings != { }) (
       lib.hm.dag.entryAfter [ "reloadSystemd" ] ''
-        if ! run ${pkgs.coreutils}/bin/env HEX_APPLICATION_SUPPORT_DIR=${lib.escapeShellArg supportDir} \
-          ${lib.getExe cfg.package} settings apply ${json.generate "hex-settings.json" settings}; then
-          warnEcho "Hex didn't apply programs.hex.settings; see the message above."
+        if ! run ${pkgs.coreutils}/bin/env MUMBLE_APPLICATION_SUPPORT_DIR=${lib.escapeShellArg supportDir} \
+          ${lib.getExe cfg.package} settings apply ${json.generate "mumble-settings.json" settings}; then
+          warnEcho "Mumble didn't apply programs.mumble.settings; see the message above."
         fi
       ''
     );
-    systemd.user.services.hex = {
+    systemd.user.services.mumble = {
       Unit = {
-        Description = "Hex voice dictation";
+        Description = "Mumble voice dictation";
         After = [ cfg.systemdTarget ];
         PartOf = [ cfg.systemdTarget ];
       };
@@ -118,7 +118,7 @@ in
         NotifyAccess = "main";
         ExecStartPre = lib.getExe waitForSession;
         ExecStart = "${lib.getExe cfg.package} service";
-        Environment = [ "HEX_APPLICATION_SUPPORT_DIR=${supportDir}" ];
+        Environment = [ "MUMBLE_APPLICATION_SUPPORT_DIR=${supportDir}" ];
         EnvironmentFile = "-${supportDir}/session.env";
         TimeoutStartSec = 35;
         Restart = "on-failure";

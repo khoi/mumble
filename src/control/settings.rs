@@ -1,4 +1,4 @@
-//! The `hex settings` registry: one key per persisted setting, named by its
+//! The `mumble settings` registry: one key per persisted setting, named by its
 //! dotted path in `settings.json`, with the same rules and side effects the
 //! window applies when you change it there.
 
@@ -10,7 +10,7 @@ use crate::app_settings::{
     AppSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, HotkeySlot, ModifierSide,
 };
 
-/// One setting as `hex settings get` reports it.
+/// One setting as `mumble settings get` reports it.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct SettingValue {
     pub key: String,
@@ -21,7 +21,7 @@ pub struct SettingValue {
     pub choices: Vec<String>,
     pub writable: bool,
     pub about: String,
-    /// False where this OS's Hex lacks what the setting needs ([`needs`]):
+    /// False where this OS's Mumble lacks what the setting needs ([`needs`]):
     /// it is kept, but does nothing here and `set` refuses it.
     #[serde(default = "available")]
     pub available: bool,
@@ -109,7 +109,7 @@ const KEYS: &[Key] = &[
             "analog",
             "thock",
         ]),
-        "Which sounds play; classic, Hex's original tones, is the default",
+        "Which sounds play; classic, Mumble's original tones, is the default",
     ),
     optional(
         "microphone",
@@ -165,7 +165,7 @@ const KEYS: &[Key] = &[
         "cancel_hotkey",
         Kind::Shortcut(HotkeySlot::Cancel),
         "Toggle mode's cancel shortcut, Escape by default: discards the recording, \
-         nothing pasted or saved. Hex takes the key only while a toggled recording runs",
+         nothing pasted or saved. Mumble takes the key only while a toggled recording runs",
     ),
     optional(
         "raw_dictation_hotkey",
@@ -183,7 +183,7 @@ const KEYS: &[Key] = &[
     key(
         "show_dock_icon",
         Kind::Bool,
-        "Keep Hex in the Dock when Settings is closed (macOS)",
+        "Keep Mumble in the Dock when Settings is closed (macOS)",
     ),
     key(
         "transcription.provider",
@@ -288,7 +288,7 @@ const KEYS: &[Key] = &[
     key(
         "labs.history_stats",
         Kind::Bool,
-        "Labs: a summary of retained dictations at the top of History, and hex history stats",
+        "Labs: a summary of retained dictations at the top of History, and mumble history stats",
     ),
     key(
         "labs.recent_dictations",
@@ -298,7 +298,7 @@ const KEYS: &[Key] = &[
     key(
         "labs.hide_menu_bar_icon",
         Kind::Bool,
-        "Labs: hide Hex's menu bar icon while nothing records; shortcuts keep working, and opening Hex again from Finder or Spotlight shows Settings (macOS)",
+        "Labs: hide Mumble's menu bar icon while nothing records; shortcuts keep working, and opening Mumble again from Finder or Spotlight shows Settings (macOS)",
     ),
     key(
         "labs.gnome_clipboard_restore",
@@ -311,12 +311,12 @@ const KEYS: &[Key] = &[
         "Labs: Output's Try card offers Vocabulary and Fix this, which copies an agent prompt naming the wrong result",
     ),
     key(
-        "experimental.hex_microphone",
+        "experimental.mumble_microphone",
         Kind::Bool,
-        "Labs: the Voice Filter and its Hex Microphone virtual input",
+        "Labs: the Voice Filter and its Mumble Microphone virtual input",
     ),
     key(
-        "experimental.hex_microphone_mode",
+        "experimental.mumble_microphone_mode",
         Kind::Choice(&[
             "normal",
             "muffled",
@@ -328,22 +328,22 @@ const KEYS: &[Key] = &[
             "underwater",
             "far",
         ]),
-        "What Hex Microphone does to your voice while you dictate",
+        "What Mumble Microphone does to your voice while you dictate",
     ),
     key(
-        "experimental.hex_microphone_comfort_noise",
+        "experimental.mumble_microphone_comfort_noise",
         Kind::Bool,
-        "Hex Microphone fills silence with soft noise",
+        "Mumble Microphone fills silence with soft noise",
     ),
     key(
-        "experimental.hex_microphone_strength",
+        "experimental.mumble_microphone_strength",
         UNIT,
-        "How strongly Hex Microphone applies its filter, from 0 to 1",
+        "How strongly Mumble Microphone applies its filter, from 0 to 1",
     ),
     key(
         "enable_on_launch",
         Kind::Bool,
-        "Start listening when Hex opens (Windows and Linux)",
+        "Start listening when Mumble opens (Windows and Linux)",
     ),
     key(
         "paste_with_shift",
@@ -353,7 +353,7 @@ const KEYS: &[Key] = &[
     key(
         "gnome_keyboard_shortcuts",
         Kind::Bool,
-        "Hex's own GNOME custom keyboard shortcuts, for GNOME without a shortcuts portal (Linux)",
+        "Mumble's own GNOME custom keyboard shortcuts, for GNOME without a shortcuts portal (Linux)",
     ),
     key(
         "share_dictation_shortcut",
@@ -379,11 +379,11 @@ const KEYS: &[Key] = &[
     ),
 ];
 
-/// Settings that act only where Hex has a capability (by its
+/// Settings that act only where Mumble has a capability (by its
 /// `rune_ui::capabilities` name), the same one that shows their row in the
 /// window. The first matching prefix decides.
 const NEEDS: &[(&str, &str)] = &[
-    ("experimental.hex_microphone", "fun"),
+    ("experimental.mumble_microphone", "fun"),
     ("show_dock_icon", "dock_icon"),
     ("labs.hide_menu_bar_icon", "dock_icon"),
     ("enable_on_launch", "listener_control"),
@@ -398,7 +398,7 @@ fn needs(key: &str) -> Option<&'static str> {
         .map(|(_, capability)| *capability)
 }
 
-/// Why `hex settings set` refuses `name` on this OS, if it does.
+/// Why `mumble settings set` refuses `name` on this OS, if it does.
 pub fn unavailable(name: &str) -> Option<ControlError> {
     unavailable_under(name, crate::policy::Policy::current())
 }
@@ -419,7 +419,7 @@ fn unavailable_under(name: &str, policy: crate::policy::Policy) -> Option<Contro
     Some(ControlError::new(
         "unsupported",
         format!(
-            "`{name}` does nothing on this OS: it needs {capability}, which Hex has only elsewhere"
+            "`{name}` does nothing on this OS: it needs {capability}, which Mumble has only elsewhere"
         ),
     ))
 }
@@ -436,11 +436,11 @@ fn keys() -> impl Iterator<Item = &'static Key> {
     KEYS.iter()
 }
 
-/// Settings `hex settings` never shows: Hex's own bookkeeping.
+/// Settings `mumble settings` never shows: Mumble's own bookkeeping.
 #[cfg(test)]
 const INTERNAL: &[&str] = &["migrations", "mouse_shortcut_notice"];
 
-/// Settings another `hex` command edits instead (`hex vocabulary`).
+/// Settings another `mumble` command edits instead (`mumble vocabulary`).
 #[cfg(test)]
 const OWN_COMMAND: &[&str] = &["vocabulary"];
 
@@ -506,7 +506,7 @@ fn unknown(name: &str) -> ControlError {
         .unwrap_or_default();
     ControlError::new(
         "unknown-setting",
-        format!("unknown setting `{name}`.{near} Run `hex settings list` for every key."),
+        format!("unknown setting `{name}`.{near} Run `mumble settings list` for every key."),
     )
 }
 
@@ -612,7 +612,7 @@ pub fn apply(
                 {
                     return Err(invalid(
                         name,
-                        "mouse buttons need Labs › Mouse shortcuts: hex labs on mouse-shortcuts",
+                        "mouse buttons need Labs › Mouse shortcuts: mumble labs on mouse-shortcuts",
                     ));
                 }
                 if let Some(why) = special_key_refusal(&candidate, binding) {
@@ -623,7 +623,7 @@ pub fn apply(
                     return Err(ControlError::new(
                         "shortcut-in-use",
                         format!(
-                            "{} is already in use by another Hex shortcut",
+                            "{} is already in use by another Mumble shortcut",
                             format_hotkey(binding)
                         ),
                     ));
@@ -660,7 +660,7 @@ pub fn apply(
 }
 
 /// Validates every `key: value` in `values` against `settings` and returns
-/// the settings to save, all or none (`hex settings apply`, the Home Manager
+/// the settings to save, all or none (`mumble settings apply`, the Home Manager
 /// module). Values are JSON: booleans, numbers, `null` for `none`, objects
 /// and arrays for json settings, text for the rest. Keys that depend on each
 /// other (a double-tap-only start and its shortcut) apply in any order.
@@ -865,13 +865,13 @@ fn special_key_refusal(settings: &AppSettings, binding: &HotkeyBinding) -> Optio
     // The § key alone needs Labs › Section key alone (Linux).
     if cfg!(target_os = "linux") && binding.is_lone_section_key() && !settings.section_key_allowed()
     {
-        return Some("section needs Labs › Section key alone: hex labs on section-key".into());
+        return Some("section needs Labs › Section key alone: mumble labs on section-key".into());
     }
     if cfg!(target_os = "windows") {
         let key = binding.key.as_ref()?;
         return (binding.is_lone_navigation_key() && !settings.special_keys_allowed()).then(|| {
             format!(
-                "{} alone needs Labs › Special keys alone: hex labs on special-keys",
+                "{} alone needs Labs › Special keys alone: mumble labs on special-keys",
                 key.label.to_lowercase().replace(' ', "")
             )
         });
@@ -883,7 +883,7 @@ fn special_key_refusal(settings: &AppSettings, binding: &HotkeyBinding) -> Optio
     let name = key.label.to_lowercase().replace(' ', "");
     if cfg!(target_os = "linux") {
         return Some(format!(
-            "{name} needs Labs › Special keys alone: hex labs on special-keys"
+            "{name} needs Labs › Special keys alone: mumble labs on special-keys"
         ));
     }
     binding
@@ -988,9 +988,9 @@ mod tests {
         }
     }
 
-    /// Fails when a persisted setting has no `hex settings` key: add one to
-    /// `KEYS` (or to `INTERNAL` if it is Hex's own bookkeeping, or to
-    /// `OWN_COMMAND` if another `hex` command edits it).
+    /// Fails when a persisted setting has no `mumble settings` key: add one to
+    /// `KEYS` (or to `INTERNAL` if it is Mumble's own bookkeeping, or to
+    /// `OWN_COMMAND` if another `mumble` command edits it).
     #[test]
     fn every_persisted_setting_has_a_cli_key() {
         // Lists left empty and unchosen options are left out of the file;
@@ -1013,7 +1013,7 @@ mod tests {
                 .any(|key| path == key || path.starts_with(&format!("{key}.")));
             assert!(
                 covered,
-                "settings.json has `{path}`, which `hex settings` can't name"
+                "settings.json has `{path}`, which `mumble settings` can't name"
             );
         }
         for key in keys() {

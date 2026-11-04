@@ -1,6 +1,6 @@
-//! Hex's first run: the onboarding story, the one onboarding on every OS.
+//! Mumble's first run: the onboarding story, the one onboarding on every OS.
 //! A new install (or an upgrade whose setup isn't ready) opens it at
-//! launch, and Run setup again and `hex onboarding reset` replay it. The
+//! launch, and Run setup again and `mumble onboarding reset` replay it. The
 //! window's tour ([`onboarding`](super::super::onboarding)) is the state
 //! machine underneath: it asks for the permissions, relaunches when macOS
 //! needs it, watches the practice dictation, and records completion. This
@@ -33,21 +33,21 @@ const CHECK_EVERY: f64 = 0.25;
 
 /// What the real first run reports to the story's pages.
 pub(crate) struct Live {
-    /// Hex's own dictation records.
+    /// Mumble's own dictation records.
     pub(crate) listening: bool,
     pub(crate) microphone: ItemStatus,
     pub(crate) accessibility: ItemStatus,
-    /// Every permission is on and one applies only after Hex restarts.
+    /// Every permission is on and one applies only after Mumble restarts.
     pub(crate) restart: bool,
     /// macOS asks for Microphone and Accessibility; Windows only shows the
     /// Microphone row while its privacy switch is off.
     pub(crate) accessibility_row: bool,
     /// macOS 27 calls Accessibility "Device Control and Data Access".
     pub(crate) accessibility_renamed: bool,
-    /// The shortcut listener failed after setup and Hex won't relaunch by
-    /// itself again: Reopen Hex.
+    /// The shortcut listener failed after setup and Mumble won't relaunch by
+    /// itself again: Reopen Mumble.
     pub(crate) reopen: bool,
-    /// macOS needed a restart and Hex couldn't relaunch itself.
+    /// macOS needed a restart and Mumble couldn't relaunch itself.
     pub(crate) relaunch_failed: bool,
     /// The desktop's paste permission on GNOME and KDE Wayland: the
     /// permissions page explains it and asks before the practice pastes.
@@ -214,7 +214,7 @@ pub(in crate::rune_ui) fn fixture_resume(ui: &mut Ui, page: Page) {
     poll(ui, &mut tx);
 }
 
-/// "Run setup again" and `hex onboarding reset`: forgets that onboarding
+/// "Run setup again" and `mumble onboarding reset`: forgets that onboarding
 /// finished and opens it now. Settings, history, and permissions
 /// stay as they are, so the run finds them ready and passes their steps.
 pub(crate) fn restart(ui: &mut Ui, tx: &mut Tx) -> Result<(), String> {
@@ -227,7 +227,7 @@ pub(crate) fn restart(ui: &mut Ui, tx: &mut Tx) -> Result<(), String> {
     open(ui);
     tx.settle();
     if ui.first_run.is_none() {
-        return Err("Hex could not open onboarding".into());
+        return Err("Mumble could not open onboarding".into());
     }
     Ok(())
 }
@@ -311,7 +311,7 @@ pub(in crate::rune_ui) fn poll(ui: &mut Ui, tx: &mut Tx) -> bool {
     s.granted = granted;
     s.caps = caps;
 
-    // Hex's state arrives between frames, so the first run keeps polling;
+    // Mumble's state arrives between frames, so the first run keeps polling;
     // a fixture shows one moment and stays still.
     advance_to(s, now, tx);
     if live_window {
@@ -349,7 +349,7 @@ pub(super) fn press_continue(ui: &mut Ui) {
 }
 
 /// Skip on the demo or the practice: passes over that part to the next
-/// step setup still needs. It never records completion; only Hex is ready
+/// step setup still needs. It never records completion; only Mumble is ready
 /// does.
 pub(in crate::rune_ui) fn skip(ui: &mut Ui) {
     if let Some(s) = ui.first_run.as_mut() {
@@ -357,7 +357,7 @@ pub(in crate::rune_ui) fn skip(ui: &mut Ui) {
     }
 }
 
-/// "Start using Hex": closes the first run and the tour under it.
+/// "Start using Mumble": closes the first run and the tour under it.
 pub(super) fn finish(ui: &mut Ui) {
     if ui.live()
         && ui.platform.setup_status().ready()
@@ -370,7 +370,7 @@ pub(super) fn finish(ui: &mut Ui) {
     ui.tour = None;
 }
 
-/// "Reopen Hex" once the listener failed and Hex won't relaunch itself.
+/// "Reopen Mumble" once the listener failed and Mumble won't relaunch itself.
 pub(super) fn reopen(ui: &mut Ui) {
     onboarding::input(ui, Input::Reopen);
 }
@@ -394,8 +394,8 @@ pub(super) fn paste_later(ui: &mut Ui) {
     }
 }
 
-/// "Restart Hex" once macOS applies a grant only after a restart.
-pub(super) fn restart_hex(ui: &mut Ui) {
+/// "Restart Mumble" once macOS applies a grant only after a restart.
+pub(super) fn restart_mumble(ui: &mut Ui) {
     onboarding::input(ui, Input::Restart);
 }
 
@@ -417,7 +417,7 @@ pub(super) fn practice_changed(ui: &mut Ui, tx: &mut Tx) {
 pub(super) fn hint_copy(live: &Live) -> Option<&'static str> {
     Some(match live.practice {
         Practice::TooShort => tr("Hold the shortcut a little longer while you speak."),
-        Practice::NothingHeard => tr("Hex didn't hear any words. Try again a little louder."),
+        Practice::NothingHeard => tr("Mumble didn't hear any words. Try again a little louder."),
         Practice::Failed => tr("That didn't work. Try again."),
         Practice::Transcribing => tr("Typing what you said…"),
         _ => return None,

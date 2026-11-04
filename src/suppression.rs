@@ -409,8 +409,8 @@ unsafe extern "C" fn physical_event_callback(
     event
 }
 
-/// Whether a HID key press can reveal a chord Hex would otherwise miss.
-/// Escape ends no dictation, and Hex's own shortcuts act through their session events.
+/// Whether a HID key press can reveal a chord Mumble would otherwise miss.
+/// Escape ends no dictation, and Mumble's own shortcuts act through their session events.
 fn is_chord_evidence(code: u16, flags: u64, hotkeys: RuntimeHotkeys) -> bool {
     code != ESCAPE_KEY_CODE
         && !is_own_globe_key(code, hotkeys.dictation)
@@ -583,7 +583,7 @@ unsafe extern "C" fn event_callback(
     }
     let suppress = suppression.process_all(input, hotkeys, delivered);
     context.activity.observe(input, suppress);
-    // A key Hex consumed (its shortcuts) was never the app's chord.
+    // A key Mumble consumed (its shortcuts) was never the app's chord.
     if suppress { ptr::null_mut() } else { event }
 }
 
@@ -634,7 +634,7 @@ impl ShortcutSuppression {
         self.key_presses.clear();
     }
 
-    /// Whether the tap keeps `input` from the app in front: Hex's shortcuts
+    /// Whether the tap keeps `input` from the app in front: Mumble's shortcuts
     /// and `hotkeys.cancel`, which the caller leaves set only while a
     /// toggled recording runs.
     fn process_all(&mut self, input: InputEvent, hotkeys: RuntimeHotkeys, delivered: bool) -> bool {

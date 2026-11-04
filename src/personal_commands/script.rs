@@ -1,7 +1,7 @@
 //! One loaded config in an embedded QuickJS runtime: the module graph from
-//! `hex.config.ts` (types stripped by [`super::typescript`]), compiled once,
-//! and the transformation calls Hex makes into it. Scripts get plain
-//! JavaScript, the `@hex/commands` module, and two host APIs behind the trust
+//! `mumble.config.ts` (types stripped by [`super::typescript`]), compiled once,
+//! and the transformation calls Mumble makes into it. Scripts get plain
+//! JavaScript, the `@mumble/commands` module, and two host APIs behind the trust
 //! prompt: `fetch` and `node:child_process` (with `node:util`'s `promisify`
 //! and timers to wait on them, [`super::io`]). No filesystem or environment
 //! API. Every load and call runs under a time limit and the runtime under a
@@ -27,16 +27,16 @@ use super::trust::Permissions;
 const MEMORY_LIMIT: usize = 64 << 20;
 const STACK_LIMIT: usize = 1 << 20;
 /// The stack of the thread that owns a script: QuickJS's own limit plus room
-/// for Hex's frames.
+/// for Mumble's frames.
 pub const THREAD_STACK_SIZE: usize = 4 << 20;
 const LOAD_TIME_LIMIT: Duration = Duration::from_secs(2);
 const MAX_SOURCE_BYTES: u64 = 1 << 20;
 const MAX_LOG_BYTES: usize = 4096;
-const ENTRY: &str = "hex:entry";
-const HOST: &str = "hex:host";
-const COMMANDS: &str = "@hex/commands";
-const IO: &str = "hex:io";
-const WEB: &str = "hex:web";
+const ENTRY: &str = "mumble:entry";
+const HOST: &str = "mumble:host";
+const COMMANDS: &str = "@mumble/commands";
+const IO: &str = "mumble:io";
+const WEB: &str = "mumble:web";
 const CHILD_PROCESS: &str = "node:child_process";
 const UTIL: &str = "node:util";
 const COMMANDS_JS: &str = include_str!("commands.js");
@@ -44,12 +44,13 @@ const HOST_JS: &str = include_str!("host.js");
 const WEB_JS: &str = include_str!("web.js");
 const CHILD_PROCESS_JS: &str = include_str!("child_process.js");
 const UTIL_JS: &str = include_str!("util.js");
-/// `hex:io` hands the native bindings to the built-in modules, then drops
+/// `mumble:io` hands the native bindings to the built-in modules, then drops
 /// its global.
-const IO_JS: &str = "const io = globalThis.__hexIo\ndelete globalThis.__hexIo\nexport default io\n";
+const IO_JS: &str =
+    "const io = globalThis.__mumbleIo\ndelete globalThis.__mumbleIo\nexport default io\n";
 const CONSOLE_JS: &str = r#"(() => {
-  const log = globalThis.__hexLog
-  delete globalThis.__hexLog
+  const log = globalThis.__mumbleLog
+  delete globalThis.__mumbleLog
   const format = (values) => values.map((value) => {
     if (typeof value === "string") return value
     try { return JSON.stringify(value) ?? String(value) } catch { return String(value) }
@@ -158,7 +159,7 @@ impl Script {
     }
 
     /// Runs the transformation `id` over `text` within `limit`, with the host
-    /// APIs in `allowed`. Hex stopping (`stop`) ends it early. When it
+    /// APIs in `allowed`. Mumble stopping (`stop`) ends it early. When it
     /// returns, every request, timer, and program it started is over.
     pub fn transform(
         &self,
@@ -195,7 +196,7 @@ impl Script {
     }
 
     /// Drives QuickJS's job queue and the host operations until `promise`
-    /// settles, the deadline passes, or Hex stops.
+    /// settles, the deadline passes, or Mumble stops.
     fn settle<'js>(
         &self,
         ctx: &Ctx<'js>,
@@ -213,7 +214,9 @@ impl Script {
                 return Ok(Err(timed_out(limit)));
             }
             if stop.load(Ordering::Acquire) {
-                return Ok(Err("Hex stopped before the transformation finished".into()));
+                return Ok(Err(
+                    "Mumble stopped before the transformation finished".into()
+                ));
             }
             let wake = self.io.borrow_mut().wait(deadline);
             match wake {
@@ -250,13 +253,13 @@ fn evaluate<'js>(
     io: &io::Shared,
 ) -> rquickjs::Result<(Persistent<Object<'static>>, String)> {
     ctx.globals().set(
-        "__hexLog",
+        "__mumbleLog",
         Function::new(ctx.clone(), |level: String, message: String| {
             log(&level, &message);
         })?,
     )?;
     ctx.eval::<(), _>(CONSOLE_JS)?;
-    ctx.globals().set("__hexIo", io::bindings(ctx, io)?)?;
+    ctx.globals().set("__mumbleIo", io::bindings(ctx, io)?)?;
     let (_, promise) = Module::declare(ctx.clone(), IO, IO_JS)?.eval()?;
     promise.finish::<()>()?;
     let (_, promise) = Module::declare(ctx.clone(), WEB, WEB_JS)?.eval()?;
@@ -275,10 +278,10 @@ fn evaluate<'js>(
 fn log(level: &str, message: &str) {
     let message = &message[..message.floor_char_boundary(MAX_LOG_BYTES)];
     match level {
-        "error" => tracing::error!(target: "hex_config", "{message}"),
-        "warn" => tracing::warn!(target: "hex_config", "{message}"),
-        "debug" => tracing::debug!(target: "hex_config", "{message}"),
-        _ => tracing::info!(target: "hex_config", "{message}"),
+        "error" => tracing::error!(target: "mumble_config", "{message}"),
+        "warn" => tracing::warn!(target: "mumble_config", "{message}"),
+        "debug" => tracing::debug!(target: "mumble_config", "{message}"),
+        _ => tracing::info!(target: "mumble_config", "{message}"),
     }
 }
 
@@ -326,9 +329,9 @@ fn timed_out(limit: Duration) -> String {
     format!("timed out after {} ms", limit.as_millis())
 }
 
-/// Resolves and loads modules for one workspace: `@hex/commands`, and files
+/// Resolves and loads modules for one workspace: `@mumble/commands`, and files
 /// inside the workspace by relative path. Module names are paths relative to
-/// the workspace, so errors read `hex.config.ts:12:5`.
+/// the workspace, so errors read `mumble.config.ts:12:5`.
 struct WorkspaceLoader {
     root: PathBuf,
     record: Rc<RefCell<Record>>,
@@ -432,17 +435,17 @@ impl Resolver for WorkspaceLoader {
                 Ok(CHILD_PROCESS.into())
             }
             UTIL | "util" => Ok(UTIL.into()),
-            "@hex/commands/effect" => {
+            "@mumble/commands/effect" => {
                 refuse("Effect handlers are not supported; use plain functions")
             }
             _ if name.starts_with("./") || name.starts_with("../") => self
                 .resolve_file(base, name)
                 .or_else(|message| refuse(&message)),
             _ if name.starts_with("node:") => refuse(
-                "Hex provides only node:child_process (exec, execFile) and node:util (promisify)",
+                "Mumble provides only node:child_process (exec, execFile) and node:util (promisify)",
             ),
             _ => refuse(
-                "only @hex/commands, node:child_process, node:util, and relative imports are available",
+                "only @mumble/commands, node:child_process, node:util, and relative imports are available",
             ),
         }
     }

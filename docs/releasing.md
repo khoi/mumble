@@ -1,11 +1,11 @@
-# Releasing Hex
+# Releasing Mumble
 
 One run of the **Release** workflow (`.github/workflows/release.yml`)
 builds, signs, and publishes every platform from one commit to the Anomaly
-release service (`anomalyco/release`, `https://anoma.ly/release`). Hex's
+release service (`anomalyco/release`, `https://anoma.ly/release`). Mumble's
 names on the service are in [`plans/release-service.md`](plans/release-service.md).
 The service's dev stage, `https://dev.anoma.ly/release`, is only for testing
-the release service itself: Hex never publishes to it or reads from it. Builds
+the release service itself: Mumble never publishes to it or reads from it. Builds
 are tested before stable on the production service's `dev` channel.
 
 Like OpenCode's release, building is split from everything that holds a
@@ -32,10 +32,10 @@ Release (push to dev: dev channel; workflow_dispatch: ref + channel check | dev 
 ├─ plan                     .github/release/plan.sh: version, channel, tag, notes
 ├─ build                    build-desktop.yml: Linux x64 + ARM64 (Ubuntu 24.04) executables, .deb,  [build]
 │                           .rpm (installed and run on Ubuntu and Fedora); Windows x64 + ARM64
-├─ build-macos              Hex.app as anomaly.hex, ad-hoc signed (HEX_RELEASE_UNSIGNED)             [build]
+├─ build-macos              Mumble.app as anomaly.mumble, ad-hoc signed (MUMBLE_RELEASE_UNSIGNED)             [build]
 ├─ sign-macos               Developer ID inside-out, notarize + staple, ZIP + DMG (sign-macos.sh)     [release]
 ├─ verify-macos             validate-app.sh, Gatekeeper, updater requirement, launch                 [build]
-├─ sign-windows             Azure Artifact Signing of both hex.exe, Authenticode check                [release]
+├─ sign-windows             Azure Artifact Signing of both mumble.exe, Authenticode check                [release]
 ├─ installers               windows-installers.yml: Setup.exe around them, tested on x64 + ARM64      [build]
 ├─ sign-windows-installers  Azure Artifact Signing of both Setup.exe                                  [release]
 ├─ check-linux, -macos,     stable, check: the full suites on the candidate (check-<os>.yml, called   [build]
@@ -50,7 +50,7 @@ Release (push to dev: dev channel; workflow_dispatch: ref + channel check | dev 
 ├─ homebrew-stage → homebrew stable: render + brew style/audit → push-homebrew.sh                     [build → release]
 ├─ record-aur, record-brew  OIDC: the package manager serves the version                              [release]
 └─ dev-notes-stage → dev-notes  dev: PR titles since the last dev build (release-dev-notes.sh) →     [build → release]
-                            dev-notes.json in hex-production-files (publish-dev-notes.sh)
+                            dev-notes.json in mumble-production-files (publish-dev-notes.sh)
 ```
 
 Without a platform's signing values, dev and check runs go on without that
@@ -69,7 +69,7 @@ by Release: after a stable release, run **Site** with `mode: production` from
 - Windows: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
   `AZURE_TRUSTED_SIGNING_ENDPOINT`, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME`,
   `AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE`, with a federated credential for
-  `repo:anomalyco/hex:environment:release` (docs/windows-signing.md).
+  `repo:khoi/mumble:environment:release` (docs/windows-signing.md).
 
 ### Release tags
 
@@ -88,7 +88,7 @@ Repository admins can still change rulesets.
 ## The release service
 
 The service authorizes the publish jobs by their GitHub OIDC token alone:
-`registry/hex.json` in `anomalyco/release` admits repository `anomalyco/hex`
+`registry/mumble.json` in `anomalyco/release` admits repository `khoi/mumble`
 (by name and id) and workflow `.github/workflows/release.yml` running
 from the same ref it was triggered on, for artifact `desktop` on both the dev
 and production services, as two publishers:
@@ -107,8 +107,8 @@ token, and the Windows signing jobs one for Azure.
 
 `publish` uploads each file under its own name with its SHA-256 (files over
 95 MiB in 90 MiB parts), then posts the release naming each target by file
-and hash, with distributions `direct`, `aur` (`hex-bin`), `deb-x64`,
-`deb-arm64`, `rpm-x64`, `rpm-arm64`, `brew` (`anomalyco/tap/hex`), and `nix`.
+and hash, with distributions `direct`, `aur` (`mumble-bin`), `deb-x64`,
+`deb-arm64`, `rpm-x64`, `rpm-arm64`, `brew` (`anomalyco/tap/mumble`), and `nix`.
 It then downloads every published URL and compares it with the local bytes.
 Package-manager entries gain a version only once that package manager serves
 it: `nix` and the `deb`/`rpm` kinds at publish (the flake builds the release
@@ -119,10 +119,10 @@ clients check HTTPS, each file's size and SHA-256, and the OS code signature
 
 ## Homebrew
 
-`packaging/homebrew/hex.rb` is the cask `anomalyco/tap/hex`: the `anomaly.hex`
+`packaging/homebrew/mumble.rb` is the cask `anomalyco/tap/mumble`: the `anomaly.mumble`
 app from the release's `macos-arm64-dmg` file URL and SHA-256, `auto_updates
-true` (Hex updates any writable `Hex.app` itself), a livecheck on the stable
-manifest, and zap paths for the new identity and the shared `hex` data folder.
+true` (Mumble updates any writable `Mumble.app` itself), a livecheck on the stable
+manifest, and zap paths for the new identity and the shared `mumble` data folder.
 The `homebrew-stage` job renders it on a macOS runner and runs `brew style`
 and `brew audit --cask --strict --online` in a local copy of the tap, without
 secrets; the `homebrew` job pushes that verified file with the tap deploy key
@@ -134,8 +134,8 @@ secrets; the `homebrew` job pushes that verified file with the tap deploy key
   every platform as `0.0.0-dev-<run number>` in `release` and publishes
   nothing anywhere: a dry run of the build and packaging.
 - `dev` publishes a build of `dev` to the production service's `dev`
-  channel (`https://anoma.ly/release/hex/desktop/dev.json`), which installs
-  set to the Dev update channel follow and `https://anoma.ly/hex/download/dev`
+  channel (`https://anoma.ly/release/mumble/desktop/dev.json`), which installs
+  set to the Dev update channel follow and `https://anoma.ly/mumble/download/dev`
   links. Every push to `dev` runs it, except pushes that change only `docs/`,
   `site/`, or Markdown; a running dev release always finishes, and only the newest push that lands meanwhile waits to run next (GitHub drops the ones between), and
   `gh workflow run release.yml --ref dev -f channel=dev -f ref=dev`
@@ -143,18 +143,18 @@ secrets; the `homebrew` job pushes that verified file with the tap deploy key
   build's notes are the titles of the PRs merged since the previous dev
   build, without CI fixes and changes outside the app
   (`scripts/release-dev-notes.sh`); once the build is published they join
-  `https://anoma.ly/hex/files/dev-notes.json`, which the changelog at
-  `https://anoma.ly/hex/dev` (the dev release's `notes_url`) and the app's
+  `https://anoma.ly/mumble/files/dev-notes.json`, which the changelog at
+  `https://anoma.ly/mumble/dev` (the dev release's `notes_url`) and the app's
   Restart to update read. The
   version is `0.0.0-dev-<run number>`, as OpenCode numbers its dev builds.
   Versions are display text that nothing compares: each channel has one
   current release and installs follow it, so a dev build below 2.3.1 is fine,
   and a rollback is making an earlier release current (the service's
   `promote` with a history `sequence`, or Make current in its admin panel).
-  Every build is stamped with its channel (`HEX_BUILD_CHANNEL`); an install
+  Every build is stamped with its channel (`MUMBLE_BUILD_CHANNEL`); an install
   whose Update channel setting names another channel offers that channel's
   current release ("Switch to Stable 2.3.1") and switches only once the user
-  confirms. Source, local (`HEX_LOCAL_BUILD=1`) and test builds never check or offer
+  confirms. Source, local (`MUMBLE_LOCAL_BUILD=1`) and test builds never check or offer
   a switch. The first build after this change, 2.3.2-dev.<run> on
   2026-10-27, carried the new client to installs whose older client took only
   higher versions; every build since is `0.0.0-dev-<run>`. It publishes only signed builds, because the
@@ -195,7 +195,7 @@ refuses force pushes and deletion.
    `scripts/check-onboarding.sh` on that commit and give Dax its result and
    scene images with the go/no-go; stable releases need his explicit go-ahead.
 2. Let the push to `dev` publish its dev-channel build
-   (`https://anoma.ly/release/hex/desktop/dev.json`) and try it on an install
+   (`https://anoma.ly/release/mumble/desktop/dev.json`) and try it on an install
    set to the Dev update channel.
 3. Fast-forward `production` to that commit (`git push origin
    <commit>:production`, which refuses anything but a fast-forward; the
@@ -211,13 +211,13 @@ refuses force pushes and deletion.
    item for 2.3.1 Macs (both below, "Transition from Kit's hosting").
 
 The first Anomaly-signed macOS release also changes the bundle ID to
-`anomaly.hex` (docs/plans/macos-signing.md). Its notes must tell Mac users
+`anomaly.mumble` (docs/plans/macos-signing.md). Its notes must tell Mac users
 that macOS sees a new app: grant Microphone, Accessibility, and (for
 Also pause the browser) System Audio Recording once more, removing any
-stale Hex entry in System Settings first; turn Launch at login on again; and
-point `DisableUpdates` profiles at `anomaly.hex`. Settings, history, and
+stale Mumble entry in System Settings first; turn Launch at login on again; and
+point `DisableUpdates` profiles at `anomaly.mumble`. Settings, history, and
 models do not carry over from 2.3.1 on any OS: 2.3.1 kept them in
-`voice-control`, and Hex now reads only `hex` and imports nothing. Decide how
+`voice-control`, and Mumble now reads only `mumble` and imports nothing. Decide how
 2.3.1 installs reach it first (same doc, "Existing installs").
 
 Versions are display text and never compared: each channel has one current
@@ -225,16 +225,16 @@ release, which installs follow.
 
 ## Hosting
 
-Hex lives under one path on anoma.ly (no subdomains) until a vanity domain
+Mumble lives under one path on anoma.ly (no subdomains) until a vanity domain
 exists. `site/cloudflare.config.ts` defines both environments; `--mode`
 picks one:
 
 ```ts
 cloudflare.config.ts (cf deploy --prebuilt --mode <mode>, from CI only)
-├─ production: Worker hex-production-site  routes anoma.ly/hex, anoma.ly/hex/*          bucket hex-production-files
-└─ dev:        Worker hex-dev-site         routes dev.anoma.ly/hex, dev.anoma.ly/hex/*  bucket hex-dev-files
+├─ production: Worker mumble-production-site  routes anoma.ly/mumble, anoma.ly/mumble/*          bucket mumble-production-files
+└─ dev:        Worker mumble-dev-site         routes dev.anoma.ly/mumble, dev.anoma.ly/mumble/*  bucket mumble-dev-files
 
-https://anoma.ly/hex/                      the site; downloads read the service's stable manifest at build time
+https://anoma.ly/mumble/                      the site; downloads read the service's stable manifest at build time
 ├─ download/dev                            302 to the dev channel's macos-arm64-dmg, read per request
 ├─ dev                                     the dev builds' changelog, rendered per request from files/dev-notes.json
 ├─ install-linux.sh, install-windows.ps1   the installers, copied from .github/release/ at build time
@@ -243,11 +243,11 @@ https://anoma.ly/hex/                      the site; downloads read the service'
 
 The site's download links come from `site/scripts/release-data.ts`, which
 reads the stable manifest of the mode's service when the site builds; until
-the service has a stable Hex release they name the frozen 2.3.1 downloads.
+the service has a stable Mumble release they name the frozen 2.3.1 downloads.
 The installers fetch the stable manifest, download their target, check its
 size and SHA-256, and write the direct-install receipt.
 
-`/hex/download/dev` is the permanent team link to the newest Mac dev build:
+`/mumble/download/dev` is the permanent team link to the newest Mac dev build:
 the Worker reads its host's service `dev.json` on every request and redirects
 to the `macos-arm64-dmg` file, or answers 404 with a plain message when no dev
 release (or no Mac build of it) exists. The release service is another Worker
@@ -261,7 +261,7 @@ production site deploy of a commit that has it: the next stable Release, or
 Site dispatched with `mode: production` from `production` once `production`
 contains it. Both move or deploy `production`, which the release freeze
 forbids, so until the freeze lifts the link works only on dev
-(`https://dev.anoma.ly/hex/download/dev`, which reads the dev service).
+(`https://dev.anoma.ly/mumble/download/dev`, which reads the dev service).
 
 Deploys run only from CI (`.github/workflows/site.yml` and `site-deploy.yml`):
 a push to `dev` that touches `site/` deploys dev, and Site can be dispatched
@@ -281,7 +281,7 @@ The site's Worker code and assets come from repository code anyone with push
 access can merge, so `.github/release/deploy-site.sh` treats the artifact as
 untrusted: it deploys only the Build Output files, and only if the root config
 is a non-preview build of that mode and the Worker config is exactly that
-mode's Worker (`hex-dev-site` or `hex-production-site`), its two `anoma.ly`
+mode's Worker (`mumble-dev-site` or `mumble-production-site`), its two `anoma.ly`
 routes, `workersDev`/`previewUrls` off, and the bindings `ASSETS`, `FILES`
 (that mode's bucket), and `CANONICAL_HOST`. Any other Worker name, route,
 binding, key, Worker, or Container is refused: a binding would give the
@@ -292,13 +292,13 @@ matching change in `deploy-site.sh` (Dax).
 Set once by hand on the anomaly account, because the config only binds them:
 the two buckets (`cf deploy` provisions only unnamed bindings; a missing named
 bucket fails the deploy), the `expire-staging` lifecycle rule on
-`hex-dev-files`, and an anoma.ly `http_config_settings` rule that turns off
-Browser Integrity Check for `/hex/files/` on both hosts (it returned 403 to
+`mumble-dev-files`, and an anoma.ly `http_config_settings` rule that turns off
+Browser Integrity Check for `/mumble/files/` on both hosts (it returned 403 to
 Python's default user agent).
 
 Two account tokens, each used by one locked step only:
 
-- `hex-site-deploy` (`release` secret `CLOUDFLARE_API_TOKEN`): Workers Scripts
+- `mumble-site-deploy` (`release` secret `CLOUDFLARE_API_TOKEN`): Workers Scripts
   Write (account) and Workers Routes Write (zone `anoma.ly`), used only by
   `deploy-site.sh`. It has no R2 access: deploying a binding needs none.
   Cloudflare supports per-Worker roles (Individual Workers Editor) that would
@@ -308,54 +308,54 @@ Two account tokens, each used by one locked step only:
   Routes are always written on deploy, and `cf` then needs Routes Write on the
   zone. Recreate rather than edit a token's policies: an edited policy did not
   take effect on the routes API in testing.
-- `hex-r2-production-files` (`release` secret `R2_SECRET_ACCESS_KEY`, variable
-  `R2_ACCESS_KEY_ID` = its id): object write on `hex-production-files` only,
+- `mumble-r2-production-files` (`release` secret `R2_SECRET_ACCESS_KEY`, variable
+  `R2_ACCESS_KEY_ID` = its id): object write on `mumble-production-files` only,
   used through `.github/release/r2-put.sh` by the Installers and Legacy
   appcast workflows and Release's dev-notes job.
 
 ## Old clients (2.3.1 and earlier)
 
-`https://anoma.ly/hex/files/` (`hex-production-files`) keeps serving the 2.3.1
+`https://anoma.ly/mumble/files/` (`mumble-production-files`) keeps serving the 2.3.1
 `linux-update.json`, `windows-update.json`, `windows-aarch64-update.json`,
 `appcast.xml`, and their files, frozen: nothing updates them anymore (the
 bucket now also holds the installers and `dev-notes.json`), and those
-installs see no update on their own. The new Hex is effectively a new
+installs see no update on their own. The new Mumble is effectively a new
 app (new updater, and on macOS a new bundle ID), so:
 
 - **macOS:** at the first release on the service, add one informational item
-  to `appcast.xml` that tells 2.3.1 users to download the new Hex from
-  https://anoma.ly/hex (no enclosure, so Sparkle installs nothing). The item
+  to `appcast.xml` that tells 2.3.1 users to download the new Mumble from
+  https://anoma.ly/mumble (no enclosure, so Sparkle installs nothing). The item
   is prepared with the macOS client work; upload it with the Legacy appcast
   workflow (`.github/workflows/legacy-appcast.yml`, dispatch from `production`),
   which replaces only `appcast.xml`. Superseded (Kit, 2026-11-02): the 2.3.1
   and Swift feeds offer the released ZIP itself, signed with their old Sparkle
-  key, so Install Update moves those Macs onto the new Hex
+  key, so Install Update moves those Macs onto the new Mumble
   (docs/plans/swift-app-handoff.md, "Legacy Update"). Keep `SUPublicEDKey` in
   `app/Info.plist`.
 - **Windows signer:** the updater accepts only a Valid Authenticode signature
   whose signer is `AUTHENTICODE_SIGNER` in `src/updater/windows.rs` (OpenCode's
-  Artifact Signing subject). Check the first Azure-signed Hex build's subject
+  Artifact Signing subject). Check the first Azure-signed Mumble build's subject
   against it before a stable release; unsigned builds never update.
 - **Linux and Windows:** the feeds stay at 2.3.1; the site and README tell
-  users to reinstall. `HEX_RELEASE_SIGNING_KEY` (the ed25519 key 2.3.1's
+  users to reinstall. `MUMBLE_RELEASE_SIGNING_KEY` (the ed25519 key 2.3.1's
   feeds were signed with) now signs every Linux executable Release publishes
   (`.github/release/sign-linux.sh`).
 
 ### Transition from Kit's hosting
 
 Releases up to 2.3.1 compiled `https://downloads.hex.kitlangton.dev` (Kit's
-personal `hex-releases` bucket; the website and installers used the `.com`
-alias); later 2.3.x builds compiled `https://anoma.ly/hex/files`. Builds on
+personal `mumble-releases` bucket; the website and installers used the `.com`
+alias); later 2.3.x builds compiled `https://anoma.ly/mumble/files`. Builds on
 the release service compile `https://anoma.ly/release`.
 
-- `hex-production-files` was seeded with byte copies of every object the old
+- `mumble-production-files` was seeded with byte copies of every object the old
   bucket served (the 2.3.1 feeds and artifacts, installers, the appcast, DMGs, Sparkle
   ZIPs, and Setup.exe installers).
-- Both hosts are custom domains of `hex-releases` in Kit's personal
+- Both hosts are custom domains of `mumble-releases` in Kit's personal
   Cloudflare account and serve the bucket directly until the redirect is
   deployed. The redirect is the Worker in `packaging/legacy-downloads/`
-  (`hex-legacy-downloads`, routes `downloads.hex.kitlangton.dev/*` and
-  `downloads.hex.kitlangton.com/*` → `https://anoma.ly/hex/files/<path>`,
+  (`mumble-legacy-downloads`, routes `downloads.hex.kitlangton.dev/*` and
+  `downloads.hex.kitlangton.com/*` → `https://anoma.ly/mumble/files/<path>`,
   302, path and query preserved). Deploy it with Kit's personal Wrangler
   login, before the Legacy appcast workflow runs, which checks both hosts:
 
@@ -363,7 +363,7 @@ the release service compile `https://anoma.ly/release`.
   bunx wrangler@latest deploy --config packaging/legacy-downloads/wrangler.jsonc
   ```
 
-  It changes no bytes old installs get (`hex-production-files` holds copies
+  It changes no bytes old installs get (`mumble-production-files` holds copies
   of everything the bucket served), so it may go up before the notice.
   Sparkle and the Linux/Windows updaters (curl `--location`, HTTPS-only
   redirects, since the first updater) follow it, so those installs read the
@@ -385,32 +385,32 @@ it. No reviewer is required.
 | Name | Use |
 | --- | --- |
 | (none) | publishing to the release service: the job's GitHub OIDC token |
-| `CLOUDFLARE_API_TOKEN`, var `CLOUDFLARE_ACCOUNT_ID` | site deploys (`hex-site-deploy`, used only by `deploy-site.sh`) |
-| `R2_SECRET_ACCESS_KEY`, var `R2_ACCESS_KEY_ID` | uploads to `hex-production-files` (`hex-r2-production-files`): the installers, the legacy appcast, and `dev-notes.json` |
-| `AUR_SSH_PRIVATE_KEY` | pushes `hex-bin` (key `github-actions-hex-aur`) |
-| `HOMEBREW_TAP_DEPLOY_KEY` | pushes `Casks/hex.rb` (deploy key `github-actions-hex-homebrew`, write access on `anomalyco/homebrew-tap` only) |
+| `CLOUDFLARE_API_TOKEN`, var `CLOUDFLARE_ACCOUNT_ID` | site deploys (`mumble-site-deploy`, used only by `deploy-site.sh`) |
+| `R2_SECRET_ACCESS_KEY`, var `R2_ACCESS_KEY_ID` | uploads to `mumble-production-files` (`mumble-r2-production-files`): the installers, the legacy appcast, and `dev-notes.json` |
+| `AUR_SSH_PRIVATE_KEY` | pushes `mumble-bin` (key `github-actions-mumble-aur`) |
+| `HOMEBREW_TAP_DEPLOY_KEY` | pushes `Casks/mumble.rb` (deploy key `github-actions-mumble-homebrew`, write access on `anomalyco/homebrew-tap` only) |
 | `AZURE_*` | Authenticode (docs/windows-signing.md) |
 | `APPLE_*` | macOS signing and notarization (docs/plans/macos-signing.md) |
-| `HEX_RELEASE_SIGNING_KEY` | ed25519 PEM; signs each Linux executable (`<target>-sig`), public key `.github/release/linux-signing.pub` and `src/updater/linux.rs` |
+| `MUMBLE_RELEASE_SIGNING_KEY` | ed25519 PEM; signs each Linux executable (`<target>-sig`), public key `.github/release/linux-signing.pub` and `src/updater/linux.rs` |
 | `SPARKLE_ED_PRIVATE_KEY` | old 2.3.1 appcast key; unused, kept for old clients |
 
 ## Linux packages
 
-- **Direct install** (`curl -fsSL https://anoma.ly/hex/files/install-linux.sh | sh`,
+- **Direct install** (`curl -fsSL https://anoma.ly/mumble/files/install-linux.sh | sh`,
   kept current by the Installers workflow; stable, or dev until there is a
   stable release): the user-local version layout plus the
   `install.json` receipt; it updates itself from the service's manifest and
   the window offers "Update" (restart into the staged version).
-- **AUR** `hex-bin` (`packaging/aur`, staged by `scripts/release-aur.sh`, pushed by `.github/release/push-aur.sh`):
-  `/usr/bin/hex`, the desktop entry, and the systemd user unit
-  `/usr/lib/systemd/user/hex.service`, from the release service's
+- **AUR** `mumble-bin` (`packaging/aur`, staged by `scripts/release-aur.sh`, pushed by `.github/release/push-aur.sh`):
+  `/usr/bin/mumble`, the desktop entry, and the systemd user unit
+  `/usr/lib/systemd/user/mumble.service`, from the release service's
   `linux-x64` (`x86_64`) or `linux-arm64` (`aarch64`) file. Not a prebuilt of the official `extra/hex` (a hex dump tool
   that installs `/usr/bin/hx`), so it neither provides nor conflicts with it;
   its description says so. Maintained under Dax's AUR account.
-- **.deb and .rpm** `hex` (`packaging/linux/nfpm.yaml`, built by
+- **.deb and .rpm** `mumble` (`packaging/linux/nfpm.yaml`, built by
   `scripts/package-linux.sh` with nfpm in the build jobs): the same three
   files as the AUR package, for x64 and arm64, published as
-  `linux-<arch>-deb` and `linux-<arch>-rpm` (`hex.deb`, `hex.rpm`). There is no
+  `linux-<arch>-deb` and `linux-<arch>-rpm` (`mumble.deb`, `mumble.rpm`). There is no
   apt or dnf repository: the release service's `deb-<arch>`/`rpm-<arch>`
   distributions carry the command that downloads the stable package from its
   alias link and installs it with `apt` or `dnf`. Dependencies name Ubuntu
@@ -422,7 +422,7 @@ it. No reviewer is required.
   `source-build` marker; the checkout updates it.
 
 An executable outside the user-local layout that the user does not own and
-pacman, dpkg, or rpm owns (`/usr/bin/hex`), or that lives in the Nix store,
+pacman, dpkg, or rpm owns (`/usr/bin/mumble`), or that lives in the Nix store,
 never self-updates; Settings says
 "Updated by your package manager". Source installs say "Updated from your
 source checkout".
@@ -436,6 +436,6 @@ current Arch). `.github/release/check-glibc-floor.sh` fails the build if the
 executable needs a newer symbol, and the build installs the `.deb` and runs
 the executables on Debian 12. ARM64 keeps the Vulkan backend like x64; ggml's CPU
 kernels stay portable (`GGML_NATIVE=OFF`, baseline ARMv8-A). There is no
-AppImage: the bare executable already runs without installing, and Hex's
+AppImage: the bare executable already runs without installing, and Mumble's
 systemd user unit and updater want a stable executable path that an AppImage
 does not have.

@@ -19,7 +19,7 @@ const MONO = 'ui-monospace, "SF Mono", Menlo, monospace'
 const COMMUNITY = ["Rin Ota", "Max Boyd", "Ivy Chen", "Noah Park", "Lena Ruiz", "Omar Haddad"]
 
 // people.webp: 96 px cells, 7 columns, in this order.
-const SPRITE = ["Dax", "Jay", "Frank", "anomalyco", "kitlangton", "hex", "scrawl", "effect", "hex-ci", "Ana Silva", "Sam Ortiz", "Mo Reyes", "Priya Das", "Lee Park", "Jo Kim", "Rin Ota", "Max Boyd", "Ivy Chen", "Noah Park", "Lena Ruiz", "Omar Haddad"]
+const SPRITE = ["Dax", "Jay", "Frank", "anomalyco", "kitlangton", "mumble", "scrawl", "effect", "mumble-ci", "Ana Silva", "Sam Ortiz", "Mo Reyes", "Priya Das", "Lee Park", "Jo Kim", "Rin Ota", "Max Boyd", "Ivy Chen", "Noah Park", "Lena Ruiz", "Omar Haddad"]
 const CELL = 96
 let people = null
 function sprite(ctx, name, x, y, size, radius) {
@@ -33,7 +33,7 @@ function sprite(ctx, name, x, y, size, radius) {
   return true
 }
 // The project a repo notification is about.
-const repoIcon = (repo) => ({ "anomalyco/hex": "hex", "kitlangton/scrawl": "scrawl" })[repo] ?? repo.split("/")[0]
+const repoIcon = (repo) => ({ "khoi/mumble": "mumble", "kitlangton/scrawl": "scrawl" })[repo] ?? repo.split("/")[0]
 
 // Glyphs, 24-unit boxes: Simple Icons (CC0) for brands, Lucide (ISC) for generic apps.
 const GLYPH = {
@@ -92,23 +92,23 @@ export const CONTENT = {
   chat: [
     ["#opencode", "Dax", "can you look at the effect migration PR before 5"],
     ["#opencode", "Dax", "why are there 40 subagents running on my laptop"],
-    ["#hex", "Jay", "hex just typed my whole standup into figma"],
+    ["#mumble", "Jay", "mumble just typed my whole standup into figma"],
     ["#opencode", "Frank", "ship it or i'm shipping it"],
-    ["#hex", "Dax", "bumping this 👆"],
+    ["#mumble", "Dax", "bumping this 👆"],
     ["#opencode", "Jay", "is the 2.0 changelog done?"],
-    ["#hex", "Frank", "people want mouse-button hotkeys. today."],
+    ["#mumble", "Frank", "people want mouse-button hotkeys. today."],
     ["#opencode", "Dax", "who added another Layer"],
-    ["#hex", "Jay", "the issues tab is doing numbers"],
-    ["#hex", "hex-ci", "release build: 9,001 warnings, 0 errors. shipping"],
+    ["#mumble", "Jay", "the issues tab is doing numbers"],
+    ["#mumble", "mumble-ci", "release build: 9,001 warnings, 0 errors. shipping"],
   ],
   mail: [
-    ["GitHub", "[anomalyco/hex] 37 new issues", "You're receiving this because you're Kit."],
+    ["GitHub", "[khoi/mumble] 37 new issues", "You're receiving this because you're Kit."],
     ["GitHub", "[anomalyco/opencode] Review requested", "Dax requested your review on #9420."],
     ["GitHub", "[kitlangton/scrawl] New discussion", "Can Scrawl record my dreams?"],
     ["Effect", "Effect Days speaker check-in", "Can you send your slides again?"],
   ],
   messages: [
-    ["Dax", "did you see the hex issues 😬"],
+    ["Dax", "did you see the mumble issues 😬"],
     ["Jay", "opencode is trending again"],
     ["Jay", "lunch? (it's 4pm)"],
     ["Frank", "your phone is on silent right"],
@@ -116,23 +116,23 @@ export const CONTENT = {
   ],
   calendar: [
     ["OpenCode 2.0 launch sync", "Today · 9:00 – 9:30 AM", "Jay"],
-    ["Hex Linux triage", "Tomorrow · 8:00 – 8:30 AM", "Dax"],
+    ["Mumble Linux triage", "Tomorrow · 8:00 – 8:30 AM", "Dax"],
     ["Effect office hours", "Thursday · 10:00 – 11:00 AM", "Effect"],
     ["Sync about the sync", "Friday · 4:30 – 5:30 PM", "Frank"],
   ],
   review: [
     ["anomalyco/opencode", "#9420", "effect: migrate the last Promise", "+412", "−3,880", "Dax"],
-    ["anomalyco/hex", "#176", "fix: stop transcribing keyboard clacks", "+38", "−6", "Jay"],
+    ["khoi/mumble", "#176", "fix: stop transcribing keyboard clacks", "+38", "−6", "Jay"],
     ["kitlangton/scrawl", "#91", "feat: ink that fades faster", "+120", "−44", "Frank"],
     ["anomalyco/opencode", "#9433", "chore: rename Layer to Layer2", "+1", "−1", "Dax"],
   ],
   dm: [["Dax", "you around?"], ["Jay", "quick q"], ["Frank", "got a sec?"], ["Jay", "call?"], ["Dax", "hey"], ["Frank", "???"]],
   issue: [
-    ["anomalyco/hex", "#171", "Hold-to-dictate stops when I sneeze", "bug"],
-    ["anomalyco/hex", "#172", "Transcribes “Effect” as “a fact” every time", "bug"],
-    ["anomalyco/hex", "#173", "Meeting offer pops up during my standup", "bug"],
-    ["anomalyco/hex", "#174", "Wayland HUD shows on the wrong monitor", "linux"],
-    ["anomalyco/hex", "#175", "Feature request: dictate in Klingon", "enhancement"],
+    ["khoi/mumble", "#171", "Hold-to-dictate stops when I sneeze", "bug"],
+    ["khoi/mumble", "#172", "Transcribes “Effect” as “a fact” every time", "bug"],
+    ["khoi/mumble", "#173", "Meeting offer pops up during my standup", "bug"],
+    ["khoi/mumble", "#174", "Wayland HUD shows on the wrong monitor", "linux"],
+    ["khoi/mumble", "#175", "Feature request: dictate in Klingon", "enhancement"],
     ["anomalyco/opencode", "#9412", "Subagent spawned a subagent that spawned a subagent", "bug"],
     ["anomalyco/opencode", "#9415", "Too much Effect in my stack trace", "question"],
     ["kitlangton/scrawl", "#88", "Red ink won't come off my screen", "bug"],
@@ -140,12 +140,12 @@ export const CONTENT = {
     ["kitlangton/visual-effect", "#61", "Animations too delightful, can't work", "bug"],
   ],
   tweet: [
-    ["Ana Silva", "@anadev", "@kitlangton hex pasted my dictation into the wrong window lol"],
+    ["Ana Silva", "@anadev", "@kitlangton mumble pasted my dictation into the wrong window lol"],
     ["Sam Ortiz", "@samships", "@kitlangton when mouse-button hotkeys"],
     ["Mo Reyes", "@mo_types", "@kitlangton over 9,000x developer and the issue is still open?"],
     ["Priya Das", "@priyacodes", "@kitlangton effect is just promises with extra steps"],
-    ["Lee Park", "@leewrites", "@kitlangton hex heard me sigh and typed “sigh”"],
-    ["Jo Kim", "@jo_dev", "@kitlangton is it opencode or hex that's yelling at me"],
+    ["Lee Park", "@leewrites", "@kitlangton mumble heard me sigh and typed “sigh”"],
+    ["Jo Kim", "@jo_dev", "@kitlangton is it opencode or mumble that's yelling at me"],
   ],
   discord: [
     ["#help", "Rin Ota", "is there a ZIO.foreachPar in effect?"],
@@ -706,7 +706,7 @@ Object.assign(DRAW, {
     const ow = ctx.measureText("OpenCode").width
     ctx.font = `400 11px ${MONO}`
     ctx.fillStyle = "#5e5e64"
-    ctx.fillText("~/code/hex", lx + 32 + ow, 18.5)
+    ctx.fillText("~/code/mumble", lx + 32 + ow, 18.5)
     // subagent pill
     const n = c.agents ?? 0
     const pill = `${n.toLocaleString("en-US")} ${n === 1 ? "subagent" : "subagents"}`

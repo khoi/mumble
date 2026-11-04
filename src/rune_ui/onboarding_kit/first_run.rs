@@ -1,10 +1,10 @@
 //! The first-run onboarding flow (`t405`), featuring:
 //!
 //! - Flat, crisp Rune 2D UI (no embossed cards or shader starbursts).
-//! - Hex's real `Dot scope` phosphor dot-matrix HUD (`rune_hud.wgsl`) on
-//!   `"Setting up Hex"`, `"With Hex"`, and `"Your turn"`.
+//! - Mumble's real `Dot scope` phosphor dot-matrix HUD (`rune_hud.wgsl`) on
+//!   `"Setting up Mumble"`, `"With Mumble"`, and `"Your turn"`.
 //! - Live interactive `"Your turn"` in desktop windows: pauses with a focused
-//!   [`rune_kit::TextArea`] so holding `⌥` and speaking into the running Hex
+//!   [`rune_kit::TextArea`] so holding `⌥` and speaking into the running Mumble
 //!   listener pastes real dictated words right into the card.
 //! - Calm permission grants and the escaping Accessibility panel (`permissions`).
 //! - Auditionable typing key-sound candidates and `#292` `feedback` tones (`sfx`).
@@ -108,8 +108,8 @@ fn skip(p: Paint, s: &Onboard) -> Option<El> {
     })
 }
 
-/// Hex's shortcut didn't start after setup and Hex won't relaunch itself
-/// again: one line at the top with Reopen Hex.
+/// Mumble's shortcut didn't start after setup and Mumble won't relaunch itself
+/// again: one line at the top with Reopen Mumble.
 fn reopen(p: Paint, s: &Onboard) -> Option<El> {
     s.live.as_ref().filter(|live| live.reopen).map(|_| {
         row()
@@ -120,17 +120,17 @@ fn reopen(p: Paint, s: &Onboard) -> Option<El> {
             .center()
             .transition(arrives())
             .child(
-                text(tr("Hex's shortcut didn't start."))
+                text(tr("Mumble's shortcut didn't start."))
                     .key("why")
                     .font(LEAD)
                     .color(p.muted()),
             )
             .child(
-                Button::new(tr("Reopen Hex"))
+                Button::new(tr("Reopen Mumble"))
                     .variant(ButtonVariant::Neutral)
                     .on_press(live::reopen)
                     .build_push(p.k)
-                    .key("reopen-hex"),
+                    .key("reopen-mumble"),
             )
     })
 }
@@ -157,11 +157,11 @@ fn ready_page(p: Paint, s: &Onboard) -> El {
                             .key("try-again"),
                     )
                     .child(
-                        Button::new(tr("Start using Hex"))
+                        Button::new(tr("Start using Mumble"))
                             .variant(ButtonVariant::Contrast)
                             .on_press(live::finish)
                             .build_push(p.k)
-                            .key("start-using-hex")
+                            .key("start-using-mumble")
                             .default_button(),
                     ),
             );
@@ -293,7 +293,7 @@ fn try_page(p: Paint, s: &Onboard) -> El {
             p,
             s,
             "try-heard",
-            tr("That's Hex"),
+            tr("That's Mumble"),
             lead(p, tr("It types wherever your cursor is, in any app.")),
         ),
         _ => heading(
@@ -388,7 +388,7 @@ fn shortcut_capsule(p: Paint, caps: &[String], down: bool, cycles: bool) -> El {
 }
 
 /// Live interactive `"Your turn"` stage: real `Dot scope` HUD above a focused
-/// [`TextArea`] that receives real dictated pastes from the running Hex app (or
+/// [`TextArea`] that receives real dictated pastes from the running Mumble app (or
 /// direct typing).
 fn interactive_try_stage(p: Paint, s: &Onboard) -> El {
     let hud_el = if let Some(frame) = s.hud.frame() {

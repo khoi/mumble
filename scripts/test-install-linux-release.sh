@@ -54,35 +54,35 @@ sed \
   -e "s|^signing_key=.*|signing_key=$fixture_key|" \
   "$root/.github/release/install-linux.sh" > "$installer"
 
-unsigned="$temporary/hex"
-printf '#!/bin/sh\necho "hex %s"\n' "$version" > "$unsigned"
+unsigned="$temporary/mumble"
+printf '#!/bin/sh\necho "mumble %s"\n' "$version" > "$unsigned"
 chmod 755 "$unsigned"
 sha256=$(sha256sum "$unsigned" | awk '{ print $1 }')
 bytes=$(wc -c < "$unsigned" | tr -d ' ')
-file="hex-$version-$target"
-mkdir -p "$server/release/hex/desktop" "$server/release/hex/files/$sha256"
-cp "$unsigned" "$server/release/hex/files/$sha256/$file"
-printf 'anomaly.hex.linux-artifact.v1\n%s\n' "$sha256" > "$temporary/signed"
-openssl pkeyutl -sign -rawin -inkey "$temporary/signing.pem" -in "$temporary/signed" -out "$temporary/hex.sig"
-signature_sha256=$(sha256sum "$temporary/hex.sig" | awk '{ print $1 }')
-mkdir -p "$server/release/hex/files/$signature_sha256"
-cp "$temporary/hex.sig" "$server/release/hex/files/$signature_sha256/hex.sig"
-jq -n --arg version "$version" --arg target "$target" --arg url "/release/hex/files/$sha256/$file" --arg sha256 "$sha256" --argjson size "$bytes" \
-  --arg sig_url "/release/hex/files/$signature_sha256/hex.sig" --arg sig_sha256 "$signature_sha256" \
-  '{schema: 1, app: "hex", artifact: "desktop", channel: "stable", sequence: 1,
+file="mumble-$version-$target"
+mkdir -p "$server/release/mumble/desktop" "$server/release/mumble/files/$sha256"
+cp "$unsigned" "$server/release/mumble/files/$sha256/$file"
+printf 'anomaly.mumble.linux-artifact.v1\n%s\n' "$sha256" > "$temporary/signed"
+openssl pkeyutl -sign -rawin -inkey "$temporary/signing.pem" -in "$temporary/signed" -out "$temporary/mumble.sig"
+signature_sha256=$(sha256sum "$temporary/mumble.sig" | awk '{ print $1 }')
+mkdir -p "$server/release/mumble/files/$signature_sha256"
+cp "$temporary/mumble.sig" "$server/release/mumble/files/$signature_sha256/mumble.sig"
+jq -n --arg version "$version" --arg target "$target" --arg url "/release/mumble/files/$sha256/$file" --arg sha256 "$sha256" --argjson size "$bytes" \
+  --arg sig_url "/release/mumble/files/$signature_sha256/mumble.sig" --arg sig_sha256 "$signature_sha256" \
+  '{schema: 1, app: "mumble", artifact: "desktop", channel: "stable", sequence: 1,
     published_at: "2026-10-24T00:00:00Z",
     release: {version: $version, rollout_percent: 100, revoked_versions: [],
       targets: {($target): {url: $url, size: $size, sha256: $sha256},
         ($target + "-sig"): {url: $sig_url, size: 64, sha256: $sig_sha256}},
-      distributions: [{kind: "direct"}]}}' > "$server/release/hex/desktop/stable.json"
-cp "$server/release/hex/desktop/stable.json" "$temporary/manifest.json"
+      distributions: [{kind: "direct"}]}}' > "$server/release/mumble/desktop/stable.json"
+cp "$server/release/mumble/desktop/stable.json" "$temporary/manifest.json"
 
 port=$((38000 + ($$ % 1000)))
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$server" \
   > "$temporary/server.log" 2>&1 &
 server_pid=$!
 attempt=0
-until curl --fail --silent "http://127.0.0.1:$port/release/hex/desktop/stable.json" >/dev/null; do
+until curl --fail --silent "http://127.0.0.1:$port/release/mumble/desktop/stable.json" >/dev/null; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 20 ]; then
     echo "Fixture server did not start." >&2
@@ -95,13 +95,13 @@ home="$temporary/home"
 export XDG_DATA_HOME="$home/.local/share"
 export XDG_CONFIG_HOME="$home/.config"
 install_dir="$home/.local/bin"
-support_dir="$home/.local/share/hex"
+support_dir="$home/.local/share/mumble"
 mkdir -p "$support_dir"
 printf 'preserve me\n' > "$support_dir/settings.json"
 
 install() {
-  HOME="$home" HEX_INSTALL_DIR="$install_dir" HEX_APPLICATION_SUPPORT_DIR="$support_dir" \
-    HEX_RELEASE_BASE_URL="http://127.0.0.1:$port/release" sh "$installer" "$@"
+  HOME="$home" MUMBLE_INSTALL_DIR="$install_dir" MUMBLE_APPLICATION_SUPPORT_DIR="$support_dir" \
+    MUMBLE_RELEASE_BASE_URL="http://127.0.0.1:$port/release" sh "$installer" "$@"
 }
 
 # Refuses a manifest, then checks that nothing was installed.
@@ -110,91 +110,91 @@ refuses() {
     echo "Installer accepted $1." >&2
     exit 1
   fi
-  test ! -e "$install_dir/hex"
+  test ! -e "$install_dir/mumble"
   test ! -e "$support_dir/versions"
-  cp "$temporary/manifest.json" "$server/release/hex/desktop/stable.json"
+  cp "$temporary/manifest.json" "$server/release/mumble/desktop/stable.json"
 }
 
-# Earlier installs named Hex's entries hex.desktop; installing replaces them.
+# Earlier installs named Mumble's entries mumble.desktop; installing replaces them.
 mkdir -p "$home/.local/share/applications" "$home/.config/autostart"
-printf '[Desktop Entry]\nX-Hex-Managed=true\n' > "$home/.local/share/applications/hex.desktop"
-printf '[Desktop Entry]\nX-Hex-Managed=true\n' > "$home/.config/autostart/hex.desktop"
+printf '[Desktop Entry]\nX-Mumble-Managed=true\n' > "$home/.local/share/applications/mumble.desktop"
+printf '[Desktop Entry]\nX-Mumble-Managed=true\n' > "$home/.config/autostart/mumble.desktop"
 
 install
-test -L "$install_dir/hex"
-test ! -e "$home/.local/share/applications/hex.desktop"
-test ! -e "$home/.config/autostart/hex.desktop"
-grep -Fxq 'StartupWMClass=anomaly.hex' "$home/.local/share/applications/anomaly.hex.desktop"
-grep -Fxq 'Icon=anomaly.hex' "$home/.local/share/applications/anomaly.hex.desktop"
-test "$("$install_dir/hex" --version)" = "hex $version"
-grep -Fq 'X-Hex-Managed=true' "$home/.local/share/applications/anomaly.hex.desktop"
-grep -Fq 'X-Hex-Managed=true' "$home/.config/autostart/anomaly.hex.desktop"
-grep -Fq '" start' "$home/.config/autostart/anomaly.hex.desktop"
-grep -Fq '# X-Hex-Managed=true' "$home/.config/systemd/user/hex.service"
-grep -Fq '" service' "$home/.config/systemd/user/hex.service"
-grep -Fxq 'Type=notify' "$home/.config/systemd/user/hex.service"
-grep -Fxq 'NotifyAccess=main' "$home/.config/systemd/user/hex.service"
-grep -Fxq "Exec=\"$install_dir/hex\"" "$home/.local/share/applications/anomaly.hex.desktop"
-grep -Fxq "Exec=\"$install_dir/hex\" quit" "$home/.local/share/applications/anomaly.hex.desktop"
-grep -Fxq "EnvironmentFile=-$support_dir/session.env" "$home/.config/systemd/user/hex.service"
+test -L "$install_dir/mumble"
+test ! -e "$home/.local/share/applications/mumble.desktop"
+test ! -e "$home/.config/autostart/mumble.desktop"
+grep -Fxq 'StartupWMClass=anomaly.mumble' "$home/.local/share/applications/anomaly.mumble.desktop"
+grep -Fxq 'Icon=anomaly.mumble' "$home/.local/share/applications/anomaly.mumble.desktop"
+test "$("$install_dir/mumble" --version)" = "mumble $version"
+grep -Fq 'X-Mumble-Managed=true' "$home/.local/share/applications/anomaly.mumble.desktop"
+grep -Fq 'X-Mumble-Managed=true' "$home/.config/autostart/anomaly.mumble.desktop"
+grep -Fq '" start' "$home/.config/autostart/anomaly.mumble.desktop"
+grep -Fq '# X-Mumble-Managed=true' "$home/.config/systemd/user/mumble.service"
+grep -Fq '" service' "$home/.config/systemd/user/mumble.service"
+grep -Fxq 'Type=notify' "$home/.config/systemd/user/mumble.service"
+grep -Fxq 'NotifyAccess=main' "$home/.config/systemd/user/mumble.service"
+grep -Fxq "Exec=\"$install_dir/mumble\"" "$home/.local/share/applications/anomaly.mumble.desktop"
+grep -Fxq "Exec=\"$install_dir/mumble\" quit" "$home/.local/share/applications/anomaly.mumble.desktop"
+grep -Fxq "EnvironmentFile=-$support_dir/session.env" "$home/.config/systemd/user/mumble.service"
 test ! -e "$support_dir/versions/$version/source-build"
 test "$(jq -c . "$support_dir/install.json")" = \
-  "$(jq -cn --arg root "$support_dir" '{app: "hex", artifact: "desktop", channel: "stable", method: "direct", root: $root}')"
+  "$(jq -cn --arg root "$support_dir" '{app: "mumble", artifact: "desktop", channel: "stable", method: "direct", root: $root}')"
 
 mkdir -p "$home/.local/share/icons/hicolor/48x48/apps" "$home/.local/share/icons/hicolor/64x64/apps"
-printf 'png X-Hex-Managed=true' > "$home/.local/share/icons/hicolor/48x48/apps/anomaly.hex.png"
-printf 'mine' > "$home/.local/share/icons/hicolor/64x64/apps/anomaly.hex.png"
-# The Background portal's own autostart entry for Hex counts as Hex's.
+printf 'png X-Mumble-Managed=true' > "$home/.local/share/icons/hicolor/48x48/apps/anomaly.mumble.png"
+printf 'mine' > "$home/.local/share/icons/hicolor/64x64/apps/anomaly.mumble.png"
+# The Background portal's own autostart entry for Mumble counts as Mumble's.
 portal_entry() {
-  printf '[Desktop Entry]\nType=Application\nName=Hex\nX-XDP-Autostart=anomaly.hex\nExec=%s start\n' "$install_dir/hex" > "$home/.config/autostart/anomaly.hex.desktop"
+  printf '[Desktop Entry]\nType=Application\nName=Mumble\nX-XDP-Autostart=anomaly.mumble\nExec=%s start\n' "$install_dir/mumble" > "$home/.config/autostart/anomaly.mumble.desktop"
 }
 portal_entry
 install > /dev/null
 portal_entry
 install uninstall
-test ! -e "$home/.config/autostart/anomaly.hex.desktop"
-test ! -e "$home/.local/share/icons/hicolor/48x48/apps/anomaly.hex.png"
-test -f "$home/.local/share/icons/hicolor/64x64/apps/anomaly.hex.png"
-test ! -e "$install_dir/hex"
+test ! -e "$home/.config/autostart/anomaly.mumble.desktop"
+test ! -e "$home/.local/share/icons/hicolor/48x48/apps/anomaly.mumble.png"
+test -f "$home/.local/share/icons/hicolor/64x64/apps/anomaly.mumble.png"
+test ! -e "$install_dir/mumble"
 test ! -e "$support_dir/versions"
 test ! -e "$support_dir/install.json"
-test ! -e "$home/.config/systemd/user/hex.service"
-test ! -e "$home/.local/share/applications/anomaly.hex.desktop"
-test ! -e "$home/.config/autostart/anomaly.hex.desktop"
+test ! -e "$home/.config/systemd/user/mumble.service"
+test ! -e "$home/.local/share/applications/anomaly.mumble.desktop"
+test ! -e "$home/.config/autostart/anomaly.mumble.desktop"
 test -f "$support_dir/settings.json"
 
 # The dev channel: its manifest, its receipt.
-jq '.channel = "dev"' "$temporary/manifest.json" > "$server/release/hex/desktop/dev.json"
-HOME="$home" HEX_INSTALL_DIR="$install_dir" HEX_APPLICATION_SUPPORT_DIR="$support_dir" \
-  HEX_RELEASE_BASE_URL="http://127.0.0.1:$port/release" HEX_INSTALL_CHANNEL=dev sh "$installer" > /dev/null
+jq '.channel = "dev"' "$temporary/manifest.json" > "$server/release/mumble/desktop/dev.json"
+HOME="$home" MUMBLE_INSTALL_DIR="$install_dir" MUMBLE_APPLICATION_SUPPORT_DIR="$support_dir" \
+  MUMBLE_RELEASE_BASE_URL="http://127.0.0.1:$port/release" MUMBLE_INSTALL_CHANNEL=dev sh "$installer" > /dev/null
 test "$(jq -r .channel "$support_dir/install.json")" = dev
 install uninstall
 
-jq '.app = "other"' "$temporary/manifest.json" > "$server/release/hex/desktop/stable.json"
+jq '.app = "other"' "$temporary/manifest.json" > "$server/release/mumble/desktop/stable.json"
 refuses "another app's manifest"
-jq '.release.targets = {}' "$temporary/manifest.json" > "$server/release/hex/desktop/stable.json"
+jq '.release.targets = {}' "$temporary/manifest.json" > "$server/release/mumble/desktop/stable.json"
 refuses "a release without a $target build"
-jq --arg target "$target" '.release.targets[$target].url = "https://example.com/hex"' "$temporary/manifest.json" > "$server/release/hex/desktop/stable.json"
+jq --arg target "$target" '.release.targets[$target].url = "https://example.com/mumble"' "$temporary/manifest.json" > "$server/release/mumble/desktop/stable.json"
 refuses "a file outside the service"
-jq --arg target "$target-sig" 'del(.release.targets[$target])' "$temporary/manifest.json" > "$server/release/hex/desktop/stable.json"
+jq --arg target "$target-sig" 'del(.release.targets[$target])' "$temporary/manifest.json" > "$server/release/mumble/desktop/stable.json"
 refuses "a release without a signature"
 # A manifest naming other bytes with their own SHA-256: only the signature
 # catches it.
-printf '#!/bin/sh\necho "hex %s"\n#evil\n' "$version" > "$temporary/evil"
+printf '#!/bin/sh\necho "mumble %s"\n#evil\n' "$version" > "$temporary/evil"
 evil_sha256=$(sha256sum "$temporary/evil" | awk '{ print $1 }')
-mkdir -p "$server/release/hex/files/$evil_sha256"
-cp "$temporary/evil" "$server/release/hex/files/$evil_sha256/$file"
-jq --arg target "$target" --arg sha256 "$evil_sha256" --arg url "/release/hex/files/$evil_sha256/$file" \
+mkdir -p "$server/release/mumble/files/$evil_sha256"
+cp "$temporary/evil" "$server/release/mumble/files/$evil_sha256/$file"
+jq --arg target "$target" --arg sha256 "$evil_sha256" --arg url "/release/mumble/files/$evil_sha256/$file" \
   --argjson size "$(wc -c < "$temporary/evil" | tr -d ' ')" \
-  '.release.targets[$target] = {url: $url, size: $size, sha256: $sha256}' "$temporary/manifest.json" > "$server/release/hex/desktop/stable.json"
+  '.release.targets[$target] = {url: $url, size: $size, sha256: $sha256}' "$temporary/manifest.json" > "$server/release/mumble/desktop/stable.json"
 refuses "an executable the release key did not sign"
-printf 'X' | dd of="$server/release/hex/files/$sha256/$file" bs=1 seek=0 conv=notrunc >/dev/null 2>&1
+printf 'X' | dd of="$server/release/mumble/files/$sha256/$file" bs=1 seek=0 conv=notrunc >/dev/null 2>&1
 refuses "a same-size corrupted download"
 
-HOME="$home" HEX_INSTALL_DIR="$install_dir" HEX_APPLICATION_SUPPORT_DIR="$support_dir" \
-  HEX_INSTALL_ARTIFACT="$unsigned" HEX_INSTALL_VERSION="$version" HEX_INSTALL_SOURCE=1 \
+HOME="$home" MUMBLE_INSTALL_DIR="$install_dir" MUMBLE_APPLICATION_SUPPORT_DIR="$support_dir" \
+  MUMBLE_INSTALL_ARTIFACT="$unsigned" MUMBLE_INSTALL_VERSION="$version" MUMBLE_INSTALL_SOURCE=1 \
   sh "$installer"
-test "$("$install_dir/hex" --version)" = "hex $version"
+test "$("$install_dir/mumble" --version)" = "mumble $version"
 test -e "$support_dir/versions/$version/source-build"
 test ! -e "$support_dir/install.json"
 install uninstall
@@ -204,7 +204,7 @@ support_link="$temporary/support-link"
 mkdir -p "$important/versions"
 touch "$important/versions/preserve"
 ln -s "$important" "$support_link"
-if HOME="$home" HEX_INSTALL_DIR="$install_dir" HEX_APPLICATION_SUPPORT_DIR="$support_link" \
+if HOME="$home" MUMBLE_INSTALL_DIR="$install_dir" MUMBLE_APPLICATION_SUPPORT_DIR="$support_link" \
   sh "$installer" uninstall > "$temporary/symlink.log" 2>&1
 then
   echo "Uninstaller accepted a managed support symlink." >&2

@@ -60,7 +60,7 @@ pub enum TranscriptionTarget {
     /// pane's steps.
     RawPaste,
     Service,
-    /// `hex dictation stop --print`: processed as a paste, then handed to
+    /// `mumble dictation stop --print`: processed as a paste, then handed to
     /// the waiting command instead of pasted.
     Print,
     /// A printing stop of a raw dictation: the transcript as heard.

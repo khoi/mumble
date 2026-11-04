@@ -2,9 +2,9 @@ name: Site
 
 # Pull requests run no site check (CI is minimal; the deploy builds the site
 # and checks every download link). A push (or a dispatch) on dev deploys the
-# dev site (https://dev.anoma.ly/hex); on
+# dev site (https://dev.anoma.ly/mumble); on
 # production, which moves only by a fast-forward from dev, the production
-# site (https://anoma.ly/hex). The mode always follows the branch.
+# site (https://anoma.ly/mumble). The mode always follows the branch.
 on:
   push:
     branches: [dev, production]

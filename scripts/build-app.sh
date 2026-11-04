@@ -3,37 +3,37 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$root/scripts/macos-signing.sh"
-# HEX_TEST_BUILD=1 builds the CI test app: ad-hoc signed, under its own
-# name and bundle ID so it installs beside the released Hex and never
+# MUMBLE_TEST_BUILD=1 builds the CI test app: ad-hoc signed, under its own
+# name and bundle ID so it installs beside the released Mumble and never
 # touches its permissions; it never checks for updates.
-# HEX_LOCAL_BUILD=1 marks a build made from a checkout for its owner's own
+# MUMBLE_LOCAL_BUILD=1 marks a build made from a checkout for its owner's own
 # machine (Developer ID signed as usual): it shows "Local build · updates off"
 # with its commit and never checks for or offers updates.
-# HEX_RELEASE_UNSIGNED=1 builds the release app (Hex, anomaly.hex) ad-hoc
+# MUMBLE_RELEASE_UNSIGNED=1 builds the release app (Mumble, anomaly.mumble) ad-hoc
 # signed: the Release workflow's build job, which holds no credentials. Its
 # sign-macos job signs it with the Developer ID (.github/release/sign-macos.sh).
-if [ "${HEX_RELEASE_UNSIGNED:-}" = 1 ]; then
+if [ "${MUMBLE_RELEASE_UNSIGNED:-}" = 1 ]; then
   team_id=
   identity=-
-  app_name=Hex
-  bundle_id=anomaly.hex
-elif [ "${HEX_TEST_BUILD:-}" = 1 ]; then
+  app_name=Mumble
+  bundle_id=anomaly.mumble
+elif [ "${MUMBLE_TEST_BUILD:-}" = 1 ]; then
   team_id=
   identity=-
-  app_name="Hex Test"
-  bundle_id=anomaly.hex.test
+  app_name="Mumble Test"
+  bundle_id=anomaly.mumble.test
 else
-  team_id=${HEX_TEAM_ID:?Set HEX_TEAM_ID to the Apple Developer signing team}
-  identity=$(hex_codesign_identity "$team_id")
-  app_name=Hex
-  bundle_id=anomaly.hex
+  team_id=${MUMBLE_TEAM_ID:?Set MUMBLE_TEAM_ID to the Apple Developer signing team}
+  identity=$(mumble_codesign_identity "$team_id")
+  app_name=Mumble
+  bundle_id=anomaly.mumble
 fi
 icon_output="$root/target/AppIcon.assets"
 icon_info="$root/target/AppIcon-info.plist"
-version=$(hex_version "$root")
-build_number=$(hex_build_number "$version")
+version=$(mumble_version "$root")
+build_number=$(mumble_build_number "$version")
 bundle_name="$app_name.app"
-executable_name=hex
+executable_name=mumble
 
 bundle="$root/target/app/$bundle_name"
 executable="$bundle/Contents/MacOS/$executable_name"
@@ -50,10 +50,10 @@ export MACOSX_DEPLOYMENT_TARGET=15.0
 # Cargo may run through a wrapper that does not forward the environment (Kit's
 # HiveMind-backed cargo), so build-time variables also travel as --config.
 env_args=()
-if [ -z "${HEX_COMMIT:-}" ] && { [ "${HEX_LOCAL_BUILD:-}" = 1 ] || [ "${HEX_TEST_BUILD:-}" = 1 ]; }; then
-  HEX_COMMIT=$(git -C "$root" rev-parse --short=7 HEAD 2>/dev/null || true)
+if [ -z "${MUMBLE_COMMIT:-}" ] && { [ "${MUMBLE_LOCAL_BUILD:-}" = 1 ] || [ "${MUMBLE_TEST_BUILD:-}" = 1 ]; }; then
+  MUMBLE_COMMIT=$(git -C "$root" rev-parse --short=7 HEAD 2>/dev/null || true)
 fi
-for name in HEX_LOCAL_BUILD HEX_TEST_BUILD HEX_COMMIT HEX_BUILD_CHANNEL; do
+for name in MUMBLE_LOCAL_BUILD MUMBLE_TEST_BUILD MUMBLE_COMMIT MUMBLE_BUILD_CHANNEL; do
   value=${!name:-}
   if [ -n "$value" ]; then
     case "$value" in
@@ -65,11 +65,11 @@ done
 cargo build --locked --release ${env_args[@]+"${env_args[@]}"} --manifest-path "$root/Cargo.toml"
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources" "$bundle/Contents/Library"
-cp "$root/target/release/hex" "$executable"
+cp "$root/target/release/mumble" "$executable"
 cp "$root/app/Info.plist" "$bundle/Contents/Info.plist"
 cp "$root/LICENSE" "$root/THIRD_PARTY_NOTICES.md" "$bundle/Contents/Resources/"
-HEX_VERSION="$version" HEX_BUILD_NUMBER="$build_number" HEX_TEAM_ID="$team_id" HEX_CODESIGN_IDENTITY="${identity#-}" HEX_SKIP_INSTALL_SCRIPT=1 \
-  "$root/scripts/build-hex-microphone-driver.sh" "$bundle/Contents/Library" >&2
+MUMBLE_VERSION="$version" MUMBLE_BUILD_NUMBER="$build_number" MUMBLE_TEAM_ID="$team_id" MUMBLE_CODESIGN_IDENTITY="${identity#-}" MUMBLE_SKIP_INSTALL_SCRIPT=1 \
+  "$root/scripts/build-mumble-microphone-driver.sh" "$bundle/Contents/Library" >&2
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$bundle/Contents/Info.plist"
@@ -77,9 +77,9 @@ HEX_VERSION="$version" HEX_BUILD_NUMBER="$build_number" HEX_TEAM_ID="$team_id" H
 plutil -replace CFBundleName -string "$app_name" "$bundle/Contents/Info.plist"
 plutil -replace CFBundleDisplayName -string "$app_name" "$bundle/Contents/Info.plist"
 # Links into the playground (src/rune_ui/story_link.rs); a test build's own
-# scheme never opens the installed Hex.
-url_scheme=hex
-[ "${HEX_TEST_BUILD:-}" = 1 ] && url_scheme=hex-test
+# scheme never opens the installed Mumble.
+url_scheme=mumble
+[ "${MUMBLE_TEST_BUILD:-}" = 1 ] && url_scheme=mumble-test
 /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName $bundle_id" "$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 $url_scheme" "$bundle/Contents/Info.plist"
 rm -rf "$icon_output"
@@ -96,7 +96,7 @@ xcrun actool "$root/app/AppIcon.icon" \
   --notices >&2
 cp "$icon_output/AppIcon.icns" "$icon_output/Assets.car" "$bundle/Contents/Resources/"
 
-sign "$bundle/Contents/Library/HexMicrophone.driver"
-sign --entitlements "$root/.github/release/hex.entitlements" "$bundle"
+sign "$bundle/Contents/Library/MumbleMicrophone.driver"
+sign --entitlements "$root/.github/release/mumble.entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 echo "$bundle"

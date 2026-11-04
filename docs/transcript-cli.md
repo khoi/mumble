@@ -1,13 +1,13 @@
 # Read transcripts from the command line
 
-The macOS release binary can read retained dictations while Hex runs. Use
-`/Applications/Hex.app/Contents/MacOS/hex` if `hex` is not on your PATH.
+The macOS release binary can read retained dictations while Mumble runs. Use
+`/Applications/Mumble.app/Contents/MacOS/mumble` if `mumble` is not on your PATH.
 
 ```sh
-hex history --since 3d --app 'OpenCode Beta' --grep problems --json
-hex history --since 2026-10-20 --until 2026-10-21 --raw --oldest-first --limit 500
-hex history --since 7d --search 'problems board' --json
-hex history stats --since 7d --json   # Labs › Dictation stats
+mumble history --since 3d --app 'OpenCode Beta' --grep problems --json
+mumble history --since 2026-10-20 --until 2026-10-21 --raw --oldest-first --limit 500
+mumble history --since 7d --search 'problems board' --json
+mumble history stats --since 7d --json   # Labs › Dictation stats
 ```
 
 ## History filters apply before the limit
@@ -15,7 +15,7 @@ hex history stats --since 7d --json   # Labs › Dictation stats
 `history` returns successful retained results, including Send and Voice Action.
 Each result has a timestamp, application, recorded processing mode if present,
 and final text. `--raw` adds the stored pre-processing transcript. Older entries
-may have no app or mode; Hex does not infer missing metadata.
+may have no app or mode; Mumble does not infer missing metadata.
 
 - `--since` is inclusive and `--until` is exclusive. A date alone means local
   midnight; `--until 2026-10-20` includes all of October 20.
@@ -41,7 +41,7 @@ may have no app or mode; Hex does not infer missing metadata.
 
 ## History stats sum up what is retained
 
-`history stats` (Labs › Dictation stats, `hex labs on history-stats`, off by
+`history stats` (Labs › Dictation stats, `mumble labs on history-stats`, off by
 default) prints a summary of the retained entries: dictations, words (the
 inserted text split on whitespace), words per minute (words over recorded
 audio minutes, counting only entries with audio; unknown without any), how
@@ -107,7 +107,7 @@ type History = {
   }[]
 }
 
-type HistoryStats = { // hex history stats --json
+type HistoryStats = { // mumble history stats --json
   version: 1
   retention: "off" | "day" | "week" | "month" | "forever"
   dictations: number
@@ -124,12 +124,12 @@ type HistoryStats = { // hex history stats --json
 ## Reads never start or change the app
 
 These commands dispatch before logging, instance locking,
-local API startup, permissions, GUI, and Hex Microphone. They open no microphone,
+local API startup, permissions, GUI, and Mumble Microphone. They open no microphone,
 load no model, make no network request, and create no files or directories.
 History reads one file descriptor, so an atomic replacement yields a complete
 old or new snapshot. Malformed history produces an error without recovery writes.
 
-Data comes from `~/Library/Application Support/hex`. `HEX_APPLICATION_SUPPORT_DIR` overrides the
+Data comes from `~/Library/Application Support/mumble`. `MUMBLE_APPLICATION_SUPPORT_DIR` overrides the
 root for fixtures or a mirrored copy. These CLI commands currently target macOS;
 Linux and Windows retain their existing command surfaces.
 

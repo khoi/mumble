@@ -1,4 +1,4 @@
-//! The playground (Labs › Playground): Rune's playground in Hex's window,
+//! The playground (Labs › Playground): Rune's playground in Mumble's window,
 //! opened from its sidebar item or ⇧⌘D (Ctrl+Shift+D off macOS). It swaps
 //! the window for a folded list of
 //! prototypes (the onboarding options, and on macOS the HUD), then every
@@ -151,9 +151,9 @@ const PATHS: &[(&str, &str)] = &[
         "mac-onboarding-reopen",
         "Window/Onboarding/Your turn · reopen",
     ),
-    ("mac-onboarding-ready", "Window/Onboarding/Hex is ready"),
+    ("mac-onboarding-ready", "Window/Onboarding/Mumble is ready"),
     ("portal", "Linux & Windows/Settings · portal shortcuts"),
-    ("commands", "Linux & Windows/Settings · hex commands"),
+    ("commands", "Linux & Windows/Settings · mumble commands"),
     ("portal-mouse", "Linux & Windows/Settings · mouse button"),
     ("windows-settings", "Linux & Windows/Settings · Windows"),
     ("disabled", "Linux & Windows/Disabled"),
@@ -211,7 +211,7 @@ fn playground() -> Playground<Ui> {
     let playground = Playground::new()
         .enabled(true)
         .bar(false)
-        .sizes(&[("Hex window", WINDOW_SIZE)])
+        .sizes(&[("Mumble window", WINDOW_SIZE)])
         .group_order(GROUPS)
         .start_folded(true);
     let playground = super::onboarding_kit::stories(playground);
@@ -407,7 +407,7 @@ mod tests {
         assert!(rt.playground_state::<Ui>().is_none(), "⇧⌘D closed it");
     }
 
-    /// Every HUD story, on every variant, opens from its `hex://story` link.
+    /// Every HUD story, on every variant, opens from its `mumble://story` link.
     #[cfg(target_os = "macos")]
     #[test]
     fn every_hud_story_and_variant_opens_from_its_link() {
@@ -422,7 +422,7 @@ mod tests {
                 for ending in endings {
                     open_link(
                         &mut rt,
-                        &format!("hex://story/prototypes/hud/{story}?variant={look}-{ending}"),
+                        &format!("mumble://story/prototypes/hud/{story}?variant={look}-{ending}"),
                     );
                 }
             }
@@ -431,11 +431,11 @@ mod tests {
             for variant in ["hud-lab", "notch", "pretend-notch", "menu-bar", "below"] {
                 open_link(
                     &mut rt,
-                    &format!("hex://story/prototypes/hud/{story}?variant={variant}"),
+                    &format!("mumble://story/prototypes/hud/{story}?variant={variant}"),
                 );
             }
         }
-        open_link(&mut rt, "hex://story/hud/processing?variant=menu-bar");
+        open_link(&mut rt, "mumble://story/hud/processing?variant=menu-bar");
         for control in [
             "dot-scope-reset",
             "dot-scope-copy",
@@ -456,7 +456,7 @@ mod tests {
     /// variant isn't there.
     #[cfg(target_os = "macos")]
     fn open_link(rt: &mut rune::Runtime<Ui>, link: &str) {
-        let link = super::super::story_link::parse(link, "hex").expect(link);
+        let link = super::super::story_link::parse(link, "mumble").expect(link);
         rt.open_playground(&link.story, link.variant.as_deref());
         assert!(
             rt.playground_state::<Ui>().is_none(),

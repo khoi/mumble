@@ -15,7 +15,7 @@ type Engine = {
 }
 export type Phase = "idle" | "live" | "starting" | "started"
 
-const MUTED_KEY = "hex-shout-muted"
+const MUTED_KEY = "mumble-shout-muted"
 const readMuted = () => {
   try {
     return localStorage.getItem(MUTED_KEY) === "1"

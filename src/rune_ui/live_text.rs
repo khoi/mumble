@@ -100,7 +100,7 @@ pub(crate) type Place = fn() -> Spot;
 /// Live text is on at launch.
 pub(crate) fn install<S: 'static>(app: &mut rune::App<S>, place: Place) {
     let spec = OverlaySpec {
-        name: "Hex live text",
+        name: "Mumble live text",
         size: SIZE,
         // Placed for real each time it appears.
         edge: ScreenEdge::Top,
@@ -367,12 +367,12 @@ mod tests {
         assert!(!blank("so", ""));
     }
 
-    /// Renders the plate to `HEX_LIVE_TEXT_SNAPS/live-text-*.png` in both
+    /// Renders the plate to `MUMBLE_LIVE_TEXT_SNAPS/live-text-*.png` in both
     /// appearances, to look at.
     #[test]
-    #[ignore = "set HEX_LIVE_TEXT_SNAPS to a folder; needs a GPU"]
+    #[ignore = "set MUMBLE_LIVE_TEXT_SNAPS to a folder; needs a GPU"]
     fn snapshots() {
-        let folder = std::path::PathBuf::from(std::env::var("HEX_LIVE_TEXT_SNAPS").unwrap());
+        let folder = std::path::PathBuf::from(std::env::var("MUMBLE_LIVE_TEXT_SNAPS").unwrap());
         let gpu = rune::render::Gpu::try_new(rune::render::Gpu::instance(), None).unwrap();
         for (name, stable, tentative) in [
             ("short", SHORT, ""),

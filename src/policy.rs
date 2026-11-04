@@ -1,5 +1,5 @@
 //! Feature locks an organization sets through managed preferences (macOS
-//! configuration profiles) in the `anomaly.hex` domain:
+//! configuration profiles) in the `anomaly.mumble` domain:
 //! `DisableOpenCodeProcessing`, `DisableTransforms`, and `DisableLabs`, plus `RestrictTransformsToLoopback`, which keeps
 //! transformations on but holds their `fetch` to this computer and runs no
 //! programs. Only a value the profile forces counts, so a key a person
@@ -21,7 +21,7 @@ use crate::app_settings::AppSettings;
 pub enum Lock {
     /// No OpenCode generation: mode rewrites.
     OpenCodeProcessing,
-    /// No transformations at all, built in or from `hex.config.ts`.
+    /// No transformations at all, built in or from `mumble.config.ts`.
     Transforms,
     /// Every Labs feature off.
     Labs,
@@ -39,7 +39,7 @@ impl Lock {
         Self::LoopbackTransforms,
     ];
 
-    /// Its key in the `anomaly.hex` managed preferences.
+    /// Its key in the `anomaly.mumble` managed preferences.
     pub const fn key(self) -> &'static str {
         match self {
             Self::OpenCodeProcessing => "DisableOpenCodeProcessing",
@@ -115,7 +115,7 @@ impl Policy {
         self.locks(Lock::Labs).then_some(Lock::Labs)
     }
 
-    /// The lock on `hex settings` key `name`, if any.
+    /// The lock on `mumble settings` key `name`, if any.
     pub fn setting_lock(self, name: &str) -> Option<Lock> {
         crate::labs::Feature::for_settings_key(name).and_then(|_| self.labs_lock())
     }
@@ -158,7 +158,7 @@ mod platform {
         CFPreferencesAppValueIsForced, CFPreferencesGetAppBooleanValue, CFString,
     };
 
-    const DOMAIN: &str = "anomaly.hex";
+    const DOMAIN: &str = "anomaly.mumble";
 
     /// Whether a configuration profile forces `key` to true.
     pub fn forced(key: &str) -> bool {

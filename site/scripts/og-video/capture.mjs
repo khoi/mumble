@@ -1,7 +1,7 @@
 // bun run generate:og-video [concept] [--sheet]
 // Renders every frame of a loop through headless Chromium and pipes PNGs to ffmpeg
 // (H.264 yuv420p, 60 fps, faststart, no audio). Writes public/og.mp4, or a contact
-// sheet to /tmp with --sheet. Default concept: hex-pour.
+// sheet to /tmp with --sheet. Default concept: mumble-pour.
 import { chromium } from "playwright-core"
 import { spawn } from "node:child_process"
 import { statSync } from "node:fs"
@@ -24,7 +24,7 @@ const flag = (n, d) => {
 const crf = flag("--crf", "18")
 const sheet = args.includes("--sheet") && args.splice(args.indexOf("--sheet"), 1)
 const root = path.resolve(here, "../..")
-if (!args.length) args.push("hex-pour")
+if (!args.length) args.push("mumble-pour")
 
 const server = createServer(async (req, res) => {
   try {
@@ -44,7 +44,7 @@ for (const name of args) {
   await page.waitForFunction(() => window.ready, null, { timeout: 120000 })
   const frames = await page.evaluate(() => window.frameCount)
   const file = path.join(root, "public/og.mp4")
-  const crfFor = { "hex-pour": 23, "scrawl-pile": 21 }[name] ?? crf
+  const crfFor = { "mumble-pour": 23, "scrawl-pile": 21 }[name] ?? crf
   const vf = sheet ? ["-vf", `select='not(mod(n\\,${Math.ceil(frames / 20)}))',scale=400:-1,tile=5x4`, "-frames:v", "1", `/tmp/${name}-sheet.png`] : null
   const ff = spawn(
     "ffmpeg",

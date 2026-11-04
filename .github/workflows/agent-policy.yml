@@ -1,4 +1,4 @@
-name: hex-agent-policy
+name: mumble-agent-policy
 
 # Deterministic gate for pull requests opened by the automated issue pipeline
 # (head branch agent/*). It runs the base branch's .github/agent-policy/check.ts
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  hex-agent-policy:
+  mumble-agent-policy:
     runs-on: ubuntu-latest
     steps:
       - if: ${{ !startsWith(github.head_ref, 'agent/') }}

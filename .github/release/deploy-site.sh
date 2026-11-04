@@ -15,10 +15,10 @@
 mode=$1
 case "$mode" in
   dev)
-    worker=hex-dev-site host=dev.anoma.ly bucket=hex-dev-files
+    worker=mumble-dev-site host=dev.anoma.ly bucket=mumble-dev-files
     ;;
   production)
-    worker=hex-production-site host=anoma.ly bucket=hex-production-files
+    worker=mumble-production-site host=anoma.ly bucket=mumble-production-files
     ;;
   *) die "Unknown site mode: $mode" ;;
 esac
@@ -47,8 +47,8 @@ jq -e --arg worker "$worker" --arg host "$host" --arg bucket "$bucket" '
   and ((.compatibilityFlags // []) | all(type == "string"))
   and .assets == {runWorkerFirst: true}
   and .triggers == [
-    {type: "fetch", pattern: "\($host)/hex", zone: "anoma.ly"},
-    {type: "fetch", pattern: "\($host)/hex/*", zone: "anoma.ly"}
+    {type: "fetch", pattern: "\($host)/mumble", zone: "anoma.ly"},
+    {type: "fetch", pattern: "\($host)/mumble/*", zone: "anoma.ly"}
   ]
   and .workersDev == false
   and .previewUrls == false

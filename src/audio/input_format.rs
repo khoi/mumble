@@ -28,7 +28,7 @@ pub(super) struct StartedStream {
     pub stream: InputStream,
     pub chunks: Receiver<(Vec<f32>, CaptureInstant)>,
     pub stream_errors: Receiver<String>,
-    pub hex_microphone: crate::audio::hex_microphone::CaptureFeedSwitch,
+    pub mumble_microphone: crate::audio::mumble_microphone::CaptureFeedSwitch,
     pub sample_rate: u32,
 }
 
@@ -205,7 +205,7 @@ fn start_stream(
         sender: error_sender,
         default_name,
     };
-    let (feed, hex_microphone) = crate::audio::hex_microphone::capture_feed(sample_rate);
+    let (feed, mumble_microphone) = crate::audio::mumble_microphone::capture_feed(sample_rate);
     let stream = match sample_format {
         SampleFormat::F32 => build_stream(
             device,
@@ -263,7 +263,7 @@ fn start_stream(
         stream: InputStream::Cpal { _stream: stream },
         chunks,
         stream_errors,
-        hex_microphone,
+        mumble_microphone,
         sample_rate,
     })
 }

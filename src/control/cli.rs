@@ -1,9 +1,9 @@
-//! The `hex` control client: parses a command, sends it to the running Hex,
+//! The `mumble` control client: parses a command, sends it to the running Mumble,
 //! and prints the answer for a person or, with `--json`, the versioned reply.
 //!
 //! Exit codes: 0 when the command ran (or there was nothing to change), 1
-//! when Hex refused or failed it, 2 for usage errors (clap), 3 when Hex
-//! isn't running, and 4 when `dictation stop --print` heard no speech. Nothing here launches Hex except `start` and `restart`.
+//! when Mumble refused or failed it, 2 for usage errors (clap), 3 when Mumble
+//! isn't running, and 4 when `dictation stop --print` heard no speech. Nothing here launches Mumble except `start` and `restart`.
 
 use std::io::Write;
 mod human;
@@ -26,10 +26,10 @@ pub struct Output {
     pub json: bool,
 }
 
-/// The control commands at the top of `hex`.
+/// The control commands at the top of `mumble`.
 #[derive(Subcommand, Debug)]
 pub enum ControlCli {
-    /// Show what the running Hex is doing.
+    /// Show what the running Mumble is doing.
     ///
     /// Recording, model, features, permissions, window, version, pid, and
     /// memory footprint.
@@ -37,12 +37,12 @@ pub enum ControlCli {
         #[command(flatten)]
         output: Output,
     },
-    /// Open Hex if it isn't running, and wait until it answers.
+    /// Open Mumble if it isn't running, and wait until it answers.
     Start {
         #[command(flatten)]
         output: Output,
     },
-    /// Quit Hex.
+    /// Quit Mumble.
     ///
     /// Refused while a dictation is in progress unless --force.
     Quit {
@@ -52,7 +52,7 @@ pub enum ControlCli {
         #[command(flatten)]
         output: Output,
     },
-    /// Quit and reopen Hex (or open it if it isn't running).
+    /// Quit and reopen Mumble (or open it if it isn't running).
     Restart {
         /// Restart even while recording; the recording is lost.
         #[arg(long)]
@@ -89,7 +89,7 @@ pub enum ControlCli {
         #[command(subcommand)]
         command: SettingsCommand,
     },
-    /// Open the Hex window at a pane, or close it.
+    /// Open the Mumble window at a pane, or close it.
     Window {
         #[command(subcommand)]
         command: WindowCommand,
@@ -99,7 +99,7 @@ pub enum ControlCli {
         #[command(subcommand)]
         command: OnboardingCommand,
     },
-    /// Check for a Hex update now; Hex shows what it finds.
+    /// Check for a Mumble update now; Mumble shows what it finds.
     CheckForUpdates {
         #[command(flatten)]
         output: Output,
@@ -117,10 +117,10 @@ pub enum ControlCli {
         command: VocabularyCommand,
     },
     /// Read retained dictation history without starting the app, or clear
-    /// it in the running Hex (`hex history clear --yes`).
+    /// it in the running Mumble (`mumble history clear --yes`).
     #[command(args_conflicts_with_subcommands = true)]
     History(crate::control::transcript_cli::HistoryArgs),
-    /// Manage the ~/.config/hex personal transformations workspace.
+    /// Manage the ~/.config/mumble personal transformations workspace.
     Commands {
         #[command(subcommand)]
         command: CommandsCommand,
@@ -130,13 +130,13 @@ pub enum ControlCli {
         #[command(subcommand)]
         command: Option<crate::labs::LabsCommand>,
     },
-    /// Replaced by `hex labs`.
+    /// Replaced by `mumble labs`.
     #[command(hide = true)]
     Experiments {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Print Hex's recent log lines; works without Hex running.
+    /// Print Mumble's recent log lines; works without Mumble running.
     Logs {
         /// Read process.log (Rust and native diagnostics) instead of the
         /// live.ndjson event log.
@@ -153,9 +153,9 @@ pub enum ControlCli {
 
 #[derive(Subcommand, Debug)]
 pub enum CommandsCommand {
-    /// Create ~/.config/hex with a starter config, or refresh its typings.
+    /// Create ~/.config/mumble with a starter config, or refresh its typings.
     Init,
-    /// Load ~/.config/hex's config as Hex would and report what it registers
+    /// Load ~/.config/mumble's config as Mumble would and report what it registers
     /// or why it fails.
     Check,
 }
@@ -187,7 +187,7 @@ pub enum SettingsCommand {
     /// all or none; other settings keep their values.
     ///
     /// Values are JSON (`true`, `0.4`, `"option+space"`, `null` for none).
-    /// With Hex stopped, writes settings.json directly.
+    /// With Mumble stopped, writes settings.json directly.
     Apply {
         /// A JSON file, or `-` for standard input.
         file: std::path::PathBuf,
@@ -218,7 +218,7 @@ pub enum WindowCommand {
         #[command(flatten)]
         output: Output,
     },
-    /// Close the window. Hex keeps running in the menu bar.
+    /// Close the window. Mumble keeps running in the menu bar.
     Hide {
         #[command(flatten)]
         output: Output,
@@ -284,7 +284,7 @@ pub fn run(command: ControlCli) -> u8 {
             if !running() {
                 #[cfg(target_os = "linux")]
                 if crate::linux::service::instance_answers() {
-                    return print(restart_older_hex(), output);
+                    return print(restart_older_mumble(), output);
                 }
                 return start(output);
             }
@@ -311,7 +311,7 @@ pub fn run(command: ControlCli) -> u8 {
             output,
         } => {
             if let Err(error) = super::check_flags(action, print, raw) {
-                eprintln!("hex: {}", error.message);
+                eprintln!("mumble: {}", error.message);
                 return 2;
             }
             send(ControlCommand::Dictation { action, print, raw }, output)
@@ -386,7 +386,7 @@ pub fn run(command: ControlCli) -> u8 {
     }
 }
 
-/// The exit code of a command that runs here rather than in Hex.
+/// The exit code of a command that runs here rather than in Mumble.
 fn report(result: color_eyre::Result<()>) -> u8 {
     match result {
         Ok(()) => 0,
@@ -407,8 +407,8 @@ pub fn settings(command: SettingsCommand) -> u8 {
     }
 }
 
-/// `hex settings apply`: the running Hex saves and adopts the settings, so
-/// it never overwrites them from memory; with no Hex running they are
+/// `mumble settings apply`: the running Mumble saves and adopts the settings, so
+/// it never overwrites them from memory; with no Mumble running they are
 /// written to settings.json here.
 fn apply_settings(file: &std::path::Path, output: Output) -> u8 {
     use std::io::Read;
@@ -431,7 +431,7 @@ fn apply_settings(file: &std::path::Path, output: Output) -> u8 {
         if running() {
             return send(ControlCommand::SettingsApply { values }, output);
         }
-        // A Hex that holds the service lock may have read settings.json
+        // A Mumble that holds the service lock may have read settings.json
         // already; wait for it to answer instead of writing behind it.
         #[cfg(target_os = "linux")]
         let lock = crate::desktop::instance::acquire("service");
@@ -442,13 +442,13 @@ fn apply_settings(file: &std::path::Path, output: Output) -> u8 {
             Ok(_) => {}
             #[cfg(target_os = "linux")]
             Err(_) if crate::linux::service::instance_answers() => {
-                return print(older_hex(), output);
+                return print(older_mumble(), output);
             }
             Err(_) if std::time::Instant::now() >= deadline => {
                 return print(
                     ControlReply::error(
                         "busy",
-                        "Hex is starting but didn't answer; run `hex settings apply` again",
+                        "Mumble is starting but didn't answer; run `mumble settings apply` again",
                     ),
                     output,
                 );
@@ -479,7 +479,7 @@ fn apply_offline(values: &serde_json::Map<String, serde_json::Value>) -> Control
     result.unwrap_or_else(ControlReply::from)
 }
 
-/// `hex history clear`; the confirmation is asked here, before Hex is.
+/// `mumble history clear`; the confirmation is asked here, before Mumble is.
 pub fn clear_history(confirm: bool, output: Output) -> u8 {
     if !confirm {
         return print(
@@ -500,15 +500,15 @@ pub fn send(command: ControlCommand, output: Output) -> u8 {
     }
 }
 
-/// Every OS reaches the running Hex through its local API's owner-only
+/// Every OS reaches the running Mumble through its local API's owner-only
 /// discovery file and bearer-authenticated `POST /control`.
 fn running() -> bool {
     crate::local_api::running_pid().is_some()
 }
 
-/// `hex settings set key value` in the running Hex, which saves and applies
-/// it; `None` when no Hex runs.
-pub(crate) fn set_in_running_hex(key: &str, value: &str) -> Option<ControlReply> {
+/// `mumble settings set key value` in the running Mumble, which saves and applies
+/// it; `None` when no Mumble runs.
+pub(crate) fn set_in_running_mumble(key: &str, value: &str) -> Option<ControlReply> {
     running().then(|| {
         call(ControlRequest::new(ControlCommand::SettingsSet {
             key: key.into(),
@@ -527,38 +527,38 @@ fn call(request: ControlRequest) -> Result<ControlResponse, ControlReply> {
 }
 
 pub(crate) fn not_running() -> ControlReply {
-    ControlReply::error("not-running", "Hex is not running; run `hex start`")
+    ControlReply::error("not-running", "Mumble is not running; run `mumble start`")
 }
 
-/// Why no Hex answered `/control`: on Linux an older Hex an update left
+/// Why no Mumble answered `/control`: on Linux an older Mumble an update left
 /// running answers only on its socket (#915).
 fn absent() -> ControlReply {
     #[cfg(target_os = "linux")]
     if crate::linux::service::instance_answers() {
-        return older_hex();
+        return older_mumble();
     }
     not_running()
 }
 
-/// An older Hex that predates `hex` commands over the local API.
+/// An older Mumble that predates `mumble` commands over the local API.
 #[cfg(target_os = "linux")]
-fn older_hex() -> ControlReply {
+fn older_mumble() -> ControlReply {
     ControlReply::error(
         "outdated",
-        "an older Hex is still running (Hex was updated) and doesn't take `hex` commands; run `hex restart`",
+        "an older Mumble is still running (Mumble was updated) and doesn't take `mumble` commands; run `mumble restart`",
     )
 }
 
-/// `hex restart` with an older Hex running: restarts its systemd unit into
-/// the installed build, then waits until the new Hex answers.
+/// `mumble restart` with an older Mumble running: restarts its systemd unit into
+/// the installed build, then waits until the new Mumble answers.
 #[cfg(target_os = "linux")]
-fn restart_older_hex() -> ControlReply {
+fn restart_older_mumble() -> ControlReply {
     use std::time::{Duration, Instant};
 
     if !crate::linux::service::supervised() {
         return ControlReply::error(
             "failed",
-            "an older Hex is running outside its systemd unit; quit it from its window or tray, then run `hex start`",
+            "an older Mumble is running outside its systemd unit; quit it from its window or tray, then run `mumble start`",
         );
     }
     if let Err(error) = crate::linux::service::restart() {
@@ -567,11 +567,11 @@ fn restart_older_hex() -> ControlReply {
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(20) {
         if running() {
-            return ControlReply::done("Restarted Hex");
+            return ControlReply::done("Restarted Mumble");
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    ControlReply::done("Restarted Hex; it isn't answering yet (it may still be starting up)")
+    ControlReply::done("Restarted Mumble; it isn't answering yet (it may still be starting up)")
 }
 
 #[cfg(target_os = "macos")]
@@ -580,7 +580,7 @@ fn start(output: Output) -> u8 {
 
     if let Some(pid) = crate::local_api::running_pid() {
         return print(
-            ControlReply::unchanged(format!("Hex is already running (pid {pid})")),
+            ControlReply::unchanged(format!("Mumble is already running (pid {pid})")),
             output,
         );
     }
@@ -596,7 +596,7 @@ fn start(output: Output) -> u8 {
         Ok(status) if status.success() => {}
         Ok(_) | Err(_) => {
             return print(
-                ControlReply::error("failed", "couldn't open Hex.app; is it installed?"),
+                ControlReply::error("failed", "couldn't open Mumble.app; is it installed?"),
                 output,
             );
         }
@@ -605,20 +605,20 @@ fn start(output: Output) -> u8 {
     while started.elapsed() < Duration::from_secs(20) {
         if let Some(pid) = crate::local_api::running_pid() {
             return print(
-                ControlReply::done(format!("Started Hex (pid {pid})")),
+                ControlReply::done(format!("Started Mumble (pid {pid})")),
                 output,
             );
         }
         std::thread::sleep(Duration::from_millis(200));
     }
     print(
-        ControlReply::done("Opened Hex; it isn't answering yet (setup may be waiting)"),
+        ControlReply::done("Opened Mumble; it isn't answering yet (setup may be waiting)"),
         output,
     )
 }
 
-/// `hex start` on Linux and Windows: a detached `hex app --hidden`, which
-/// forwards to the running Hex, starts its systemd unit, or becomes Hex,
+/// `mumble start` on Linux and Windows: a detached `mumble app --hidden`, which
+/// forwards to the running Mumble, starts its systemd unit, or becomes Mumble,
 /// then waits until it answers.
 #[cfg(not(target_os = "macos"))]
 fn start(output: Output) -> u8 {
@@ -630,15 +630,17 @@ fn start_reply() -> ControlReply {
     use std::time::{Duration, Instant};
 
     if running() {
-        return ControlReply::unchanged("Hex is already running");
+        return ControlReply::unchanged("Mumble is already running");
     }
     #[cfg(target_os = "linux")]
     if crate::linux::service::instance_answers() {
-        return older_hex();
+        return older_mumble();
     }
     let executable = match std::env::current_exe() {
         Ok(executable) => executable,
-        Err(error) => return ControlReply::error("failed", format!("couldn't find hex: {error}")),
+        Err(error) => {
+            return ControlReply::error("failed", format!("couldn't find mumble: {error}"));
+        }
     };
     let mut command = std::process::Command::new(executable);
     command
@@ -656,19 +658,19 @@ fn start_reply() -> ControlReply {
         command.creation_flags(0x0000_0008 | 0x0000_0200);
     }
     if let Err(error) = command.spawn() {
-        return ControlReply::error("failed", format!("couldn't start Hex: {error}"));
+        return ControlReply::error("failed", format!("couldn't start Mumble: {error}"));
     }
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(20) {
         if running() {
-            return ControlReply::done("Started Hex");
+            return ControlReply::done("Started Mumble");
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    ControlReply::done("Started Hex; it isn't answering yet (it may still be starting up)")
+    ControlReply::done("Started Mumble; it isn't answering yet (it may still be starting up)")
 }
 
-/// After a restart's quit on Linux and Windows: waits for the old Hex to
+/// After a restart's quit on Linux and Windows: waits for the old Mumble to
 /// go, then starts the new one. A Linux unit restarts by itself.
 #[cfg(not(target_os = "macos"))]
 fn reopen_after_restart() -> ControlReply {
@@ -676,14 +678,14 @@ fn reopen_after_restart() -> ControlReply {
 
     #[cfg(target_os = "linux")]
     if crate::linux::service::supervised() {
-        return ControlReply::done("Restarting Hex");
+        return ControlReply::done("Restarting Mumble");
     }
     let started = Instant::now();
     while running() {
         if started.elapsed() > Duration::from_secs(30) {
             return ControlReply::error(
                 "failed",
-                "Hex is still finishing its work; run `hex start` once it quits",
+                "Mumble is still finishing its work; run `mumble start` once it quits",
             );
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -691,8 +693,8 @@ fn reopen_after_restart() -> ControlReply {
     start_reply()
 }
 
-/// `open` arguments for `hex start`: the caller's `HEX_*` environment, then
-/// the Hex.app this `hex` belongs to, or the installed app by bundle id.
+/// `open` arguments for `mumble start`: the caller's `MUMBLE_*` environment, then
+/// the Mumble.app this `mumble` belongs to, or the installed app by bundle id.
 #[cfg(target_os = "macos")]
 fn open_arguments(
     bundle: Option<&std::path::Path>,
@@ -705,9 +707,9 @@ fn open_arguments(
         None => arguments.extend([
             "-b".into(),
             if test_build {
-                "anomaly.hex.test"
+                "anomaly.mumble.test"
             } else {
-                "anomaly.hex"
+                "anomaly.mumble"
             }
             .into(),
         ]),
@@ -715,7 +717,7 @@ fn open_arguments(
     arguments
 }
 
-/// The Hex.app this `hex` belongs to, when it runs from (or links into) one.
+/// The Mumble.app this `mumble` belongs to, when it runs from (or links into) one.
 #[cfg(target_os = "macos")]
 fn installed_bundle() -> Option<std::path::PathBuf> {
     let executable = std::fs::canonicalize(std::env::current_exe().ok()?).ok()?;
@@ -809,7 +811,7 @@ fn logs(process: bool, lines: usize, follow: bool) -> u8 {
 }
 
 fn fail(message: &str) -> u8 {
-    eprintln!("hex: {message}");
+    eprintln!("mumble: {message}");
     EXIT_REFUSED
 }
 
@@ -839,23 +841,23 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn an_older_hex_is_not_reported_as_not_running() {
-        let reply = older_hex();
+    fn an_older_mumble_is_not_reported_as_not_running() {
+        let reply = older_mumble();
         assert_eq!(exit_code(&reply), EXIT_REFUSED);
         assert!(matches!(
             &reply,
-            ControlReply::Error { code, message } if code == "outdated" && message.contains("hex restart")
+            ControlReply::Error { code, message } if code == "outdated" && message.contains("mumble restart")
         ));
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn start_forwards_the_callers_hex_environment() {
+    fn start_forwards_the_callers_mumble_environment() {
         let vars = || {
             [
                 ("HOME", "/Users/kit"),
-                ("HEX_RETAIN_DICTATION_AUDIO", "1"),
-                ("HEX_ENABLE_LLM", "1"),
+                ("MUMBLE_RETAIN_DICTATION_AUDIO", "1"),
+                ("MUMBLE_ENABLE_LLM", "1"),
             ]
             .map(|(key, value)| (key.into(), value.into()))
         };
@@ -867,22 +869,22 @@ mod tests {
         };
         let env = [
             "--env",
-            "HEX_ENABLE_LLM=1",
+            "MUMBLE_ENABLE_LLM=1",
             "--env",
-            "HEX_RETAIN_DICTATION_AUDIO=1",
+            "MUMBLE_RETAIN_DICTATION_AUDIO=1",
         ];
-        let bundle = std::path::Path::new("/Applications/Hex.app");
+        let bundle = std::path::Path::new("/Applications/Mumble.app");
         assert_eq!(
             strings(open_arguments(Some(bundle), false, vars())),
-            [&env[..], &["/Applications/Hex.app"]].concat()
+            [&env[..], &["/Applications/Mumble.app"]].concat()
         );
         assert_eq!(
             strings(open_arguments(None, false, vars())),
-            [&env[..], &["-b", "anomaly.hex"]].concat()
+            [&env[..], &["-b", "anomaly.mumble"]].concat()
         );
         assert_eq!(
             strings(open_arguments(None, true, [])),
-            ["-b", "anomaly.hex.test"]
+            ["-b", "anomaly.mumble.test"]
         );
     }
 
@@ -939,7 +941,7 @@ mod tests {
         report.features.release_microphone_while_idle = true;
         report.features.history_retention = "week".into();
         let text = human_status(&report);
-        assert!(text.starts_with("Hex 2.3.1 (pid 42, 412 MB)\n"));
+        assert!(text.starts_with("Mumble 2.3.1 (pid 42, 412 MB)\n"));
         assert!(text.contains("Features     release mic while idle on, history week\n"));
         assert!(text.ends_with("Labs         none\n"));
         report.labs = vec!["live-text".into(), "history-stats".into()];

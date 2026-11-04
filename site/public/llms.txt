@@ -1,15 +1,15 @@
-# Hex
+# Mumble
 
-> Hex is voice dictation for Mac, Windows, and Linux. Hold a shortcut, speak, and Hex transcribes the audio with Claude or Codex — through the sign-in their apps already hold — and pastes the text wherever the cursor is.
+> Mumble is voice dictation for Mac, Windows, and Linux. Hold a shortcut, speak, and Mumble transcribes the audio with Claude or Codex — through the sign-in their apps already hold — and pastes the text wherever the cursor is.
 
-- Mac (Apple silicon, macOS 15 or later): https://anoma.ly/hex/files/releases/HEX-latest-arm64.dmg, or `brew install --cask anomalyco/tap/hex`
+- Mac (Apple silicon, macOS 15 or later): https://anoma.ly/mumble/files/releases/Mumble-latest-arm64.dmg, or `brew install --cask anomalyco/tap/mumble`
 - Windows 10 or 11 beta, x64 and ARM64: per-user Setup.exe installers at __ORIGIN__/
-- Linux beta, x86_64 Arch with glibc 2.44 or later: `curl -fsSL https://anoma.ly/hex/files/install-linux.sh | sh`
+- Linux beta, x86_64 Arch with glibc 2.44 or later: `curl -fsSL https://anoma.ly/mumble/files/install-linux.sh | sh`
 
 ## Docs
 
-- [README](https://github.com/anomalyco/hex/blob/dev/README.md): features, settings, privacy, and troubleshooting
-- [Windows guide](https://github.com/anomalyco/hex/blob/dev/docs/windows.md)
-- [Linux guide](https://github.com/anomalyco/hex/blob/dev/docs/linux.md)
-- [Transforms](https://anoma.ly/hex/docs/transforms): the JavaScript API for changing dictated text before Hex pastes it, including `fetch` and `node:child_process`
-- [Managing Hex](https://anoma.ly/hex/docs/admin): macOS configuration-profile keys that turn off OpenCode processing, transforms, Labs, and updates, or hold transforms to this computer
+- [README](https://github.com/khoi/mumble/blob/dev/README.md): features, settings, privacy, and troubleshooting
+- [Windows guide](https://github.com/khoi/mumble/blob/dev/docs/windows.md)
+- [Linux guide](https://github.com/khoi/mumble/blob/dev/docs/linux.md)
+- [Transforms](https://anoma.ly/mumble/docs/transforms): the JavaScript API for changing dictated text before Mumble pastes it, including `fetch` and `node:child_process`
+- [Managing Mumble](https://anoma.ly/mumble/docs/admin): macOS configuration-profile keys that turn off OpenCode processing, transforms, Labs, and updates, or hold transforms to this computer

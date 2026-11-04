@@ -4,7 +4,7 @@
 
 ## Summary
 
-Hex's current `choices_for_runtime` (`src/transcription_models.rs:494-567`) routes 40 language entries (`auto` plus 39 languages) through four coarse buckets. Apples-to-apples FLEURS test evaluations on the exact Q8_0 GGUF artifacts in `handy-computer/transcribe.cpp` expose three classes of fixes:
+Mumble's current `choices_for_runtime` (`src/transcription_models.rs:494-567`) routes 40 language entries (`auto` plus 39 languages) through four coarse buckets. Apples-to-apples FLEURS test evaluations on the exact Q8_0 GGUF artifacts in `handy-computer/transcribe.cpp` expose three classes of fixes:
 
 ```ts
 Per-language recommendation updates
@@ -106,7 +106,7 @@ A model earns a slot in `MODELS` (`src/transcription_models.rs`) only if it is `
 
 ## 3. The English Decision
 
-`ParakeetUnifiedEnglish` (`parakeet_unified_en`, 731 MB, ~188x Metal, 3.99% FLEURS `en`) **stays the default (`Recommended`) model for English**. It is the only model in Hex's catalog that streams on GPU during hotkey capture (`streams: true`), so switching the default to an offline-only model (`parakeet-ultra` or `Qwen3-ASR 1.7B`) would sacrifice release-to-paste latency on every dictation clip.
+`ParakeetUnifiedEnglish` (`parakeet_unified_en`, 731 MB, ~188x Metal, 3.99% FLEURS `en`) **stays the default (`Recommended`) model for English**. It is the only model in Mumble's catalog that streams on GPU during hotkey capture (`streams: true`), so switching the default to an offline-only model (`parakeet-ultra` or `Qwen3-ASR 1.7B`) would sacrifice release-to-paste latency on every dictation clip.
 
 Two decisions depend on Kit's in-progress own-recordings audit (`ses_e98f7b094ffe1Q3KtZFS6Np4KL`, comparing `ParakeetUnifiedEnglish`, `Qwen3-ASR 1.7B`, and `parakeet-ultra`):
 
@@ -123,7 +123,7 @@ Run targeted local checks via `cargo run --release -- benchmark-transcription` o
    - *Claim to check:* Whether `SenseVoice Small` (37.44% CER) and `Whisper turbo` (34.62% CER) fail on Cantonese acoustics or merely emit Simplified characters against Traditional FLEURS references.
    - *Check:* Run 30 `yue` clips through `Qwen3Asr06B`, `SenseVoiceSmall`, and `WhisperLargeV3Turbo` and score both raw and Traditional/Simplified-normalized CER. Even if script-normalized CER improves, check whether users dictating Cantonese receive the expected Traditional script.
 2. **Greek (`el`) and Arabic (`ar`) with shipped `CohereTranscribe` (`0.2.4`, before Phase A):**
-   - *Claim to check:* Confirm `CohereTranscribe` loads and decodes `el` and `ar` cleanly under Hex's 35 s chunk cap (`max_audio_chunk_samples` in `src/transcription_models.rs:597-609`) and matches the ~9% (`el`) / ~13.6% (`ar`) FLEURS WER on a 30-clip subset.
+   - *Claim to check:* Confirm `CohereTranscribe` loads and decodes `el` and `ar` cleanly under Mumble's 35 s chunk cap (`max_audio_chunk_samples` in `src/transcription_models.rs:597-609`) and matches the ~9% (`el`) / ~13.6% (`ar`) FLEURS WER on a 30-clip subset.
 3. **`Canary 1B v2` language conditioning (`0.4.1`, before Phase B):**
    - *Claim to check:* Verify `canary-1b-v2-Q8_0.gguf` honors `RunOptions` language hints for `lv`, `sl`, `da`, `ro`, `cs`, `hr`, `lt`, `bg`, `et` without requiring a `--prefix` workaround, and measure M-series Metal load/prewarm time and RSS.
 4. **`Qwen3-ASR 0.6B` vs `1.7B` vocabulary hints (`0.4.1`, Phase B / `transcription-quality.md` Phase 3):**
@@ -188,7 +188,7 @@ Integrates directly into Phase 3 of `docs/plans/transcription-quality.md` (which
 ## Decisions for Kit
 
 1. **Ship Phase A (`el`, `tr`, `mk`, `ar`, `ms`, `fil`, `fa`, `ja`, `fi`, `sv`, `auto` fixes on `0.2.4`) now, or batch everything into the `0.4.1` bump?**
-   - *Recommendation:* **Ship Phase A now (0.5d)** — it fixes broken defaults like Greek (35.3% -> 9.0% WER), Filipino (35.4% -> 12.1%), Persian (50.3% -> 30.6%), Macedonian (35.1% -> 17.9%), and Turkish (16.7% -> 7.0%) using models Hex already ships.
+   - *Recommendation:* **Ship Phase A now (0.5d)** — it fixes broken defaults like Greek (35.3% -> 9.0% WER), Filipino (35.4% -> 12.1%), Persian (50.3% -> 30.6%), Macedonian (35.1% -> 17.9%), and Turkish (16.7% -> 7.0%) using models Mumble already ships.
 2. **Which new models earn a catalog slot in Phase B alongside `ParakeetUltra`: add both `Canary 1B v2` (1.14 GB) and `Qwen3-ASR 1.7B` (2.19 GB), or only one?**
    - *Recommendation:* **Add both `Canary 1B v2` and `Qwen3-ASR 1.7B` (3 new models total with `ParakeetUltra`), and reject the other 7 candidates** — `Canary 1B v2` cuts WER by 1.7–7.6 points across 9 European languages, while `Qwen3-ASR 1.7B` is the `Most accurate` tier for `Auto`, Asian/Middle Eastern languages, and potentially English.
 3. **On Latvian (`lv`) and Slovenian (`sl`), where `ParakeetUltra` is 18–19% WER and `Canary 1B v2` is 10.4–12.8% WER, should `Canary 1B v2` be `Recommended` (1.14 GB default download) or `Most accurate`?**

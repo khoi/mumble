@@ -510,7 +510,7 @@ mod tests {
             channel: None,
         };
         for (app, artifact, reason) in [
-            ("hex", "desktop", "wrong_app"),
+            ("mumble", "desktop", "wrong_app"),
             ("example", "cli", "wrong_artifact"),
         ] {
             assert_eq!(
@@ -522,30 +522,34 @@ mod tests {
 
     #[test]
     fn target_urls_resolve_against_the_manifest() {
-        let manifest = "https://anoma.ly/release/hex/desktop/stable.json";
+        let manifest = "https://anoma.ly/release/mumble/desktop/stable.json";
         assert_eq!(
-            resolve_url(manifest, "/release/hex/files/abc/Hex.zip").as_deref(),
-            Some("https://anoma.ly/release/hex/files/abc/Hex.zip")
+            resolve_url(manifest, "/release/mumble/files/abc/Mumble.zip").as_deref(),
+            Some("https://anoma.ly/release/mumble/files/abc/Mumble.zip")
         );
         assert_eq!(
             resolve_url(
-                "https://dev.anoma.ly/release/hex/desktop/dev.json",
-                "/release/hex/files/abc/Hex.zip"
+                "https://dev.anoma.ly/release/mumble/desktop/dev.json",
+                "/release/mumble/files/abc/Mumble.zip"
             )
             .as_deref(),
-            Some("https://dev.anoma.ly/release/hex/files/abc/Hex.zip")
+            Some("https://dev.anoma.ly/release/mumble/files/abc/Mumble.zip")
         );
         assert_eq!(
-            resolve_url(manifest, "../files/abc/Hex.zip").as_deref(),
-            Some("https://anoma.ly/release/hex/files/abc/Hex.zip")
+            resolve_url(manifest, "../files/abc/Mumble.zip").as_deref(),
+            Some("https://anoma.ly/release/mumble/files/abc/Mumble.zip")
         );
         assert_eq!(
-            resolve_url(manifest, "files/abc/Hex.zip").as_deref(),
-            Some("https://anoma.ly/release/hex/desktop/files/abc/Hex.zip")
+            resolve_url(manifest, "files/abc/Mumble.zip").as_deref(),
+            Some("https://anoma.ly/release/mumble/desktop/files/abc/Mumble.zip")
         );
         assert_eq!(
-            resolve_url(manifest, "https://anoma.ly/release/hex/files/abc/Hex.zip").as_deref(),
-            Some("https://anoma.ly/release/hex/files/abc/Hex.zip")
+            resolve_url(
+                manifest,
+                "https://anoma.ly/release/mumble/files/abc/Mumble.zip"
+            )
+            .as_deref(),
+            Some("https://anoma.ly/release/mumble/files/abc/Mumble.zip")
         );
         for elsewhere in [
             "https://example.com/a",

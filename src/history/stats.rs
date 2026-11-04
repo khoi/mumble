@@ -259,7 +259,7 @@ mod tests {
     fn the_store_counts_every_retained_entry_and_skips_expired_ones() {
         use crate::history::{HistoryDraft, HistoryRetention};
         let directory =
-            std::env::temp_dir().join(format!("hex-history-stats-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mumble-history-stats-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         let mut store =

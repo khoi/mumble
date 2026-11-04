@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
 fn show(dialog: Dialog, reply: Reply) {
     // A failed spawn drops the reply, which answers "nothing chosen".
     let _ = std::thread::Builder::new()
-        .name("hex-file-dialog".into())
+        .name("mumble-file-dialog".into())
         .spawn(move || {
             let dialogs = rune::FileDialogs::native();
             let mut options = rune::FileDialogOptions {

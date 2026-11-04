@@ -113,7 +113,7 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
         MainThreadMarker::new().ok_or_else(|| eyre!("status item requires the main thread"))?;
     let (actions, receiver) = sync_channel(8);
     let target = StatusItemTarget::new(actions, mtm);
-    let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Hex"));
+    let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Mumble"));
     add_item(
         &menu,
         &target,
@@ -160,7 +160,7 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
     let button = item
         .button(mtm)
         .ok_or_else(|| eyre!("status item button is unavailable"))?;
-    let symbol = status_bar_icon(IDLE_ICON_PNG, "Hex")?;
+    let symbol = status_bar_icon(IDLE_ICON_PNG, "Mumble")?;
     button.setImage(Some(&symbol));
     // SAFETY: the target answers `menuNeedsUpdate:` and outlives the menu's
     // weak delegate reference (both live in STATUS_ITEM for the app's life).
@@ -189,7 +189,7 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
 fn status_bar_icon(png: &[u8], accessibility_description: &str) -> Result<Retained<NSImage>> {
     let data = NSData::with_bytes(png);
     let image = NSImage::initWithData(NSImage::alloc(), &data)
-        .ok_or_else(|| eyre!("could not decode Hex status item icon"))?;
+        .ok_or_else(|| eyre!("could not decode Mumble status item icon"))?;
     image.setSize(NSSize::new(STATUS_ICON_POINTS, STATUS_ICON_POINTS));
     image.setTemplate(true);
     image.setAccessibilityDescription(Some(&NSString::from_str(accessibility_description)));
@@ -371,13 +371,16 @@ mod tests {
 
     #[test]
     fn the_status_bar_icon_loads_as_an_18pt_retina_template() {
-        let icon = status_bar_icon(IDLE_ICON_PNG, "Hex").unwrap();
+        let icon = status_bar_icon(IDLE_ICON_PNG, "Mumble").unwrap();
         assert!(icon.isTemplate());
         assert_eq!(
             icon.size(),
             NSSize::new(STATUS_ICON_POINTS, STATUS_ICON_POINTS)
         );
-        assert_eq!(icon.accessibilityDescription().unwrap().to_string(), "Hex");
+        assert_eq!(
+            icon.accessibilityDescription().unwrap().to_string(),
+            "Mumble"
+        );
         let rep = icon.representations().firstObject().unwrap();
         assert_eq!(rep.pixelsWide(), 36);
         assert_eq!(rep.pixelsHigh(), 36);

@@ -60,13 +60,13 @@ jobs:
         run: |
           $dumpbin = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
-          $imports = & $dumpbin.FullName /dependents target\release\hex.exe
+          $imports = & $dumpbin.FullName /dependents target\release\mumble.exe
           $redist = $imports | Select-String -Pattern 'VCRUNTIME|MSVCP|vcomp'
-          if ($redist) { throw "hex.exe imports Visual C++ runtime DLLs: $redist" }
+          if ($redist) { throw "mumble.exe imports Visual C++ runtime DLLs: $redist" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: hex-windows-x86_64
-          path: target/release/hex.exe
+          name: mumble-windows-x86_64
+          path: target/release/mumble.exe
 
   arm64:
     name: ARM64 (CPU)
@@ -102,5 +102,5 @@ jobs:
       - run: cargo build --locked --release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: hex-windows-aarch64
-          path: target/release/hex.exe
+          name: mumble-windows-aarch64
+          path: target/release/mumble.exe

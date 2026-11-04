@@ -1,6 +1,6 @@
 // Writes src/release-data.json, the release the download buttons describe,
 // and copies the installers into public/. The buttons link the site's own
-// /hex/download/<target> routes (worker.ts), which redirect at request time
+// /mumble/download/<target> routes (worker.ts), which redirect at request time
 // to the stable release once anoma.ly/release has one and to the newest dev
 // build until then, so links never go stale and need no switch-over. This
 // only records which channel and version were current at build time; the
@@ -18,18 +18,18 @@ const root = new URL("..", import.meta.url)
 type Manifest = { app: string; artifact: string; channel: string; release: { version: string } }
 
 async function manifest(channel: "stable" | "dev"): Promise<Manifest | undefined> {
-  const url = `${RELEASE_SERVICE}/hex/desktop/${channel}.json`
-  const response = await fetch(url, { headers: { "User-Agent": "hex-site" } })
+  const url = `${RELEASE_SERVICE}/mumble/desktop/${channel}.json`
+  const response = await fetch(url, { headers: { "User-Agent": "mumble-site" } })
   if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`${url} answered ${response.status}`)
   const value = (await response.json()) as Manifest
-  if (value.app !== "hex" || value.artifact !== "desktop" || value.channel !== channel) throw new Error(`not the Hex desktop ${channel} manifest`)
+  if (value.app !== "mumble" || value.artifact !== "desktop" || value.channel !== channel) throw new Error(`not the Mumble desktop ${channel} manifest`)
   return value
 }
 
 const stable = await manifest("stable")
 const current = stable ?? (await manifest("dev"))
-if (!current) throw new Error("anoma.ly/release has no Hex release on stable or dev")
+if (!current) throw new Error("anoma.ly/release has no Mumble release on stable or dev")
 const channel = stable ? "stable" : "dev"
 const download = (target: string) => `${site}/download/${target}`
 const data = {
@@ -47,9 +47,9 @@ const data = {
   rpmX64: download("linux-x64-rpm"),
   rpmArm64: download("linux-arm64-rpm"),
   windowsInstaller: `${site}/install-windows.ps1`,
-  github: stable ? `https://github.com/anomalyco/hex/releases/tag/v${current.release.version}` : "https://github.com/anomalyco/hex/releases",
+  github: stable ? `https://github.com/khoi/mumble/releases/tag/v${current.release.version}` : "https://github.com/khoi/mumble/releases",
 }
 writeFileSync(new URL("src/release-data.json", root), `${JSON.stringify(data, null, 2)}\n`)
 copyFileSync(new URL("../.github/release/install-linux.sh", root), new URL("public/install-linux.sh", root))
 copyFileSync(new URL("../.github/release/install-windows.ps1", root), new URL("public/install-windows.ps1", root))
-console.log(`Download buttons describe Hex ${data.version} (${channel}).`)
+console.log(`Download buttons describe Mumble ${data.version} (${channel}).`)

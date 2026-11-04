@@ -1,4 +1,4 @@
-//! `hex history --search`: stemmed, fuzzy BM25 over dictation texts, with
+//! `mumble history --search`: stemmed, fuzzy BM25 over dictation texts, with
 //! quoted phrases and the vocabulary's likely mis-transcriptions.
 
 use std::collections::{HashMap, HashSet};

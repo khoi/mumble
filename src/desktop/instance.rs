@@ -38,7 +38,7 @@ mod tests {
     #[test]
     fn prevents_two_owners_of_the_same_runtime() {
         let directory =
-            std::env::temp_dir().join(format!("hex-instance-lock-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mumble-instance-lock-{}", std::process::id()));
         let first = acquire_in(&directory, "test").unwrap();
         assert!(acquire_in(&directory, "test").is_err());
         drop(first);

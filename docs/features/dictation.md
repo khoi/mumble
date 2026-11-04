@@ -1,6 +1,6 @@
 # Dictation
 
-Hold the configured shortcut, speak, and release. Hex transcribes the audio with
+Hold the configured shortcut, speak, and release. Mumble transcribes the audio with
 the chosen cloud service (Claude or Codex) and inserts the result at the current
 focus; there is no local model, so a dictation the service can't transcribe
 fails with the reason. New captures do not cancel accepted work. Only Toggle mode has a cancel: its cancel shortcut, Escape by default,
@@ -47,10 +47,10 @@ it on save, cancellation, focus loss or window close. Windows waits for the
 click that opened the recorder to be released before accepting a mouse button.
 
 Wayland's XDG shortcut syntax has no mouse-button trigger. Use the desktop's
-mouse bindings to run `hex dictation start`/`stop` (hold) or `hex dictation toggle`
-(toggle), or `hex paste-last`. Existing mouse
+mouse bindings to run `mumble dictation start`/`stop` (hold) or `mumble dictation toggle`
+(toggle), or `mumble paste-last`. Existing mouse
 bindings from X11 appear ungranted on Wayland; they do not prevent keyboard
-shortcuts from registering. Hex does not use raw input devices or XWayland to
+shortcuts from registering. Mumble does not use raw input devices or XWayland to
 bypass the compositor. See the [XDG shortcut specification](https://specifications.freedesktop.org/shortcuts/latest/).
 
 **Fixed November 1, 2026 (issue 846):** the portal path refused navigation and
@@ -67,22 +67,22 @@ Linux with Labs › Special keys alone on (`labs.standalone_special_keys`, off
 by default; issue 767): Menu, Pause, and Scroll Lock may be any shortcut's
 key, alone like a function key or with modifiers, for example Caps Lock
 remapped to Menu with GNOME's keyboard options and
-`hex settings set dictation_hotkey menu` (also `pause`, `scrolllock`). They
+`mumble settings set dictation_hotkey menu` (also `pause`, `scrolllock`). They
 reach X11 grabs as keysyms 0xff67/0xff13/0xff14 and the portal as `Menu`,
-`Pause`, `Scroll_Lock`. Off, `hex settings` refuses them, the window's
+`Pause`, `Scroll_Lock`. Off, `mumble settings` refuses them, the window's
 recorder refuses them, and a saved shortcut on one goes back to its default
 when settings load or the toggle turns off. Limit: Rune doesn't report these
-keys to the window's recorder, so set them with `hex settings`. Details and
+keys to the window's recorder, so set them with `mumble settings`. Details and
 checks in [labs.md](labs.md).
 
 Linux with Labs › Section key alone on (`labs.section_key_alone`, off by
 default; issue 1050): the ISO § key, left of 1, may be a shortcut with no
 modifier. The window's recorder takes § pressed alone and shows §, and
-`hex settings set dictation_hotkey §` (or `section`) saves it. It reaches X11
+`mumble settings set dictation_hotkey §` (or `section`) saves it. It reaches X11
 grabs as keysym 0xa7 and the portal as `section`. Off, the recorder answers
-"Add a modifier" as before, `hex settings` refuses it, and a saved § shortcut
+"Add a modifier" as before, `mumble settings` refuses it, and a saved § shortcut
 without a modifier goes back to its default when settings load or the toggle
-turns off. While bound, § is Hex's in every app. Details and checks in
+turns off. While bound, § is Mumble's in every app. Details and checks in
 [labs.md](labs.md).
 
 Checks: `mouse_buttons_record_with_or_without_modifiers`,
@@ -169,7 +169,7 @@ side, so ⌥⌘ works from either hand. On macOS, Labs › Sided modifier chords
 modifier-only chord instead, so Right ⌘ + Right ⌥ records as `R⌥ R⌘` and the
 left keys don't press it; matching was already sided. While recording, every held key shows with
 its side (`L⌥ R⌥ ⌘` on the Mac, `Left Alt` elsewhere), so an accidental extra
-key is visible before release. `hex settings` takes
+key is visible before release. `mumble settings` takes
 `left-option+right-option`. Settings store `{"keys": [...]}`; files with the
 old `modifiers`/`key` shape load as the same chord and are written back once.
 Windows matches sides through its low-level hook and accepts one modifier
@@ -184,7 +184,7 @@ Windows modifier-only shortcut                           // dictate.windows-lone
   │   (the key reaches the app; locked and toggle captures keep recording)
   ├── Alt or Windows released -> Swallowed, VK 0xE8 tapped, release replayed
   │   -> No menu bar or Start menu; Share shortcut skips the mask
-  └── Hex's own injected keys (paste, mask) -> Skipped by the hook (HEX_INJECTED)
+  └── Mumble's own injected keys (paste, mask) -> Skipped by the hook (MUMBLE_INJECTED)
 ```
 
 On layouts where Right Alt is AltGr, Windows adds a Left Ctrl press, so Right
@@ -207,7 +207,7 @@ Checks: the `both_options_*` tests and
 `a_modifier_alone_says_linux_needs_a_key_and_suggests_one` in
 `rune_ui/tests.rs`. Constructed events only; no physical keyboard run on any OS.
 
-**CLI:** `hex listen` uses saved settings; `--device` is authoritative. This is
+**CLI:** `mumble listen` uses saved settings; `--device` is authoritative. This is
 the CLI listener, not Settings. Do not run it beside an existing listener.
 
 **Separate targets:** Host-owned API capture has its own ownership protocol and
@@ -236,10 +236,10 @@ Output > Without processing > Dictate without processing   // raw.shortcut
 │   │   finishes it nor counts toward its double tap
 │   └── Queueing and ordered output -> shared with dictation
 ├── Finish -> transcript pasted as heard (trimmed)          // raw.paste
-│   ├── History -> kind Raw ("raw" in `hex history --json`)
+│   ├── History -> kind Raw ("raw" in `mumble history --json`)
 │   └── Paste Last -> pastes it (it is the last dictation)
 ├── Clear (trash) -> unbound again
-└── hex dictation start|toggle --raw -> the same, without a shortcut
+└── mumble dictation start|toggle --raw -> the same, without a shortcut
     └── A printing stop (`stop --print`) of it prints the transcript as heard
 ```
 
@@ -297,11 +297,11 @@ raw timestamp, how it was read, and its arrival delay. The `discarded` event in
 
 **Fixed October 22, 2026:** a global shortcut registered with Carbon (Spaceman's
 Option-1 to Option-0 workspace keys, for example) consumes its key before the
-session taps, so Hex saw only the Option press and release. Holding Option past
+session taps, so Mumble saw only the Option press and release. Holding Option past
 300 ms while switching workspaces recorded and pasted whatever the microphone
 heard, and two quick switches could double-tap lock. A listen-only HID tap now
 reports key presses as chord evidence only; session events still own key state,
-and Escape and Hex's own shortcuts are excluded. Evidence that overtakes its
+and Escape and Mumble's own shortcuts are excluded. Evidence that overtakes its
 press still prevents the capture. Command-Tab likewise swallows Tab's release,
 which caused the routine `resynchronized stale input tracking` warnings, now
 logged with `key_codes`. Until October 26 an Option press within 100 ms of
@@ -320,7 +320,7 @@ before Space (or both at once) can leave the GlobalShortcuts portal without a
 and released again. Linux now treats a press that arrives while the shortcut
 is still held as a key repeat only within 1 s of the previous press; a later
 press is new and finishes the Hold capture whose release was lost, and that
-press's own repeats and release start nothing. Hex never infers a release from
+press's own repeats and release start nothing. Mumble never infers a release from
 silence or a timeout. Checks:
 `a_hold_whose_release_never_arrives_finishes_on_the_next_new_press` and
 `a_balanced_release_finishes_a_repeating_hold` in
@@ -331,7 +331,7 @@ GNOME).
 until the X server reported no modifiers held. XWayland's modifier state goes
 stale while a Wayland window has focus and only a later key event clears it,
 so a finished dictation sat in Transcribing for about a minute. The paste now
-waits for held modifiers only while one of Hex's shortcuts is down (a newer
+waits for held modifiers only while one of Mumble's shortcuts is down (a newer
 capture owns them); otherwise it waits at most 2 s, logs that modifiers still
 read as held, and pastes. Checks:
 `stale_modifiers_without_a_held_shortcut_stop_holding_the_paste` and
@@ -346,7 +346,7 @@ ext-data-control nor wlr-data-control. Labs › Restore clipboard on GNOME
 restores it through XWayland's CLIPBOARD selection, which Mutter bridges to
 Wayland apps both ways. It applies only on a Wayland session without
 data-control and only while this user's Xwayland process already runs with
-`DISPLAY` set, so Hex never starts XWayland; the generation and
+`DISPLAY` set, so Mumble never starts XWayland; the generation and
 still-holds-the-paste rules are unchanged. While it is off there, Settings ›
 Output shows a note pointing to it. Checks:
 `xwayland_restores_only_by_opt_in_without_data_control`,
@@ -357,7 +357,7 @@ Output shows a note pointing to it. Checks:
 not run on GNOME).
 
 **Fixed November 2, 2026 (issue 978):** a Windows paste refused to run when
-the clipboard held only a format Hex can't snapshot (an app's private
+the clipboard held only a format Mumble can't snapshot (an app's private
 format), failing every dictation with "the current clipboard format cannot be
 preserved safely". The transcript now pastes anyway; that clipboard just isn't
 restored afterwards, and `process.log` says why. Check:
@@ -377,7 +377,7 @@ consumed, so other apps saw an Option dictation as an Option tap on release. A
 Raycast hotkey on an Option tap activated Slack on every dictation, switching
 Kit out of a fullscreen Space before the paste. Tap detectors (Raycast,
 Karabiner's `to_if_alone`, AutoHotkey's Start-menu mask) cancel a tap when any
-key goes down while the modifier is held. Once Hex owns a modifier-only press
+key goes down while the modifier is held. Once Mumble owns a modifier-only press
 it now posts one press of key code 0x44 under the modifiers held at that
 moment, once per press and only while exactly the shortcut's modifiers are
 still physically down (any other modifier already breaks the tap):
@@ -397,37 +397,37 @@ Keyed shortcuts (consumed), Globe/Fn (system tap)  -> Nothing
 The breaker never reaches the focused app:
 
 ```ts
-Posted at HID with Hex's marker
+Posted at HID with Mumble's marker
   ├── HID taps, session taps            -> See a key: tap cancelled
   ├── NSEvent global monitors           -> See a key: tap cancelled
-  ├── Hex's HID tap and its key tap     -> Marker: not a key, chord, or HID evidence
-  └── Hex's annotated-session key tap   -> Dropped
+  ├── Mumble's HID tap and its key tap     -> Marker: not a key, chord, or HID evidence
+  └── Mumble's annotated-session key tap   -> Dropped
       -> The focused app never gets it, so it never beeps (a non-text
          view, or any text view with ⌘ held, beeps at an unhandled key)
 ```
 
 0x44 is a hole in the virtual key codes (between keypad `*` and `+`): no
 keyboard sends it, it has no system action, and of the 264 layouts macOS ships
-only Unicode Hex Input maps it (to U+0000, never with Option alone). Source:
+only Unicode Mumble Input maps it (to U+0000, never with Option alone). Source:
 `DictationHotkey::break_chord` and `event_callback` in
 [suppression.rs](../../src/suppression.rs), `post_chord_breaker` in
 [keyboard.rs](../../src/keyboard.rs), called from the listener loop once no
 input is pending. Checks:
 `a_held_modifier_only_shortcut_breaks_the_chord_once_after_the_hold_threshold`,
 `short_taps_chords_and_other_bindings_never_break_the_chord`,
-`locked_and_toggle_captures_break_the_chord_only_for_presses_hex_owns`,
+`locked_and_toggle_captures_break_the_chord_only_for_presses_mumble_owns`,
 `marked_chord_breaker_never_reaches_the_shortcut_machines_or_the_app`.
 
 Observed October 27, 2026 on a macOS 27.0.1 VM (`macvm`), with a stand-in for
-Hex (the same marked HID post, dropped by a head-inserted annotated-session
-default tap) rather than Hex itself: an Option hold reached a test app as an
+Mumble (the same marked HID post, dropped by a head-inserted annotated-session
+default tap) rather than Mumble itself: an Option hold reached a test app as an
 unhandled `keyDown` that beeped in a plain view when the breaker passed
 through; when dropped, the app received nothing, while an Option-tap detector
 on a HID tap, a session tap, and an NSEvent global monitor each saw the key and
 cancelled its tap. Without the breaker all three fired. Unproven: Raycast
 itself (its binary uses both event taps and a global monitor), a detector on
-an annotated-session tap placed after Hex's (it never sees the key), and a
-physical keyboard. If Hex's key tap is briefly disabled by a timeout, the
+an annotated-session tap placed after Mumble's (it never sees the key), and a
+physical keyboard. If Mumble's key tap is briefly disabled by a timeout, the
 breaker reaches the app.
 
 ### Shortcut Mode
@@ -448,7 +448,7 @@ Tap
   ├── Release 300 ms or more after the press -> Finish (with the release tail)
   ├── Sooner -> Keeps recording, as above
   └── Linux: key repeats keep the first press's time; the dictation shortcut
-      and Dictate without processing alike; hex dictation commands unchanged
+      and Dictate without processing alike; mumble dictation commands unchanged
   Linux: release never arrives (Hyprland Lua bind, Alt up before Z)
   ├── Press 1 s or more after the last press -> Finish
   └── Sooner -> Ignored as a key repeat (KWin repeats held shortcuts)
@@ -458,8 +458,8 @@ The one choice is stored in the three settings it replaced
 (`shortcut_mode`, `double_tap_lock`, `double_tap_only`); of their eight
 combinations only four behave differently, and `Trigger::of` in
 [shortcut_mode.rs](../../src/rune_ui/shortcut_mode.rs) folds the rest onto
-them (`redundant_and_invalid_combinations_fold_away`). `hex settings` still
-sets each one. Linux with only `hex` commands shows no row: the commands
+them (`redundant_and_invalid_combinations_fold_away`). `mumble settings` still
+sets each one. Linux with only `mumble` commands shows no row: the commands
 ignore it.
 
 Tap (`toggle`) reuses the lock state on every platform: each press behaves as the
@@ -473,7 +473,7 @@ each platform's settings; files without it load as Hold. Checks:
 `a_capture_that_would_lock_finishes_when_the_desktop_drops_its_release`, and
 `a_repeating_held_press_never_finishes_the_capture` in
 [linux/input.rs](../../src/linux/input.rs), whose one state machine serves X11
-grabs, Wayland portal shortcuts, and the `hex dictation` commands alike. The
+grabs, Wayland portal shortcuts, and the `mumble dictation` commands alike. The
 dropped release was observed on 2026-10-28 on Hyprland 0.56.2 with
 xdg-desktop-portal-hyprland 1.4.1: uinput Alt+Z sent no `Deactivated` when Alt
 came up first (the fix itself has not been run there yet). Only
@@ -497,7 +497,7 @@ General > Shortcut mode                               // dictate.shortcut-explai
   ├── Tab -> each available option, Done; focus stays inside
   ├── Done, Return, Escape, or a press outside -> Closes; focus returns to
   │   the row
-  ├── Change pane, menu bar, or `hex window show` -> Closes
+  ├── Change pane, menu bar, or `mumble window show` -> Closes
   └── Reduce Motion -> One whole take, still, no wakes; turned off while
       open, the tape starts again when the window regains focus
 ```
@@ -522,7 +522,7 @@ Double-tap chosen), and `shortcut-mode-chord` (Ctrl+Alt+Space) goldens
 (frozen at 1.8 s into the tape). The animation itself has been seen only in
 headless frames, not on a real window.
 
-On Linux, `hex dictation start` and `stop` bypass every Shortcut mode: start records unless something already records, stop
+On Linux, `mumble dictation start` and `stop` bypass every Shortcut mode: start records unless something already records, stop
 finishes, and `toggle` does whichever applies. Bound to a key's press and
 release they give hold-to-dictate; a shortcut press still finishes a capture a
 command started.
@@ -572,7 +572,7 @@ Release or locked finishing press                     // dictate.release-tail
      └── Stream stalls/fails -> Finish within tail + 100 ms with what arrived
   -> Not short taps, voice controls, or programmatic stop
   -> Linux and Windows wait the same tail; Linux ends at the release it observes
-     (an X11 key release, a portal Deactivated, or `hex dictation stop`)
+     (an X11 key release, a portal Deactivated, or `mumble dictation stop`)
   -> A press inside the tail starts after the old clip finishes, with its own pre-roll
 
 Release that will transcribe                          // dictate.stop-tone
@@ -608,11 +608,11 @@ Source: `DictationCapture` in [dictation.rs](../../src/dictation.rs); checks:
 streamed and not, with the tail). These cover sample-buffer/timestamp logic, not
 a microphone recording. The physical release stays exact; the 200 ms tail is an
 explicit extension of the trim boundary. The opt-in `release_boundary_harness`
-([dictation/tail_tests.rs](../../src/dictation/tail_tests.rs); `HEX_TAIL_MODEL`,
-`HEX_TAIL_WAVS`) and `evaluate_dictation_corpus`
+([dictation/tail_tests.rs](../../src/dictation/tail_tests.rs); `MUMBLE_TAIL_MODEL`,
+`MUMBLE_TAIL_WAVS`) and `evaluate_dictation_corpus`
 ([dictation/corpus_tests.rs](../../src/dictation/corpus_tests.rs);
 [`scripts/dictation-corpus.sh`](../../scripts/dictation-corpus.sh),
-`HEX_DICTATION_CORPUS_DIR`) replay recordings through the capture timeline at
+`MUMBLE_DICTATION_CORPUS_DIR`) replay recordings through the capture timeline at
 release offsets (`-300 ms` to `+200 ms`) and onset offsets (`-300 ms` to
 `+100 ms`). On 2026-10-15, before the tail, across 102 clips (70 real voice
 recordings, 20 macOS `say` clips, and 12 ElevenLabs `eleven_v4` clips) with
@@ -642,7 +642,7 @@ macOS change compiles and passes Clippy on hailmary (2026-10-22); physical tone
 timing and the unmute-then-tone order on a Mac audio device remain unverified.
 Linux and Windows play the stop tone at the release too. On Linux this used
 to follow the tail too: on 2026-10-22, an isolated service on apollo (ALSA
-Loopback microphone and speaker, `hex dictation stop`) measured the stop tone
+Loopback microphone and speaker, `mumble dictation stop`) measured the stop tone
 requested 203 ms after the release was handled before the fix and within the same
 loop pass after it (about 40 ms after the CLI mark, mostly process start), with
 the tail still collected for 203 ms afterwards; the output was already open, so
@@ -793,7 +793,7 @@ fixed 150 ms pre-paste delay still missed about 1 in 4 dictations and was
 removed; no app waits before ⌘V. Instead, when the frontmost app's bundle
 contains `Contents/Frameworks/*Framework.framework/Versions/<a.b.c.d>/` with
 major version 155 or 156 (any version present counts, so a staged update is
-covered), Hex types the text as synthesized Unicode key events: at most 20
+covered), Mumble types the text as synthesized Unicode key events: at most 20
 UTF-16 units per event, never splitting a surrogate pair, and every line break
 as Shift-Return so chat boxes don't submit. Typing leaves the clipboard
 untouched, so there is nothing to restore; ordering, continuation joins, Send's
@@ -811,7 +811,7 @@ previous clipboard 500 ms later unless a newer paste or another app changed it.
 Labs › Terminal paste (`paste_with_shift`, off by default; on Linux it is a
 General › Advanced row) sends Ctrl+Shift+V instead, for apps that ignore
 a synthetic Ctrl+V (the herdr desktop app). Shift goes down after Ctrl and up
-before it; a Ctrl the user still holds is never pressed or released by Hex. A
+before it; a Ctrl the user still holds is never pressed or released by Mumble. A
 saved change applies to the next paste without restarting the listener.
 Source: `control_chord` in [windows/paste.rs](../../src/windows/paste.rs).
 Check: `paste_chords_press_shift_inside_control_and_leave_a_held_control_alone`
@@ -824,7 +824,7 @@ Settings › General, Shortcut mode = Tap (Toggle)     // dictate.toggle-cancel
   -> Cancel row: the shortcut (`cancel_hotkey`), Escape by default
      ├── Recorder -> any chord the OS's rules allow (Escape ends the recorder)
      ├── Restore -> back to Escape
-     └── Wayland -> no recorder: bind `hex dictation cancel` in the desktop
+     └── Wayland -> no recorder: bind `mumble dictation cancel` in the desktop
   Hold modes -> no row, no cancel
 Toggled recording (held or locked) -> Cancel shortcut
   -> Recording discarded: nothing transcribed, pasted, or kept in History
@@ -832,18 +832,18 @@ Toggled recording (held or locked) -> Cancel shortcut
   -> The key is kept from the app (press, repeats, release)
   -> Jobs already transcribing -> finish and paste in order
 Idle, or any Hold mode -> Cancel shortcut -> Nothing: it reaches the app
-hex dictation cancel -> Discards whatever records, any mode; idle -> unchanged
+mumble dictation cancel -> Discards whatever records, any mode; idle -> unchanged
 Programmatic dictation (local API) -> Its owner cancels through /cancel
 ```
 
 Until #786, Escape cancelled the active capture in every mode, then the newest
 unfinished job, and an accidental Escape wiped a 5-minute dictation. #795
 removed cancel; the people who asked for it back use Toggle, so it returned
-there only, and never reaches past the recording. Hex takes the key only while
+there only, and never reaches past the recording. Mumble takes the key only while
 a toggled recording runs: macOS's session tap suppresses it only while the
 listener arms it, Windows' hook only while its capture records, and X11
 grabs it only for the recording. A shortcuts portal would hold the key from
-every app for as long as Hex runs, so Wayland binds nothing for it. Checks:
+every app for as long as Mumble runs, so Wayland binds nothing for it. Checks:
 `the_cancel_shortcut_discards_only_a_toggled_recording` and
 `the_cancel_key_is_suppressed_only_while_armed` in
 [suppression.rs](../../src/suppression.rs) (macOS, not compiled on Linux),
@@ -896,7 +896,7 @@ two-display Mac; the misplacement inside Rune itself is not addressed here.
 Settings > Sounds (next to Sound volume)                    // dictate.sound-set
 ├── Default / older settings -> Classic
 ├── Row shows the saved set -> Opens the Sounds sheet
-│   ├── Stage -> Hex's own HUD, where this OS puts it, does what it does
+│   ├── Stage -> Mumble's own HUD, where this OS puts it, does what it does
 │   │   │          at each sound of a short dictation
 │   │   ├── Where -> Indicator position: top / bottom; Off shows none
 │   │   ├── Start (0 s) -> Recording, with a demo voice's level
@@ -911,7 +911,7 @@ Settings > Sounds (next to Sound volume)                    // dictate.sound-set
 │   ├── Any playback -> Stops the one before it (20 ms fade)
 │   ├── Sound volume -> Plays at it; Off plays nothing, the HUD still shows
 │   └── Close / Escape / scrim / leaving the pane -> Stops playback
-├── hex settings set sound_theme <signature|classic|click|soft|wood|analog|thock>
+├── mumble settings set sound_theme <signature|classic|click|soft|wood|analog|thock>
 └── Every set -> Same loudness per sound at a given volume
 ```
 
@@ -925,17 +925,17 @@ The sheet is a modal like the shortcut explainer, opened from a
 `dot_scope_turns_coral_on_failure`,
 `the_sound_sets_sheet_plays_and_chooses_sets` (Linux), and the `sound-sets`,
 and `sound-sets-playing` goldens. The stage
-replays Hex's HUD on the sheet's clock: `dictation/indicator`'s model, drawn
+replays Mumble's HUD on the sheet's clock: `dictation/indicator`'s model, drawn
 by the window's compositor with `rune_hud`'s painter and `rune_hud.wgsl`, as
 the real overlay draws it. It is a preview, not the overlay: Dot scope's
 in-bar and notch placements show below the menu bar, the voice is HUD Lab's
 demo, not the microphone, and it ignores Reduce Motion.
 
-Hex signature (2026-10-27) is one kalimba-like FM voice playing one motif,
+Mumble signature (2026-10-27) is one kalimba-like FM voice playing one motif,
 D-B-A-D (a sixth, since "hex" is six): start D5 to B5 (116 ms), stop B5 to A5
 (230 ms), done D6 over A5 (330 ms), error D4
 then a minor D4+Bb4 (280 ms), and onboarding success, the whole motif landing
-on a D sixth chord (1.1 s), played when the first run reaches Hex is ready. Click is mechanical key clicks, Soft tone warm sine blips in A major,
+on a D sixth chord (1.1 s), played when the first run reaches Mumble is ready. Click is mechanical key clicks, Soft tone warm sine blips in A major,
 Wood a soft-mallet marimba with hollow wood blocks for error, and
 Warm synth two detuned saws through a closing low-pass filter, and Thock one
 mechanical keyboard key, from the team's vote on the start sound (its winner,
@@ -943,7 +943,7 @@ an ElevenLabs take kept in `scripts/sounds/thock/`): start is the press, stop
 the same key's upstroke, error two keys at once,
 twice, and success a run of keys up to a full press; it has no done sound
 because the stop already says it. Classic is the
-sounds Hex played before the signature set (start clicks, stop swish),
+sounds Mumble played before the signature set (start clicks, stop swish),
 restored from git; it has no done tone, errors play macOS Basso as they
 did, and onboarding success plays its stop sound (the other sets have their own).
 The done sound of every set plays only when the paste lands at least
@@ -1001,13 +1001,13 @@ still begin only at the 300 ms threshold. Checks:
 `provisional_start_sounds_after_the_chord_grace_unless_retracted`,
 `retracted_tone_fades_out_without_a_click_or_channel_skew`, and the ignored
 `native_start_tone_path_latency` (open-to-presentation timing, with
-`HEX_TONE_PATH=legacy` for the old path; route output to a silent device or set
-`HEX_TONE_MUTED`). The chord-to-retraction path is checked by reading the code,
+`MUMBLE_TONE_PATH=legacy` for the old path; route output to a silent device or set
+`MUMBLE_TONE_MUTED`). The chord-to-retraction path is checked by reading the code,
 not by a physical keyboard run.
 
 **Fixed in 2.1.21:** through 2.1.20 the worker opened the output at startup
 and kept it open for as long as sounds were On, so `coreaudiod` held a
-`PreventUserIdleSystemSleep` assertion for Hex's PID and an idle Mac never
+`PreventUserIdleSystemSleep` assertion for Mumble's PID and an idle Mac never
 slept ([#95](https://github.com/anomalyco/hex/issues/95)). 2.1.18 released the
 stream only when sounds were Off. Startup admission therefore no longer
 reports `could not open the audio output`; a device failure surfaces as a
@@ -1025,7 +1025,7 @@ built-in speakers. That is not an installed-app or USB/Bluetooth measurement.
 publication path after the admission receiver has gone away. These checks do
 not measure the reporter's CoreAudio CPU usage or establish audible playback.
 
-**Contributor-reported September 10, 2026 (PR #84):** a locally built `/Applications/Hex.app`
+**Contributor-reported September 10, 2026 (PR #84):** a locally built `/Applications/Mumble.app`
 (approximating 2.1.16 plus this change) was started right after a restart where
 the stock build had stopped its desktop recognition worker with
 `timed out preloading feedback audio`. The patched build started on the first
@@ -1040,7 +1040,7 @@ Linux now uses the same recording sounds with its own persisted Sound volume
 control; see [Linux feedback](README.md#other-platforms-and-consumers) for its
 entry points, timing, defaults, and verification limits.
 
-Check: in a debug app, `hex dev hud recording|transcribing|processing|reset`
+Check: in a debug app, `mumble dev hud recording|transcribing|processing|reset`
 or the HUD Lab pane drives the real HUD with deterministic state, so
 fullscreen and Space transitions can be checked. (The `dictation-hud` preview
 that looped the sequence went with GPUI.) This does not prove that actual
@@ -1099,7 +1099,7 @@ claimed premultiplied alpha). Rune draws transparent Windows surfaces only
 through DX12, on the lowest-power adapter, and fails the overlay when none
 can (93c7a04b; from reading the code and Windows' rules, not yet observed on
 Windows). If the window, its GPU surface or the show fails (including a
-cloaked window), Rune reports why (`OverlayHandle::failure`). Hex logs the
+cloaked window), Rune reports why (`OverlayHandle::failure`). Mumble logs the
 HUD's surface (backend, adapter, alpha mode) once, and treats a dictation
 start whose HUD presents no frame within 1.5 s as a failure too. Each
 failure is logged as an error in process.log once per reason, and Settings
@@ -1166,7 +1166,7 @@ HUD Lab
 ├── Save -> Writes dot-scope.json in Application Support; the HUD loads it at launch
 ├── Copy values -> The same JSON; Reset -> the prototype's values
 └── Leave the pane or close the window -> The demo hides; unsaved values
-    stay on the HUD until Hex restarts
+    stay on the HUD until Mumble restarts
 ```
 
 The playground (⇧⌘D, experiment `playground`) lists HUD stories
@@ -1182,7 +1182,7 @@ Prototypes › HUD                             // R plays, P next look, A auto l
 ├── Your voice -> Waits for your shortcut and meters your microphone
 │   └── Both: variants hud-lab, notch, pretend-notch, menu-bar, below
 └── Links name the story and variant:
-    hex://story/prototypes/hud/notch?variant=pulse-fail&play=1
+    mumble://story/prototypes/hud/notch?variant=pulse-fail&play=1
 ```
 
 The HUD is its own Rune overlay, not a view in the window, so a story drives
@@ -1190,7 +1190,7 @@ the real HUD at the top of the screen and its stage only says what it shows. Pla
 puts its placement and look into the one tuning it shares with HUD Lab
 (`rune_hud::dot_scope::lab`).
 
-Hex meters no spectrum, so the prototype's band emphasis is the same for
+Mumble meters no spectrum, so the prototype's band emphasis is the same for
 every component.
 
 Check: `scripts/check rune_hud::dot_scope` (defaults, knobs, frame-rate independence,
@@ -1200,7 +1200,7 @@ processing minimum, failure and cancel, a hot microphone still moving),
 `scripts/check rune_hud::hud_placement` (each placement on flat and notched screens),
 and `rune_hud::tests::rune_hud_frames` (ignored; renders a fixed
 dictation through the real shaders offscreen into PNG frames, with
-`HEX_HUD_TUNING` for the look and placement over a pretend 14-inch MacBook
+`MUMBLE_HUD_TUNING` for the look and placement over a pretend 14-inch MacBook
 Pro's menu bar). On 2026-10-28 its Dot scope and notch frames matched the
 retired Metal HUD's render of the same inputs on hailmary to within 3/255
 per channel; on 2026-10-29 a headless capture on apollo showed recording,
@@ -1208,7 +1208,7 @@ processing, and done after Dot scope became the default.
 Not yet observed on a real notched display, over a fullscreen app, or with
 a hidden menu bar.
 
-Hex itself never activates on paste. Another app's modifier-tap hotkey once
+Mumble itself never activates on paste. Another app's modifier-tap hotkey once
 switched Spaces before the paste; the [chord breaker](#hold-and-short-taps)
 keeps a held bare-modifier dictation from reading as a tap.
 

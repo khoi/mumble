@@ -1,5 +1,5 @@
-//! `hex` control: the typed command/reply protocol an agent uses to drive the
-//! one running Hex, the settings registry behind `hex settings`, and the CLI
+//! `mumble` control: the typed command/reply protocol an agent uses to drive the
+//! one running Mumble, the settings registry behind `mumble settings`, and the CLI
 //! client. Transports (the macOS local API's `POST /control`) only move
 //! [`ControlRequest`]s and [`ControlResponse`]s; the app's host carries out
 //! each command, and every rule shared between the window and the CLI lives
@@ -43,7 +43,7 @@ pub enum CaptureAction {
     Cancel,
 }
 
-/// The window's panes, by the names `hex window show` takes.
+/// The window's panes, by the names `mumble window show` takes.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum Pane {
@@ -86,7 +86,7 @@ pub enum ControlCommand {
         key: String,
         value: String,
     },
-    /// Several settings at once, all or none (`hex settings apply`).
+    /// Several settings at once, all or none (`mumble settings apply`).
     SettingsApply {
         values: serde_json::Map<String, serde_json::Value>,
     },
@@ -156,7 +156,7 @@ pub enum ControlReply {
     Vocabulary {
         entries: Vec<VocabularyEntry>,
     },
-    /// `hex dictation stop --print`: the processed transcript.
+    /// `mumble dictation stop --print`: the processed transcript.
     Transcript {
         text: String,
     },
@@ -227,7 +227,7 @@ impl ControlError {
     }
 }
 
-/// How long `hex dictation stop --print` waits for its transcript.
+/// How long `mumble dictation stop --print` waits for its transcript.
 pub const PRINT_WAIT: Duration = Duration::from_secs(60);
 /// How long the app may take to carry out any other control command.
 const CONTROL_DEADLINE: Duration = Duration::from_secs(10);
@@ -318,13 +318,13 @@ pub fn check_flags(
     if print && action != CaptureAction::Stop {
         return Err(ControlError::new(
             "invalid-value",
-            "--print works only with `hex dictation stop`",
+            "--print works only with `mumble dictation stop`",
         ));
     }
     if raw && !matches!(action, CaptureAction::Start | CaptureAction::Toggle) {
         return Err(ControlError::new(
             "invalid-value",
-            "--raw works only with `hex dictation start` and `hex dictation toggle`",
+            "--raw works only with `mumble dictation start` and `mumble dictation toggle`",
         ));
     }
     Ok(action)
@@ -336,7 +336,7 @@ pub struct ControlCall {
     pub reply: SyncSender<ControlResponse>,
 }
 
-/// Rejects a request from a `hex` built for another protocol version.
+/// Rejects a request from a `mumble` built for another protocol version.
 pub fn check_version(request: &ControlRequest) -> Result<(), ControlError> {
     if request.version == CONTROL_VERSION {
         return Ok(());
@@ -348,8 +348,8 @@ pub fn version_mismatch(version: u64) -> ControlError {
     ControlError::new(
         "version-mismatch",
         format!(
-            "this hex speaks control version {version}, but the running Hex speaks \
-             {CONTROL_VERSION}; use the hex inside the running app or restart Hex"
+            "this mumble speaks control version {version}, but the running Mumble speaks \
+             {CONTROL_VERSION}; use the mumble inside the running app or restart Mumble"
         ),
     )
 }
@@ -368,10 +368,10 @@ pub struct StatusReport {
     pub window: WindowReport,
     /// current, checking, available, or unavailable.
     pub update: String,
-    /// The Labs features turned on (`crate::labs`), by `hex labs` name.
+    /// The Labs features turned on (`crate::labs`), by `mumble labs` name.
     #[serde(default)]
     pub labs: Vec<String>,
-    /// What this OS's Hex can do, by capability name (`rune_ui::platform`).
+    /// What this OS's Mumble can do, by capability name (`rune_ui::platform`).
     /// A command for one it can't do answers `unsupported`.
     #[serde(default)]
     pub capabilities: std::collections::BTreeMap<String, bool>,
@@ -493,7 +493,7 @@ pub struct WindowReport {
     pub pane: Option<String>,
 }
 
-/// Refuses to stop Hex while it records, unless forced. `capture` is the
+/// Refuses to stop Mumble while it records, unless forced. `capture` is the
 /// listener's answer (idle when no listener runs or setup gates it); a
 /// listener that couldn't answer might be recording, so it refuses too.
 pub fn check_quit(
@@ -521,7 +521,7 @@ pub fn check_quit(
     }
 }
 
-/// Carries out `hex vocabulary add|remove` on the saved list. The reply's
+/// Carries out `mumble vocabulary add|remove` on the saved list. The reply's
 /// `changed` says whether the list needs saving.
 pub fn edit_vocabulary(
     list: &mut Vec<VocabularyEntry>,
@@ -802,7 +802,7 @@ mod tests {
             ControlReply::Transcript {
                 text: "Ship it.".into(),
             },
-            ControlReply::error("busy", "Hex is busy"),
+            ControlReply::error("busy", "Mumble is busy"),
         ] {
             let response = ControlResponse::from(reply);
             let json = serde_json::to_string(&response).unwrap();

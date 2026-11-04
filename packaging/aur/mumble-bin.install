@@ -1,0 +1,5 @@
+post_install() {
+  echo 'Open Mumble from your launcher or run `mumble`; the first run downloads a speech model.'
+  echo 'Start Mumble at login: systemctl --user enable mumble.service'
+  echo 'Updates come from pacman; Mumble never replaces this package itself.'
+}

@@ -13,7 +13,7 @@ use super::*;
 
 /// Every onboarding state a person can see, on macOS and on Linux and
 /// Windows. An intentional change refreshes these goldens in the same PR
-/// (`HEX_UPDATE_GOLDENS=1`).
+/// (`MUMBLE_UPDATE_GOLDENS=1`).
 pub(super) const SCENES: &[&str] = &[
     // A fresh install opens on the demo.
     "onboarding",
@@ -31,7 +31,7 @@ pub(super) const SCENES: &[&str] = &[
     "onboarding-try",
     "mac-onboarding-try",
     "mac-onboarding-reopen",
-    // Hex is ready.
+    // Mumble is ready.
     "onboarding-ready",
     "mac-onboarding-ready",
 ];
@@ -47,7 +47,7 @@ const OPTIONAL: &[&str] = &[
 
 /// Skip shows only on the optional pages, the demo and the practice, and
 /// passes over them to the next step setup still needs: permissions, else
-/// Hex is ready. It never closes onboarding.
+/// Mumble is ready. It never closes onboarding.
 #[test]
 fn onboarding_skip() {
     for scene in SCENES {
@@ -82,7 +82,7 @@ fn onboarding_skip() {
     assert_eq!(page(&rt), Some(Page::Demo));
     skip(&mut rt, "demo", Page::Permissions);
 
-    // Nothing left to set up: the demo and the practice skip to Hex is ready.
+    // Nothing left to set up: the demo and the practice skip to Mumble is ready.
     let mut rt = runtime("onboarding-demo", true, PANE_SIZE);
     skip(&mut rt, "onboarding-demo", Page::Ready);
     for scene in ["onboarding-try", "mac-onboarding-try"] {
@@ -102,8 +102,8 @@ fn onboarding_goldens() {
 }
 
 /// A first run on Linux or Windows, in the clean data folder
-/// `HEX_APPLICATION_SUPPORT_DIR` names (no settings): the real settings load,
-/// the real decision to open onboarding, and every page to Hex is ready.
+/// `MUMBLE_APPLICATION_SUPPORT_DIR` names (no settings): the real settings load,
+/// the real decision to open onboarding, and every page to Mumble is ready.
 /// Transcription is cloud-only, so nothing downloads; only
 /// scripts/check-onboarding.sh runs it. The window here is a fixture, and
 /// nothing writes the completion marker.
@@ -112,8 +112,8 @@ fn onboarding_goldens() {
 fn onboarding_walkthrough() {
     let support = crate::app_paths::support_dir().unwrap();
     assert!(
-        std::env::var_os("HEX_APPLICATION_SUPPORT_DIR").is_some(),
-        "set HEX_APPLICATION_SUPPORT_DIR to a clean folder"
+        std::env::var_os("MUMBLE_APPLICATION_SUPPORT_DIR").is_some(),
+        "set MUMBLE_APPLICATION_SUPPORT_DIR to a clean folder"
     );
     assert!(
         std::fs::read_dir(&support).map_or(true, |mut entries| entries.next().is_none()),
@@ -136,16 +136,19 @@ fn onboarding_walkthrough() {
     let mut rt = runtime_for(ui, true, PANE_SIZE);
     let step = |rt: &Runtime<Ui>| rt.state.tour.as_ref().map(|tour| tour.flow.step());
 
-    // The story plays on: the demo, then the practice game, then Hex is ready.
+    // The story plays on: the demo, then the practice game, then Mumble is ready.
     settle(&mut rt);
     rt.update(|ui, _| super::super::onboarding_kit::live::fixture_resume(ui, Page::Try));
     settle(&mut rt);
     assert_eq!(step(&rt), Some(crate::desktop::onboarding::Step::TryIt));
     assert!(rt.find("skip").is_some(), "Skip shows on the practice too");
     tap(&mut rt, "done");
-    assert!(texts(&rt).contains(&"Hex is ready".to_owned()));
-    tap(&mut rt, "start-using-hex");
-    assert!(rt.state.tour.is_none(), "Start using Hex closes onboarding");
+    assert!(texts(&rt).contains(&"Mumble is ready".to_owned()));
+    tap(&mut rt, "start-using-mumble");
+    assert!(
+        rt.state.tour.is_none(),
+        "Start using Mumble closes onboarding"
+    );
     assert!(rt.state.first_run.is_none());
-    println!("onboarding walkthrough: demo -> Your turn -> Hex is ready");
+    println!("onboarding walkthrough: demo -> Your turn -> Mumble is ready");
 }

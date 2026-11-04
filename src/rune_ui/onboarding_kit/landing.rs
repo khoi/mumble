@@ -1,14 +1,14 @@
-//! Shared typography, motion transitions, and the `"Hex is ready"` finale.
+//! Shared typography, motion transitions, and the `"Mumble is ready"` finale.
 
 use rune::{El, Spring, SpringPair, TextStyle, Transition, col, el, row, text};
 
 use crate::desktop::i18n::tr;
 
 use super::super::controls::{KeySize, Paint, key_tray, keycap};
-use super::hex_meter::{hex_meter, hex_meter_glowing};
+use super::mumble_meter::{mumble_meter, mumble_meter_glowing};
 
 /// Zero-bounce flight spring (`0.42 s / 0.0`) carrying the hexagon mark onto
-/// the `"Hex is ready"` landing.
+/// the `"Mumble is ready"` landing.
 pub(crate) const FLY: Spring = Spring::new(0.42, 0.0);
 
 /// One display heading style across every onboarding step (`26 pt`, softened
@@ -96,7 +96,7 @@ pub(crate) fn keys(p: Paint, key: &str, caps: &[String], down: bool) -> El {
     )
 }
 
-/// Where Hex lives once onboarding closes, under `"Hex is ready"`.
+/// Where Mumble lives once onboarding closes, under `"Mumble is ready"`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Home {
     MenuBar,
@@ -114,9 +114,9 @@ impl Home {
     }
 }
 
-/// Final `"Hex is ready"` landing: the thin single-hexagon mark arrives from
+/// Final `"Mumble is ready"` landing: the thin single-hexagon mark arrives from
 /// the top pill with a soft outline glow, followed by staggered copy and a
-/// quiet macOS menu-bar preview showing where Hex lives.
+/// quiet macOS menu-bar preview showing where Mumble lives.
 pub(crate) fn ready(
     p: Paint,
     caps: &[String],
@@ -126,7 +126,7 @@ pub(crate) fn ready(
     motion: Motion,
     home: Home,
 ) -> El {
-    let mark = hex_meter_glowing(p, "meter", 64.0, now, reduced);
+    let mark = mumble_meter_glowing(p, "meter", 64.0, now, reduced);
     let mark = match matched {
         Some(id) => el().key(id).matched(id).motion(FLY).child(mark),
         None => motion.staggered(mark.key("mark"), 0.0, 8.0),
@@ -143,7 +143,7 @@ pub(crate) fn ready(
                     .gap(10.0)
                     .items_center()
                     .child(
-                        text(tr("Hex is ready"))
+                        text(tr("Mumble is ready"))
                             .key("title")
                             .font(title_font(p))
                             .color(p.text()),
@@ -172,7 +172,7 @@ pub(crate) fn hold_anywhere(p: Paint, caps: &[String]) -> El {
         )
 }
 
-/// Quiet capsule previewing the single-hexagon icon where Hex lives: the
+/// Quiet capsule previewing the single-hexagon icon where Mumble lives: the
 /// macOS menu bar, the Windows tray, or the Linux app launcher.
 fn menubar_hint(p: Paint, home: Home) -> El {
     let k = p.k;
@@ -185,7 +185,7 @@ fn menubar_hint(p: Paint, home: Home) -> El {
         .radius(15.0)
         .fill(k.c.surface_raised)
         .border(p.hair, k.c.border_weak)
-        .child(hex_meter(p, "menubar-hex", 14.0, 1.0, 1.0))
+        .child(mumble_meter(p, "menubar-mumble", 14.0, 1.0, 1.0))
         .child(el().key("sep").size(p.hair, 12.0).fill(k.c.border_base))
         .child(
             text(home.copy())

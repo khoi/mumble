@@ -33,7 +33,7 @@ static DOUBLE_TAP_LOCK: AtomicBool = AtomicBool::new(true);
 static DOUBLE_TAP_ONLY: AtomicBool = AtomicBool::new(false);
 static SHORTCUT_TOGGLE: AtomicBool = AtomicBool::new(false);
 static PAUSE_BROWSER_MEDIA: AtomicBool = AtomicBool::new(false);
-static HEX_MICROPHONE_ENABLED: AtomicBool = AtomicBool::new(false);
+static MUMBLE_MICROPHONE_ENABLED: AtomicBool = AtomicBool::new(false);
 static MICROPHONE_POLICY: AtomicU8 = AtomicU8::new(0);
 static CUSTOM_TRANSFORMATIONS_ENABLED: AtomicBool = AtomicBool::new(false);
 static INDICATOR_POSITION: AtomicU8 = AtomicU8::new(0);
@@ -63,33 +63,33 @@ struct RuntimeMicrophoneSelection {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ExperimentalSettings {
-    pub hex_microphone: bool,
-    pub hex_microphone_mode: crate::audio::voice_filter::VoiceFilterMode,
-    pub hex_microphone_comfort_noise: bool,
-    pub hex_microphone_strength: f32,
+    pub mumble_microphone: bool,
+    pub mumble_microphone_mode: crate::audio::voice_filter::VoiceFilterMode,
+    pub mumble_microphone_comfort_noise: bool,
+    pub mumble_microphone_strength: f32,
 }
 
 impl Default for ExperimentalSettings {
     fn default() -> Self {
         Self {
-            hex_microphone: false,
-            hex_microphone_mode: crate::audio::voice_filter::VoiceFilterMode::Muffled,
-            hex_microphone_comfort_noise: true,
-            hex_microphone_strength: 1.0,
+            mumble_microphone: false,
+            mumble_microphone_mode: crate::audio::voice_filter::VoiceFilterMode::Muffled,
+            mumble_microphone_comfort_noise: true,
+            mumble_microphone_strength: 1.0,
         }
     }
 }
 
-/// Whether the Voice Filter runs: the listener streams the Hex Microphone
-/// and Hex watches its driver. Its Labs toggle (`experimental.hex_microphone`,
-/// or `HEX_EXPERIMENTAL_MIC`) or an installed driver turns it on, so a driver
+/// Whether the Voice Filter runs: the listener streams the Mumble Microphone
+/// and Mumble watches its driver. Its Labs toggle (`experimental.mumble_microphone`,
+/// or `MUMBLE_EXPERIMENTAL_MIC`) or an installed driver turns it on, so a driver
 /// apps already use keeps receiving audio.
 pub fn voice_filter_enabled(setting: bool, driver_installed: bool) -> bool {
-    setting || env_hex_experimental_mic() || driver_installed
+    setting || env_mumble_experimental_mic() || driver_installed
 }
 
-pub fn env_hex_experimental_mic() -> bool {
-    std::env::var("HEX_EXPERIMENTAL_MIC")
+pub fn env_mumble_experimental_mic() -> bool {
+    std::env::var("MUMBLE_EXPERIMENTAL_MIC")
         .ok()
         .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes"))
 }
@@ -224,7 +224,7 @@ pub struct AppSettings {
     )]
     pub retired_edit_hotkey: Option<serde_json::Value>,
     pub paste_last_hotkey: Option<HotkeyBinding>,
-    /// Toggle mode's cancel shortcut: discards the recording. Hex takes it
+    /// Toggle mode's cancel shortcut: discards the recording. Mumble takes it
     /// only while a toggled recording runs; Hold mode has no cancel.
     pub cancel_hotkey: HotkeyBinding,
     /// Dictate without processing: records like the dictation shortcut and
@@ -251,12 +251,12 @@ pub struct AppSettings {
     pub experimental: ExperimentalSettings,
     /// The Labs features' own switches (`crate::labs`).
     pub labs: LabsSettings,
-    /// Start listening when Hex opens (Windows and Linux, where the
+    /// Start listening when Mumble opens (Windows and Linux, where the
     /// listener can be off).
     pub enable_on_launch: bool,
     /// Paste with Ctrl-Shift-V for terminals (Linux and Windows).
     pub paste_with_shift: bool,
-    /// Hex keeps its own GNOME custom keyboard shortcuts, on GNOME without a
+    /// Mumble keeps its own GNOME custom keyboard shortcuts, on GNOME without a
     /// shortcuts portal (Linux, #781).
     pub gnome_keyboard_shortcuts: bool,
     /// Let other apps see the dictation shortcut's key presses too
@@ -286,12 +286,12 @@ pub struct AppSettings {
     pub text_replacements: Vec<TextReplacement>,
 }
 
-/// Settings saved by an `anomaly.hex` build. Up to 2.3.1 Hex was
+/// Settings saved by an `anomaly.mumble` build. Up to 2.3.1 Hex was
 /// `com.kitlangton.hex2` and used the same folder, so a file without this
 /// ID may carry onboarding finished under grants macOS no longer gives the
 /// new identity; the macOS launch checks setup once
 /// (`onboarding::recheck_after_identity_change`).
-const ANOMALY_IDENTITY_MIGRATION: &str = "anomaly-hex-identity";
+const ANOMALY_IDENTITY_MIGRATION: &str = "anomaly-mumble-identity";
 const MIGRATIONS: &[&str] = &[ANOMALY_IDENTITY_MIGRATION];
 
 fn deserialize_retired_value<'de, D>(
@@ -449,11 +449,11 @@ impl AppSettings {
             Ordering::Relaxed,
         );
         crate::labs::apply(&self.labs);
-        HEX_MICROPHONE_ENABLED.store(self.experimental.hex_microphone, Ordering::Release);
-        crate::audio::hex_microphone::sync_from_settings(
-            self.experimental.hex_microphone_mode,
-            self.experimental.hex_microphone_comfort_noise,
-            self.experimental.hex_microphone_strength,
+        MUMBLE_MICROPHONE_ENABLED.store(self.experimental.mumble_microphone, Ordering::Release);
+        crate::audio::mumble_microphone::sync_from_settings(
+            self.experimental.mumble_microphone_mode,
+            self.experimental.mumble_microphone_comfort_noise,
+            self.experimental.mumble_microphone_strength,
         );
         *HOTKEYS
             .get_or_init(Default::default)
@@ -517,7 +517,7 @@ impl AppSettings {
         self.migrations.iter().any(|applied| applied == id)
     }
 
-    /// Whether these settings come from before the `anomaly.hex` identity.
+    /// Whether these settings come from before the `anomaly.mumble` identity.
     #[cfg(target_os = "macos")]
     pub(crate) fn predates_anomaly_identity(&self) -> bool {
         !self.has_migration(ANOMALY_IDENTITY_MIGRATION)
@@ -556,7 +556,7 @@ impl AppSettings {
 
     /// Labs › Second dictation shortcut's binding while it takes effect:
     /// macOS, its toggle on, bound, and sharing no key with another active
-    /// shortcut. Otherwise Hex matches, suppresses, and checks nothing for
+    /// shortcut. Otherwise Mumble matches, suppresses, and checks nothing for
     /// it.
     pub fn active_second_dictation_hotkey(&self) -> Option<&HotkeyBinding> {
         if !cfg!(target_os = "macos") || !self.labs.second_dictation_shortcut {
@@ -615,7 +615,7 @@ pub fn hotkey_conflicts(
         .any(|binding| candidate.overlaps(&binding))
 }
 
-/// A shortcut Settings and `hex settings` record.
+/// A shortcut Settings and `mumble settings` record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HotkeySlot {
     Dictation,
@@ -753,12 +753,12 @@ pub fn shortcut_toggle() -> bool {
 }
 
 /// [`voice_filter_enabled`] for the running listener.
-pub fn hex_microphone_enabled() -> bool {
+pub fn mumble_microphone_enabled() -> bool {
     crate::labs::Feature::VoiceFilter.shipped()
         && crate::labs::Feature::VoiceFilter.managed().is_none()
         && voice_filter_enabled(
-            HEX_MICROPHONE_ENABLED.load(Ordering::Acquire),
-            crate::audio::hex_microphone::driver_bundle_installed(),
+            MUMBLE_MICROPHONE_ENABLED.load(Ordering::Acquire),
+            crate::audio::mumble_microphone::driver_bundle_installed(),
         )
 }
 
@@ -782,7 +782,7 @@ pub fn set_hotkey_capture_active(active: bool) {
 }
 
 /// The Dock policy while no Settings window is open. An open window always
-/// shows the icon: hiding it deactivates Hex asynchronously, which would drop
+/// shows the icon: hiding it deactivates Mumble asynchronously, which would drop
 /// that window behind other applications.
 pub fn dock_icon_visible(show_dock_icon: bool, status_item_available: bool) -> bool {
     show_dock_icon || !status_item_available
@@ -808,7 +808,7 @@ pub fn set_dock_icon_visible(visible: bool) {
 #[cfg(target_os = "macos")]
 pub fn hide_application() {
     let Some(marker) = MainThreadMarker::new() else {
-        tracing::warn!("cannot hide Hex outside the main thread");
+        tracing::warn!("cannot hide Mumble outside the main thread");
         return;
     };
     NSApplication::sharedApplication(marker).hide(None);
@@ -856,9 +856,9 @@ mod tests {
         .unwrap();
         // Recognition hints saved by an older build (on the selected model and
         // the recent models) fold into the vocabulary once.
-        file["transcription"]["recognition_hints"] = "Hex, rune\nKaffar".into();
+        file["transcription"]["recognition_hints"] = "Mumble, rune\nKaffar".into();
         file["transcription_recents"] = serde_json::json!([
-            {"language": "de", "recognition_hints": "Old; Hex"},
+            {"language": "de", "recognition_hints": "Old; Mumble"},
             {"language": "en", "recognition_hints": "Rodolfo"},
         ]);
         fs::write(&dir.path, serde_json::to_vec(&file).unwrap()).unwrap();
@@ -868,7 +868,7 @@ mod tests {
             .iter()
             .map(|entry| entry.term.as_str())
             .collect();
-        assert_eq!(terms, ["Rune", "Hex", "Kaffar", "Rodolfo", "Old"]);
+        assert_eq!(terms, ["Rune", "Mumble", "Kaffar", "Rodolfo", "Old"]);
         assert_eq!(loaded.vocabulary[0].sounds_like, ["rune's"]);
         assert_eq!(loaded.sound_effect_volume, 0.25);
         let written = fs::read_to_string(&dir.path).unwrap();
@@ -999,7 +999,7 @@ mod tests {
 
     #[test]
     fn the_setting_or_an_installed_driver_turns_the_voice_filter_on_and_labs_never_does() {
-        if env_hex_experimental_mic() {
+        if env_mumble_experimental_mic() {
             return;
         }
         assert!(!voice_filter_enabled(false, false));
@@ -1113,7 +1113,7 @@ mod tests {
     impl TestSettingsDir {
         fn new(prefix: &str) -> Self {
             let directory = std::env::temp_dir().join(format!(
-                "hex-{prefix}-{}-{}",
+                "mumble-{prefix}-{}-{}",
                 std::process::id(),
                 SETTINGS_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed),
             ));
@@ -1138,19 +1138,19 @@ mod tests {
             "sound_effects": false,
             "history_retention": null,
             "show_dock_icon": "sometimes",
-            "experimental": {"hex_microphone_comfort_noise": false, "hex_microphone_mode": "quarterly"},
+            "experimental": {"mumble_microphone_comfort_noise": false, "mumble_microphone_mode": "quarterly"},
             "recording_duck_volume": 7.0
         }"#;
         fs::write(&dir.path, file).unwrap();
         let settings = AppSettings::load_from(&dir.path).unwrap();
         let defaults = AppSettings::default();
         assert!(!settings.sound_effects);
-        assert!(!settings.experimental.hex_microphone_comfort_noise);
+        assert!(!settings.experimental.mumble_microphone_comfort_noise);
         assert_eq!(settings.history_retention, defaults.history_retention);
         assert_eq!(settings.show_dock_icon, defaults.show_dock_icon);
         assert_eq!(
-            settings.experimental.hex_microphone_mode,
-            defaults.experimental.hex_microphone_mode
+            settings.experimental.mumble_microphone_mode,
+            defaults.experimental.mumble_microphone_mode
         );
         assert_eq!(
             settings.recording_duck_volume,
@@ -1312,7 +1312,7 @@ mod tests {
     #[test]
     fn retired_commands_settings_load_cleanly_and_survive_saves() {
         let directory = std::env::temp_dir().join(format!(
-            "hex-retired-commands-{}-{}",
+            "mumble-retired-commands-{}-{}",
             std::process::id(),
             SETTINGS_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
@@ -1349,7 +1349,7 @@ mod tests {
     #[test]
     fn retired_voice_action_settings_load_cleanly_and_survive_saves() {
         let directory = std::env::temp_dir().join(format!(
-            "hex-retired-voice-action-{}-{}",
+            "mumble-retired-voice-action-{}-{}",
             std::process::id(),
             SETTINGS_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));

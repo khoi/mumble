@@ -335,7 +335,7 @@ pub(crate) fn install<S: 'static>(app: &mut rune::App<S>) -> HudSender {
     let model = IndicatorModel::new(dot_scope::lab(), now);
     let overlay = app.overlay(
         OverlaySpec {
-            name: "hex-hud",
+            name: "mumble-hud",
             size: WINDOW,
             edge: ScreenEdge::Top,
             margin: 0.0,
@@ -583,7 +583,7 @@ impl Compositor<Hud> for HudCompositor {
         self.animating.load(Ordering::Acquire)
     }
 
-    /// The view is empty, so Rune's UI pass is skipped: Hex's own pass
+    /// The view is empty, so Rune's UI pass is skipped: Mumble's own pass
     /// clears the target.
     fn render(&mut self, f: &mut Frame<'_, Hud>) {
         let reduce = f.rt.reduced_motion;
@@ -660,7 +660,7 @@ impl Painter {
             source.to_owned()
         };
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("hex hud"),
+            label: Some("mumble hud"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
         });
         let buffer = |label, size: u64| {
@@ -672,8 +672,8 @@ impl Painter {
             })
         };
         let dot_uniforms =
-            (!immediates).then(|| buffer("hex hud dot uniforms", u64::from(DOT_UNIFORM_BYTES)));
-        let dots = buffer("hex hud dots", DOT_BYTES);
+            (!immediates).then(|| buffer("mumble hud dot uniforms", u64::from(DOT_UNIFORM_BYTES)));
+        let dots = buffer("mumble hud dots", DOT_BYTES);
         let entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -697,16 +697,16 @@ impl Painter {
             });
         }
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("hex hud"),
+            label: Some("mumble hud"),
             entries: &entries,
         });
         let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("hex hud"),
+            label: Some("mumble hud"),
             layout: &layout,
             entries: &bindings,
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("hex hud"),
+            label: Some("mumble hud"),
             bind_group_layouts: &[Some(&layout)],
             immediate_size: if immediates { DOT_UNIFORM_BYTES } else { 0 },
         });
@@ -795,7 +795,7 @@ impl Painter {
         uniforms: &DotUniforms,
     ) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("hex hud preview"),
+            label: Some("mumble hud preview"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 depth_slice: None,
@@ -835,7 +835,7 @@ fn clear_pass<'a>(
     view: &wgpu::TextureView,
 ) -> wgpu::RenderPass<'a> {
     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("hex hud"),
+        label: Some("mumble hud"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view,
             depth_slice: None,

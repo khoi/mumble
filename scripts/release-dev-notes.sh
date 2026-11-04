@@ -3,8 +3,8 @@
 # since the previous dev build, from their titles, skipping CI fixes and
 # internal-only changes. The Release workflow runs it without secrets; its
 # dev-notes job checks the result (.github/release/publish-dev-notes.sh) and
-# uploads it to https://anoma.ly/hex/files/dev-notes.json, which
-# https://anoma.ly/hex/dev and the app's update item read.
+# uploads it to https://anoma.ly/mumble/files/dev-notes.json, which
+# https://anoma.ly/mumble/dev and the app's update item read.
 #
 #   release-dev-notes.sh <version> <commit> <out>
 #
@@ -16,9 +16,9 @@ set -euo pipefail
 version=${1:?Usage: release-dev-notes.sh <version> <commit> <out>}
 commit=${2:?Usage: release-dev-notes.sh <version> <commit> <out>}
 out=${3:?Usage: release-dev-notes.sh <version> <commit> <out>}
-repository=https://github.com/anomalyco/hex
-notes_url=${HEX_DEV_NOTES_URL:-https://anoma.ly/hex/files/dev-notes.json}
-manifest_url=${HEX_DEV_MANIFEST_URL:-https://anoma.ly/release/hex/desktop/dev.json}
+repository=https://github.com/khoi/mumble
+notes_url=${MUMBLE_DEV_NOTES_URL:-https://anoma.ly/mumble/files/dev-notes.json}
+manifest_url=${MUMBLE_DEV_MANIFEST_URL:-https://anoma.ly/release/mumble/desktop/dev.json}
 max_builds=40
 max_items=40
 max_bytes=200000
@@ -53,7 +53,7 @@ fi
 # iOS, CI) is not in a dev build.
 app_path='^(src/|crates/|native/|resources/|assets/|app/|packaging/|sdk/commands/|build\.rs$|Cargo\.toml$)'
 test_path='(^tests/|/tests/|_tests\.rs$|/goldens/)'
-# Titles of changes nobody using Hex notices.
+# Titles of changes nobody using Mumble notices.
 internal='^(fix\(ci\)|(ci|chore|test|tests|refactor|docs|build|style)(\([^)]*\))?!?:|release prep|release:|fold |extract |update (feature )?docs|goldens|bump rune|roll in|add code-shape|merge )'
 
 : > "$work/items.jsonl"

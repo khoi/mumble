@@ -1,7 +1,7 @@
 //! Pause a browser that is audibly playing while you dictate, and play it
-//! again only when Hex saw it go silent right after its own pause.
+//! again only when Mumble saw it go silent right after its own pause.
 //!
-//! macOS no longer tells other apps what is playing, so Hex listens to the
+//! macOS no longer tells other apps what is playing, so Mumble listens to the
 //! browsers' own output: the level says whether the system pause reached a
 //! browser, and only that proof allows the play at the end.
 
@@ -44,11 +44,11 @@ const SILENT_WINDOWS: usize = 2;
 /// The last listen before play.
 const RESUME_LISTEN: Duration = Duration::from_millis(300);
 /// After play, the browser must sound within this many windows (2 s). If it
-/// does not, the play reached something else, so Hex pauses it again.
+/// does not, the play reached something else, so Mumble pauses it again.
 const PLAY_CHECK_WINDOWS: usize = 20;
 /// A browser that closed its output opens it again within this many windows
 /// of play (about 200 ms on Brave). If none does, the play reached another
-/// app, so Hex pauses it again sooner.
+/// app, so Mumble pauses it again sooner.
 const OPEN_CHECK_WINDOWS: usize = 10;
 /// How long a new tap may take to deliver its first cycle.
 const TAP_WARM_UP: Duration = Duration::from_millis(300);
@@ -71,7 +71,7 @@ pub(crate) trait BrowserAudio {
     fn output_closed(&mut self) -> bool;
 }
 
-/// Proof that Hex paused a sounding browser; only this allows play.
+/// Proof that Mumble paused a sounding browser; only this allows play.
 #[derive(Debug)]
 pub(crate) struct PausedBrowser(());
 
@@ -255,7 +255,7 @@ impl BrowserTap {
         let description = unsafe {
             let description =
                 CATapDescription::initMonoMixdownOfProcesses(CATapDescription::alloc(), &processes);
-            description.setName(&NSString::from_str("Hex browser level"));
+            description.setName(&NSString::from_str("Mumble browser level"));
             description.setPrivate(true);
             description.setMuteBehavior(CATapMuteBehavior::Unmuted);
             description
@@ -277,8 +277,8 @@ impl BrowserTap {
         let tap_uid = unsafe { description.UUID() }.UUIDString();
         source.aggregate = create_tap_aggregate(
             &tap_uid,
-            "Hex Browser Level",
-            &format!("anomaly.hex.browser-tap.{}", std::process::id()),
+            "Mumble Browser Level",
+            &format!("anomaly.mumble.browser-tap.{}", std::process::id()),
         )?;
         let peak = source.peak.clone();
         let callbacks = source.callbacks.clone();

@@ -14,14 +14,14 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 bundle=$1
 dmg=$2
 volume=$3
-team_id=${HEX_TEAM_ID:?Set HEX_TEAM_ID to the Apple Developer signing team}
-identity=$(hex_codesign_identity "$team_id")
-work=$(mktemp -d "${TMPDIR:-/tmp}/hex-notarize.XXXXXX")
+team_id=${MUMBLE_TEAM_ID:?Set MUMBLE_TEAM_ID to the Apple Developer signing team}
+identity=$(mumble_codesign_identity "$team_id")
+work=$(mktemp -d "${TMPDIR:-/tmp}/mumble-notarize.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
 # Notarize the app first so its ticket can be stapled inside the distributable DMG.
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$bundle" "$work/app.zip"
-hex_notarize "$work/app.zip"
+mumble_notarize "$work/app.zip"
 xcrun stapler staple "$bundle"
 xcrun stapler validate "$bundle"
 
@@ -33,7 +33,7 @@ cp "$root/packaging/macos/dmg/DS_Store" "$work/staging/.DS_Store"
 rm -f "$dmg"
 hdiutil create -quiet -fs APFS -format ULFO -volname "$volume" -srcfolder "$work/staging" "$dmg"
 codesign --force --timestamp --sign "$identity" "$dmg"
-hex_notarize "$dmg"
+mumble_notarize "$dmg"
 xcrun stapler staple "$dmg"
 xcrun stapler validate "$dmg"
 spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"

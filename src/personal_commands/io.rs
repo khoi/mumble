@@ -1,6 +1,6 @@
 //! The asynchronous host operations behind a script's `fetch`,
 //! `node:child_process`, and timers. JavaScript starts an operation with a
-//! resolve and reject pair (`hex:io`'s `start`); the work runs on its own
+//! resolve and reject pair (`mumble:io`'s `start`); the work runs on its own
 //! thread, and [`Io::wait`] hands finished operations back to the script
 //! thread, which settles them so QuickJS's job queue can go on. Everything
 //! an operation started ends with the transformation call that started it.
@@ -308,7 +308,7 @@ impl Io {
                     let sender = self.sender.clone();
                     let loopback_only = self.loopback_only;
                     let spawned = thread::Builder::new()
-                        .name("hex-config-fetch".into())
+                        .name("mumble-config-fetch".into())
                         .spawn(move || {
                             let outcome = fetch::send(request, timeout, loopback_only);
                             FETCHES.fetch_sub(1, Ordering::AcqRel);
@@ -395,7 +395,7 @@ fn reserve(counter: &AtomicUsize, limit: usize) -> bool {
     false
 }
 
-/// The `hex:io` object: `start(kind, spec, resolve, reject)` returns an
+/// The `mumble:io` object: `start(kind, spec, resolve, reject)` returns an
 /// operation id, `cancel(id)` gives one up, and `decode`/`encode` convert
 /// UTF-8 bodies.
 pub fn bindings<'js>(ctx: &Ctx<'js>, io: &Shared) -> rquickjs::Result<Object<'js>> {
@@ -500,14 +500,14 @@ fn refuse_unless(
         return Ok(());
     }
     tracing::warn!(
-        target: "hex_config",
+        target: "mumble_config",
         capability,
-        "a transformation needs permission; allow it in Hex's Output pane"
+        "a transformation needs permission; allow it in Mumble's Output pane"
     );
     Err(Exception::throw_message(
         ctx,
         &format!(
-            "Hex has not allowed this config to {action}. Allow it in Hex's Output pane; Hex asks again whenever the config changes"
+            "Mumble has not allowed this config to {action}. Allow it in Mumble's Output pane; Mumble asks again whenever the config changes"
         ),
     ))
 }

@@ -23,7 +23,7 @@ pub enum KeySoundStyle {
     Felt,
     /// Rounded 22 ms low-pitch warm droplet.
     Soft,
-    /// Silent typing (only Hex's dictation tones play).
+    /// Silent typing (only Mumble's dictation tones play).
     Silent,
 }
 
@@ -374,7 +374,7 @@ pub fn play(tone: Tone) {
 pub enum SoundSet {
     /// One kalimba-like voice playing one motif across a dictation.
     Signature = 0,
-    /// The sounds Hex played before the signature set. It has no done tone,
+    /// The sounds Mumble played before the signature set. It has no done tone,
     /// and errors play macOS Basso as they did.
     #[default]
     Classic = 1,
@@ -401,7 +401,7 @@ impl SoundSet {
     /// The English name Settings shows, translated where it is shown.
     pub fn name(self) -> &'static str {
         match self {
-            Self::Signature => "Hex signature",
+            Self::Signature => "Mumble signature",
             Self::Classic => "Classic",
             Self::Click => "Click",
             Self::Soft => "Soft tone",
@@ -415,7 +415,7 @@ impl SoundSet {
     pub fn character(self) -> &'static str {
         match self {
             Self::Signature => "A kalimba motif that rises and comes home",
-            Self::Classic => "The tones Hex first shipped with",
+            Self::Classic => "The tones Mumble first shipped with",
             Self::Click => "Mechanical key clicks",
             Self::Soft => "Warm, rounded blips",
             Self::Wood => "Soft marimba and hollow wood blocks",
@@ -1128,7 +1128,7 @@ pub(crate) fn mix_offline_wav(
     Ok(())
 }
 
-/// Decodes one of Hex's bundled 16-bit PCM sounds.
+/// Decodes one of Mumble's bundled 16-bit PCM sounds.
 fn decode_wav(bytes: &'static [u8]) -> Result<SamplesBuffer> {
     let reader =
         hound::WavReader::new(Cursor::new(bytes)).wrap_err("could not decode feedback audio")?;
@@ -1281,7 +1281,7 @@ mod tests {
 
         // Offline mix with gain 0.0 writes pure silence; gain 0.5 writes audible cues.
         let dir = std::env::temp_dir().join(format!(
-            "hex-sfx-test-{}-{}",
+            "mumble-sfx-test-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1573,11 +1573,11 @@ mod tests {
 
     /// Times the default output's tone path without recording it: from the
     /// request to the mixer's first pull of the tone, plus one output buffer
-    /// until that sample is presented. `HEX_TONE_PATH=legacy` measures the
+    /// until that sample is presented. `MUMBLE_TONE_PATH=legacy` measures the
     /// previous path (rodio's default 50 ms buffer). Route the default output
     /// to a virtual device first so nothing sounds aloud.
     #[test]
-    #[ignore = "opens the native default output; route it to a silent device or set HEX_TONE_MUTED"]
+    #[ignore = "opens the native default output; route it to a silent device or set MUMBLE_TONE_MUTED"]
     fn native_start_tone_path_latency() {
         use std::sync::Mutex;
 
@@ -1607,9 +1607,9 @@ mod tests {
             }
         }
 
-        let legacy = std::env::var("HEX_TONE_PATH").is_ok_and(|path| path == "legacy");
+        let legacy = std::env::var("MUMBLE_TONE_PATH").is_ok_and(|path| path == "legacy");
         // A muted probe times a real speaker path without sounding.
-        let gain = if std::env::var_os("HEX_TONE_MUTED").is_some() {
+        let gain = if std::env::var_os("MUMBLE_TONE_MUTED").is_some() {
             0.0
         } else {
             1.0

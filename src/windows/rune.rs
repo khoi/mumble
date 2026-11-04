@@ -1,4 +1,4 @@
-//! Hex on Windows: one tray process per login session.
+//! Mumble on Windows: one tray process per login session.
 //!
 //! - The main thread runs Rune's event loop and the window; the Rune tray
 //!   runs on its own thread.
@@ -40,7 +40,7 @@ use crate::history::History;
 use crate::rune_ui::Ui;
 use crate::windows::app::WindowsDesktopHost;
 
-/// The tray icon: the white Hex mark as raw 32×32 RGBA, recolored black for
+/// The tray icon: the white Mumble mark as raw 32×32 RGBA, recolored black for
 /// a light taskbar ([`tray_icon_pixels`]).
 const TRAY_ICON_SIZE: u32 = 32;
 const TRAY_ICON_RGBA: &[u8] = include_bytes!("../../resources/windows/tray-32.rgba");
@@ -64,11 +64,11 @@ pub(crate) enum Request {
     },
     /// The window saved `settings.json`; adopt it.
     ReloadSettings,
-    /// The tray's Enable / Disable Hex.
+    /// The tray's Enable / Disable Mumble.
     ToggleListening,
     /// The tray's Paste last dictation, into the app its menu covered.
     PasteLast,
-    /// The window's Quit Hex: stop the listener, then end the app.
+    /// The window's Quit Mumble: stop the listener, then end the app.
     Quit,
 }
 
@@ -104,7 +104,7 @@ type Wake = Arc<dyn Fn() + Send + Sync>;
 struct Shared {
     published: Mutex<Option<Arc<Published>>>,
     wakers: Mutex<Vec<Wake>>,
-    /// Where `hex` dictation commands go while a listener runs.
+    /// Where `mumble` dictation commands go while a listener runs.
     listener: Mutex<Option<mpsc::Sender<crate::windows::dictation::ListenerCommand>>>,
 }
 
@@ -120,7 +120,7 @@ impl RuntimeHandle {
     pub(crate) fn send(&self, request: Request) -> Result<()> {
         self.requests
             .send(request)
-            .map_err(|_| eyre!("Hex's runtime stopped"))
+            .map_err(|_| eyre!("Mumble's runtime stopped"))
     }
 
     pub(crate) fn published(&self) -> Option<Arc<Published>> {
@@ -185,10 +185,10 @@ pub fn open(event_path: PathBuf, shutdown: &'static AtomicBool, start_hidden: bo
             };
             Some(Arc::new(tray))
         }
-        // Without a tray, closing the window quits: Hex must not run on
+        // Without a tray, closing the window quits: Mumble must not run on
         // with no way back to it.
         Err(error) => {
-            tracing::warn!(%error, "Windows system tray is unavailable; closing Hex will quit");
+            tracing::warn!(%error, "Windows system tray is unavailable; closing Mumble will quit");
             None
         }
     };
@@ -202,14 +202,14 @@ pub fn open(event_path: PathBuf, shutdown: &'static AtomicBool, start_hidden: bo
             shared: shared.clone(),
             history: history.clone(),
         })
-        .map_err(|_| eyre!("the Hex runtime already started"))?;
+        .map_err(|_| eyre!("the Mumble runtime already started"))?;
     let (control_calls, control_receiver) = mpsc::sync_channel(8);
     let local_api = crate::local_api::LocalApi::start_for_app(&event_path, control_calls, None);
     let quit = window.clone();
     let runtime_tray = tray.clone();
     let runtime_shared = shared.clone();
     let runtime = std::thread::Builder::new()
-        .name("hex-runtime".into())
+        .name("mumble-runtime".into())
         .spawn(move || {
             run_runtime(
                 event_path,
@@ -325,7 +325,7 @@ fn runtime_handle() -> RuntimeHandle {
         .expect("the runtime is set before control starts")
 }
 
-/// The Windows adapter `hex` control commands from the local API run
+/// The Windows adapter `mumble` control commands from the local API run
 /// through ([`crate::control::host`]).
 struct WindowsControl {
     runtime: RuntimeHandle,
@@ -333,7 +333,7 @@ struct WindowsControl {
     window: Mutex<rune::AppHandle<Ui>>,
 }
 
-/// Lets the local API write the reply before Hex quits.
+/// Lets the local API write the reply before Mumble quits.
 const QUIT_GRACE: Duration = Duration::from_millis(250);
 
 impl WindowsControl {
@@ -354,12 +354,12 @@ impl WindowsControl {
         let listener = lock(&self.shared.listener).clone().ok_or_else(|| {
             ControlError::new(
                 "not-ready",
-                "Hex is not listening; turn it on in the tray or the window",
+                "Mumble is not listening; turn it on in the tray or the window",
             )
         })?;
         listener
             .send(command)
-            .map_err(|_| ControlError::new("busy", "Hex's listener stopped; try again"))
+            .map_err(|_| ControlError::new("busy", "Mumble's listener stopped; try again"))
     }
 }
 
@@ -368,7 +368,7 @@ impl crate::control::host::Host for WindowsControl {
         let published = self
             .runtime
             .published()
-            .ok_or_else(|| ControlError::new("not-ready", "Hex is starting; try again"))?;
+            .ok_or_else(|| ControlError::new("not-ready", "Mumble is starting; try again"))?;
         Ok(crate::control::host::HostState {
             settings: published.settings.clone(),
             listener: published.listener.clone(),
@@ -452,7 +452,7 @@ impl crate::control::host::Host for WindowsControl {
         })
     }
 
-    /// `hex restart` opens Hex again once this one has gone.
+    /// `mumble restart` opens Mumble again once this one has gone.
     fn quit(&self, _restart: bool) -> std::result::Result<(), ControlError> {
         let runtime = self.runtime.clone();
         std::thread::spawn(move || {
@@ -582,7 +582,7 @@ fn create_tray(window: rune::AppHandle<Ui>) -> Result<rune::Tray> {
         tray_icon_pixels(taskbar_is_light()),
     );
     let view = TrayView::default();
-    let spec = rune::TraySpec::new("hex", "Hex", icon)
+    let spec = rune::TraySpec::new("mumble", "Mumble", icon)
         .tooltip(view.tooltip())
         .menu(view.menu());
     let tray = rune::Tray::new(spec, move |event| match event {

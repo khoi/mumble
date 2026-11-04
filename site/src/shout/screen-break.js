@@ -227,7 +227,7 @@ export class ScreenBreak {
       targetCtx.font = `700 14px ${SANS}`
       targetCtx.textBaseline = "middle"
       targetCtx.textAlign = "left"
-      targetCtx.fillText("Hex", bx + 24, by + br.height / 2)
+      targetCtx.fillText("Mumble", bx + 24, by + br.height / 2)
       targetCtx.strokeStyle = "#f4f4f6"
       targetCtx.lineWidth = 1.6
       targetCtx.strokeRect(bx + 2, by + br.height / 2 - 6, 12, 12)

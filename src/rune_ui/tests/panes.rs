@@ -69,7 +69,7 @@ fn settings_rows_follow_each_os() {
         "terminal-paste",
         "toggle-listening",
         "enable-on-launch",
-        "hex-mic-driver",
+        "mumble-mic-driver",
         "command-model-notice",
     ] {
         assert!(!present(&mac, key), "macOS General has no {key}");
@@ -444,7 +444,7 @@ fn the_cancel_shortcut_shows_in_toggle_and_restores_escape() {
     );
 
     // On Wayland the portal would hold the key for good: the row points
-    // to `hex dictation cancel` instead of recording one.
+    // to `mumble dictation cancel` instead of recording one.
     let portal = runtime("portal-toggle-cancel", true, PANE_SIZE);
     assert!(portal.find("cancel-shortcut").is_some());
     assert!(portal.find("cancel-hotkey").is_none());
@@ -775,7 +775,7 @@ fn esc_stays_on_the_recorder_however_many_keys_are_held() {
 }
 
 #[test]
-fn the_practice_game_follows_hex_s_own_dictation_on_every_os() {
+fn the_practice_game_follows_mumble_s_own_dictation_on_every_os() {
     for scene in ["mac-onboarding-try", "onboarding-try"] {
         let mut rt = runtime(scene, true, PANE_SIZE);
         let holding = |rt: &Runtime<Ui>| {
@@ -788,7 +788,10 @@ fn the_practice_game_follows_hex_s_own_dictation_on_every_os() {
         assert!(!holding(&rt));
         onboarding::input(&mut rt.state, Input::Dictation(Observation::Started));
         refresh(&mut rt);
-        assert!(holding(&rt), "{scene}: the shortcut held, as Hex records");
+        assert!(
+            holding(&rt),
+            "{scene}: the shortcut held, as Mumble records"
+        );
         onboarding::input(&mut rt.state, Input::Dictation(Observation::Transcribing));
         refresh(&mut rt);
         assert!(!holding(&rt), "{scene}: released");
@@ -973,7 +976,7 @@ fn a_staged_dev_build_lists_its_first_changes_under_the_update() {
     if let Some(view) = &mut rt.state.view {
         view.update_notes = Some(crate::desktop::host::UpdateNotes {
             items: ["One", "Two", "Three", "Four"].map(String::from).to_vec(),
-            url: "https://anoma.ly/hex/dev#0.0.0-dev-2".into(),
+            url: "https://anoma.ly/mumble/dev#0.0.0-dev-2".into(),
         });
     }
     refresh(&mut rt);
@@ -1010,9 +1013,9 @@ fn the_mac_first_run_asks_each_permission_then_practices() {
         rt.state.tour.as_ref().unwrap().flow.view().practice,
         Practice::Landed
     );
-    // Done leaves the game at any point; Start using Hex closes onboarding.
+    // Done leaves the game at any point; Start using Mumble closes onboarding.
     tap(&mut rt, "done");
-    tap(&mut rt, "start-using-hex");
+    tap(&mut rt, "start-using-mumble");
     assert!(rt.state.tour.is_none());
     assert!(rt.state.first_run.is_none());
 }
@@ -1028,12 +1031,12 @@ fn a_listener_that_will_not_start_relaunches_once_then_asks_to_reopen() {
     );
     assert_eq!(asked(&rt), [PlatformRequest::Relaunch]);
     let mut rt = runtime("mac-onboarding-reopen", true, PANE_SIZE);
-    tap(&mut rt, "reopen-hex");
+    tap(&mut rt, "reopen-mumble");
     assert_eq!(asked(&rt), [PlatformRequest::Relaunch]);
 }
 
 #[test]
-fn a_grant_waiting_for_a_restart_makes_setup_restart_hex() {
+fn a_grant_waiting_for_a_restart_makes_setup_restart_mumble() {
     let mut rt = runtime("mac-onboarding-restart", true, PANE_SIZE);
     assert_eq!(rt.state.tour.as_ref().unwrap().flow.step(), Step::Setup);
     tap(&mut rt, "restart");
@@ -1047,7 +1050,7 @@ fn a_refused_microphone_points_to_system_settings() {
     assert!(
         shown
             .iter()
-            .any(|text| text == "Switch on Hex in System Settings")
+            .any(|text| text == "Switch on Mumble in System Settings")
     );
     tap(&mut rt, "mic-pill-allow");
     assert_eq!(
@@ -1063,7 +1066,7 @@ fn windows_onboarding_asks_only_for_the_microphone_switch() {
     let mut rt = runtime("windows-onboarding-microphone", true, PANE_SIZE);
     let shown = texts(&rt);
     assert!(
-        shown.iter().any(|text| text == "Let Hex hear you"),
+        shown.iter().any(|text| text == "Let Mumble hear you"),
         "{shown:?}"
     );
     assert!(rt.find("ax-row").is_none(), "no Accessibility on Windows");
@@ -1091,7 +1094,7 @@ fn stale_permissions_offer_fix_it_and_reset_entries_across_panes() {
     assert!(
         shown
             .iter()
-            .any(|text| text == "An older Hex entry can keep this off")
+            .any(|text| text == "An older Mumble entry can keep this off")
     );
     tap(&mut rt, "ax-pill-allow");
     assert_eq!(
@@ -1109,7 +1112,7 @@ fn stale_permissions_offer_fix_it_and_reset_entries_across_panes() {
     assert!(
         shown
             .iter()
-            .any(|text| text == "An older Hex entry can keep this off")
+            .any(|text| text == "An older Mumble entry can keep this off")
     );
     tap(&mut rt, "permission-accessibility-allow");
     assert_eq!(
@@ -1169,7 +1172,7 @@ fn voice_filter_saves_the_mode_and_applies_the_tuning_live() {
     let mut rt = runtime("mac-voice-filter", true, PANE_SIZE);
     tap(&mut rt, "fun-mode/segment1");
     assert_eq!(
-        rt.state.settings.experimental.hex_microphone_mode,
+        rt.state.settings.experimental.mumble_microphone_mode,
         VoiceFilterMode::Muted
     );
     assert!(matches!(
@@ -1215,12 +1218,12 @@ fn try_it_records_and_plays_through_the_host() {
     assert_eq!(
         asked(&rt),
         [
-            PlatformRequest::HexMicrophoneDemo(DemoRequest::Record),
-            PlatformRequest::HexMicrophoneDemo(DemoRequest::Play(
-                crate::audio::hex_microphone::DemoPlaybackTrack::CallHears
+            PlatformRequest::MumbleMicrophoneDemo(DemoRequest::Record),
+            PlatformRequest::MumbleMicrophoneDemo(DemoRequest::Play(
+                crate::audio::mumble_microphone::DemoPlaybackTrack::CallHears
             )),
-            PlatformRequest::HexMicrophoneDemo(DemoRequest::SelectSource(
-                crate::audio::hex_microphone::DemoSourceKind::Recording
+            PlatformRequest::MumbleMicrophoneDemo(DemoRequest::SelectSource(
+                crate::audio::mumble_microphone::DemoSourceKind::Recording
             )),
         ]
     );
@@ -1228,7 +1231,7 @@ fn try_it_records_and_plays_through_the_host() {
     tap(&mut rt, "fun-play-call-hears");
     assert_eq!(
         asked(&rt),
-        [PlatformRequest::HexMicrophoneDemo(
+        [PlatformRequest::MumbleMicrophoneDemo(
             DemoRequest::StopPlayback
         )]
     );
@@ -1242,7 +1245,7 @@ fn hud_lab_and_activity_stay_out_of_the_window_sidebar() {
     assert!(rt.find("nav-activity").is_none());
     assert!(
         rt.find("nav-voice-filter").is_some(),
-        "Hex Microphone is on"
+        "Mumble Microphone is on"
     );
     let rt = runtime("mac-hud-lab", true, PANE_SIZE);
     assert!(rt.find("nav-hud-lab").is_none());
@@ -1252,13 +1255,13 @@ fn hud_lab_and_activity_stay_out_of_the_window_sidebar() {
 #[test]
 fn voice_filter_shows_only_while_its_labs_toggle_is_on() {
     let mut rt = runtime("mac-settings", true, PANE_SIZE);
-    rt.state.settings.experimental.hex_microphone = false;
-    rt.state.platform.hex_microphone = None;
+    rt.state.settings.experimental.mumble_microphone = false;
+    rt.state.platform.mumble_microphone = None;
     refresh(&mut rt);
     assert!(rt.find("nav-voice-filter").is_none());
     tap(&mut rt, "nav-labs");
     tap(&mut rt, "lab-voice-filter");
-    assert!(rt.state.settings.experimental.hex_microphone);
+    assert!(rt.state.settings.experimental.mumble_microphone);
     assert!(
         rt.find("nav-voice-filter").is_some(),
         "a top-level sidebar item"
@@ -1322,8 +1325,8 @@ fn hud_lab_picks_dot_scope_processing_placement_and_level() {
 #[test]
 fn labs_is_one_flat_list_of_toggles_off_by_default() {
     let mut rt = runtime("mac-settings", true, (980.0, 2000.0));
-    rt.state.settings.experimental.hex_microphone = false;
-    rt.state.platform.hex_microphone = None;
+    rt.state.settings.experimental.mumble_microphone = false;
+    rt.state.platform.mumble_microphone = None;
     refresh(&mut rt);
     for hidden in [
         "nav-voice-filter",
@@ -1338,7 +1341,7 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
     assert!(rt.find("restart-onboarding").is_some());
     let settings = &rt.state.settings;
     for (row, on) in [
-        ("lab-voice-filter", settings.experimental.hex_microphone),
+        ("lab-voice-filter", settings.experimental.mumble_microphone),
         ("lab-playground", settings.labs.playground),
         ("lab-live-text", settings.labs.live_text),
     ] {
@@ -1348,7 +1351,7 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
     assert!(rt.find("lab-terminal-paste").is_none(), "Windows only");
 
     tap(&mut rt, "lab-voice-filter");
-    assert!(rt.state.settings.experimental.hex_microphone);
+    assert!(rt.state.settings.experimental.mumble_microphone);
     assert!(
         rt.find("nav-voice-filter").is_some(),
         "Voice Filter joins the main sidebar"
@@ -1559,27 +1562,27 @@ fn ducking_goldens() {
 fn an_installed_driver_keeps_the_voice_filter_on() {
     let mut rt = runtime("mac-voice-filter", true, (980.0, 1400.0));
     assert!(fun_driver_installed(&rt));
-    rt.state.settings.experimental.hex_microphone = false;
+    rt.state.settings.experimental.mumble_microphone = false;
     refresh(&mut rt);
     assert!(
         rt.find("nav-voice-filter").is_some(),
         "the driver keeps it in the sidebar"
     );
-    assert!(rt.find("fun-hex-microphone").is_some());
+    assert!(rt.find("fun-mumble-microphone").is_some());
     tap(&mut rt, "uninstall");
     assert!(matches!(
         asked(&rt).last(),
-        Some(PlatformRequest::UninstallHexMicrophone)
+        Some(PlatformRequest::UninstallMumbleMicrophone)
     ));
     tap(&mut rt, "nav-labs");
     tap(&mut rt, "lab-voice-filter");
     assert!(
-        !rt.state.settings.experimental.hex_microphone,
+        !rt.state.settings.experimental.mumble_microphone,
         "the toggle is locked"
     );
     assert!(rt.find("nav-voice-filter").is_some());
 
-    if let Some(driver) = &mut rt.state.platform.hex_microphone {
+    if let Some(driver) = &mut rt.state.platform.mumble_microphone {
         driver.driver_bundle_installed = false;
     }
     refresh(&mut rt);
@@ -1589,7 +1592,7 @@ fn an_installed_driver_keeps_the_voice_filter_on() {
     );
     tap(&mut rt, "lab-voice-filter");
     assert!(
-        rt.state.settings.experimental.hex_microphone,
+        rt.state.settings.experimental.mumble_microphone,
         "without the driver the toggle works"
     );
 }
@@ -1597,7 +1600,7 @@ fn an_installed_driver_keeps_the_voice_filter_on() {
 fn fun_driver_installed(rt: &rune::Runtime<Ui>) -> bool {
     rt.state
         .platform
-        .hex_microphone
+        .mumble_microphone
         .as_ref()
         .is_some_and(|status| status.driver_bundle_installed)
 }

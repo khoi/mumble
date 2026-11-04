@@ -1,7 +1,7 @@
 //! The macOS window's host: the runtime thread `macos_rune` starts in this
 //! process, which owns model preparation and publishes the listener, model,
 //! update, and settings state, plus the OS-only work the panes ask for
-//! (permissions, the login item, Hex Microphone).
+//! (permissions, the login item, Mumble Microphone).
 //!
 //! Shortcut capture stays in the window: an AppKit local event
 //! monitor records the chord, because a modifier-only binding such as Option
@@ -42,7 +42,7 @@ pub(super) use crate::macos_rune::{Request, ShortcutTarget};
 pub(super) const HOST_SAVES_SHORTCUTS: bool = false;
 pub(super) const RECORDS_KEY_EVENTS: bool = false;
 pub(super) const TERMINAL_PASTE: bool = false;
-/// Quit Hex lives in the menu bar and the app menu (⌘Q).
+/// Quit Mumble lives in the menu bar and the app menu (⌘Q).
 pub(super) const QUIT_IN_WINDOW: bool = false;
 
 /// How often the native host re-reads permissions and driver state.
@@ -95,7 +95,7 @@ impl Backend {
             ) => crate::macos_rune::update_action(&action),
             request => match &self.runtime {
                 Some(runtime) => runtime.send(request),
-                None => Err(eyre!("Hex's runtime is not running")),
+                None => Err(eyre!("Mumble's runtime is not running")),
             },
         }
     }
@@ -121,7 +121,7 @@ impl Backend {
     pub(super) fn error(&self) -> Option<String> {
         self.runtime
             .is_none()
-            .then(|| "Hex's runtime is not running".into())
+            .then(|| "Mumble's runtime is not running".into())
     }
 
     pub(super) fn state(&self) -> Option<HostState> {
@@ -587,7 +587,7 @@ impl MacHost {
     }
 
     fn runtime(&self) -> Result<RuntimeHandle, String> {
-        crate::macos_rune::runtime().ok_or_else(|| "Hex's runtime is not running".into())
+        crate::macos_rune::runtime().ok_or_else(|| "Mumble's runtime is not running".into())
     }
 }
 
@@ -617,7 +617,7 @@ impl NativeHost for MacHost {
             }
             PlatformRequest::Permission(PermissionAction::Restart) => {
                 if !crate::desktop::onboarding::spawn_relaunch() {
-                    return Err("could not restart Hex".into());
+                    return Err("could not restart Mumble".into());
                 }
                 crate::macos_rune::quit();
             }
@@ -638,10 +638,10 @@ impl NativeHost for MacHost {
             PlatformRequest::OpenLoginItemSettings => {
                 let _ = self.request_login(LoginItemRequest::OpenSettings);
             }
-            PlatformRequest::InstallHexMicrophone
-            | PlatformRequest::UninstallHexMicrophone
+            PlatformRequest::InstallMumbleMicrophone
+            | PlatformRequest::UninstallMumbleMicrophone
             | PlatformRequest::SetTuning(_)
-            | PlatformRequest::HexMicrophoneDemo(_) => voice_filter_request(request),
+            | PlatformRequest::MumbleMicrophoneDemo(_) => voice_filter_request(request),
             PlatformRequest::Relaunch => {
                 if let Err(error) = crate::desktop::onboarding::record_relaunch(
                     crate::desktop::onboarding::unix_ms(),
@@ -649,7 +649,7 @@ impl NativeHost for MacHost {
                     tracing::warn!(%error, "could not record the onboarding relaunch");
                 }
                 if !crate::desktop::onboarding::spawn_relaunch() {
-                    return Err("could not relaunch Hex".into());
+                    return Err("could not relaunch Mumble".into());
                 }
                 crate::macos_rune::quit();
             }

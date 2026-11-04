@@ -1,35 +1,35 @@
-# Hex transforms
+# Mumble transforms
 
 Transforms are JavaScript or TypeScript functions that change dictated text
-before Hex pastes it. This page is written for coding agents; it is the whole
-API. Served at https://anoma.ly/hex/docs/transforms.
+before Mumble pastes it. This page is written for coding agents; it is the whole
+API. Served at https://anoma.ly/mumble/docs/transforms.
 
 ## Where they live
 
-- The config is `~/.config/hex/hex.config.ts` (or `hex.config.js`; keep one).
-  Run `hex commands init` to create it with `hex.d.ts` (types), `AGENTS.md`,
+- The config is `~/.config/mumble/mumble.config.ts` (or `mumble.config.js`; keep one).
+  Run `mumble commands init` to create it with `mumble.d.ts` (types), `AGENTS.md`,
   and `tsconfig.json`. Typecheck with `npx -y -p typescript tsc` in that folder.
-- Hex runs it in an embedded JavaScript engine (QuickJS, ES2023 modules) and
+- Mumble runs it in an embedded JavaScript engine (QuickJS, ES2023 modules) and
   reloads it about a third of a second after a file in the folder changes. A
-  config that fails to load keeps the previous one; the error shows in Hex.
+  config that fails to load keeps the previous one; the error shows in Mumble.
 - TypeScript works by erasing types. Enums, namespaces, constructor parameter
   properties, and `import x = require()` are rejected.
-- Imports: `@hex/commands`, `node:child_process`, `node:util`, and files in the
+- Imports: `@mumble/commands`, `node:child_process`, `node:util`, and files in the
   folder by relative path (`./lib.ts`, `./data.json`). No npm packages. Imports
   load with the config; dynamic `import()` later is refused.
-- A transform runs only where the person selects it: Hex's Output pane lists
-  the steps, and `hex settings set dictation_processing.default_mode '<json>'`
+- A transform runs only where the person selects it: Mumble's Output pane lists
+  the steps, and `mumble settings set dictation_processing.default_mode '<json>'`
   (or `dictation_processing.modes`) chooses them by id.
 
 ## Config shape
 
 ```ts
-import { defineHexConfig } from "@hex/commands"
+import { defineMumbleConfig } from "@mumble/commands"
 
-export default defineHexConfig({
+export default defineMumbleConfig({
   transformations: {
     "trim-whitespace": {
-      name: "Trim whitespace",          // shown in Hex
+      name: "Trim whitespace",          // shown in Mumble
       description: "Remove leading and trailing whitespace",
       timeout: 1000,                    // optional, milliseconds, 1 to 60000
       transform: (text, context) => text.trim(),
@@ -51,7 +51,7 @@ optional AI rewrite. Don't reuse the built-in ids `lowercase`,
 
 ## What a script has
 
-- Plain JavaScript built-ins, `console.log` (to Hex's log), `setTimeout`,
+- Plain JavaScript built-ins, `console.log` (to Mumble's log), `setTimeout`,
   `clearTimeout`, `queueMicrotask`, `AbortController`, `AbortSignal`
   (`abort`, `timeout`, `any`), and `DOMException`.
 - `fetch`, `Headers`, and `Response` (below).
@@ -87,9 +87,9 @@ await response.text(); await response.json(); await response.arrayBuffer()
 Example, a local model through Ollama:
 
 ```ts
-import { defineHexConfig } from "@hex/commands"
+import { defineMumbleConfig } from "@mumble/commands"
 
-export default defineHexConfig({
+export default defineMumbleConfig({
   transformations: {
     "ollama-tidy": {
       name: "Tidy with Ollama",
@@ -133,10 +133,10 @@ exec(command, options, (error, stdout, stderr) => {})
 - `exec(command, options, callback)` runs `/bin/sh -c command` on macOS and
   Linux, `cmd.exe /d /s /c "command"` on Windows, as Node does.
 - Options: `cwd` (default: the config folder), `env` (added to a minimal
-  environment of `PATH`, `HOME`, user, locale, and temp variables; Hex's own
+  environment of `PATH`, `HOME`, user, locale, and temp variables; Mumble's own
   environment is not passed on; on macOS `PATH` also has `/opt/homebrew/bin`
   and `/usr/local/bin`), `timeout` (ms, then SIGTERM), `maxBuffer` (bytes per
-  stream, default 1 MiB, at most 16 MiB), `signal`, and Hex's addition
+  stream, default 1 MiB, at most 16 MiB), `signal`, and Mumble's addition
   `input`: a string written to stdin, which is then closed. Without `input`,
   stdin is empty.
 - `stdout` and `stderr` are strings (UTF-8). There is no `encoding`, `shell`,
@@ -153,13 +153,13 @@ exec(command, options, (error, stdout, stderr) => {})
 Example, piping the text through a script:
 
 ```ts
-import { defineHexConfig } from "@hex/commands"
+import { defineMumbleConfig } from "@mumble/commands"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
 const run = promisify(execFile)
 
-export default defineHexConfig({
+export default defineMumbleConfig({
   transformations: {
     "house-style": {
       name: "House style",
@@ -174,33 +174,33 @@ export default defineHexConfig({
 
 ## Trust prompt
 
-The first time a config uses `fetch` or `node:child_process`, Hex asks the
+The first time a config uses `fetch` or `node:child_process`, Mumble asks the
 person in its Output pane, listing the hosts and programs it can see written
 literally in the source (`fetch("https://…")`, `execFile("pandoc", …)`),
 otherwise just the capability. The approval is pinned to a hash of every file
 the config loaded: any edit asks again. Until it is allowed, `fetch` rejects
 and `exec`/`execFile` call back with an error saying so, and the transform
-falls back. A config can't approve itself; the approval is stored in Hex's
+falls back. A config can't approve itself; the approval is stored in Mumble's
 own data folder.
 
 On a managed Mac, an organization can turn transforms off
 (`DisableTransforms`) or keep `fetch` on this computer with no programs
-(`RestrictTransformsToLoopback`); see https://anoma.ly/hex/docs/admin.
+(`RestrictTransformsToLoopback`); see https://anoma.ly/mumble/docs/admin.
 
 ## Timeouts, limits, and fallback
 
 - Each transform has `timeout` milliseconds: 1000 by default, 30000 when the
   config uses `fetch` or `node:child_process`, 60000 at most. That limit covers
   everything the transform waits for.
-- When a transform finishes or runs out of time, Hex abandons its requests and
+- When a transform finishes or runs out of time, Mumble abandons its requests and
   ends every program it started, with the program's children (a process group
-  on macOS and Linux, a job object on Windows). Quitting Hex does the same.
+  on macOS and Linux, a job object on Windows). Quitting Mumble does the same.
   Fire-and-forget work does not outlive the transform.
 - At most 8 requests and 4 programs run at once; more wait their turn.
 - If a transform throws, returns something other than a string, or runs out
-  of time, Hex pastes the text it had before the transforms and logs why. It
+  of time, Mumble pastes the text it had before the transforms and logs why. It
   never blocks dictation; the microphone keeps working while it waits.
 - Input and output text are each limited to 48 KiB.
-- Hex logs the host or program, status or exit code, duration, and byte
+- Mumble logs the host or program, status or exit code, duration, and byte
   counts, never the text, request or response bodies, arguments, or
   environment values.

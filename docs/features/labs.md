@@ -5,20 +5,20 @@ for that we built**: they land in Labs, off by default, instead of shipping
 on. Each feature also has an **audience** (`labs::Feature::audience`, one
 `match` beside `on_this_os`, so a new feature must choose): `Everyone` ships
 in every build; `Dev` exists only in dev builds (`dev_build::is_dev_build`:
-debug, local `HEX_LOCAL_BUILD`, test `HEX_TEST_BUILD`, and dev-channel
-`HEX_BUILD_CHANNEL=dev` builds). A stable build never lists, accepts
-(`hex labs on`, `hex settings set`), or runs a Dev feature: `available()`
+debug, local `MUMBLE_LOCAL_BUILD`, test `MUMBLE_TEST_BUILD`, and dev-channel
+`MUMBLE_BUILD_CHANNEL=dev` builds). A stable build never lists, accepts
+(`mumble labs on`, `mumble settings set`), or runs a Dev feature: `available()`
 drops it, its gate reads false even when `settings.json` says on, and the
 saved setting is kept untouched. In dev builds a Dev row carries a quiet
-"Dev" tag, and `hex labs` prints each feature's audience. Every feature
+"Dev" tag, and `mumble labs` prints each feature's audience. Every feature
 below is `Everyone` today. There is no master switch. **Labs** is always the last item in the
 sidebar and lists every Labs feature as one flat row (name, one-line
 description, toggle), each **off by default**, plus Send feedback and Run
 setup again.
 
 ```ts
-Feature             Pane  Toggle (settings.json, hex settings)   On: what it does
-├── Voice Filter    yes   experimental.hex_microphone  (macOS, Linux) Voice Filter joins the sidebar; feeds the Hex Microphone (macOS driver, Linux PipeWire source)
+Feature             Pane  Toggle (settings.json, mumble settings)   On: what it does
+├── Voice Filter    yes   experimental.mumble_microphone  (macOS, Linux) Voice Filter joins the sidebar; feeds the Mumble Microphone (macOS driver, Linux PipeWire source)
 ├── Playground      yes   labs.playground                        a Playground sidebar item and ⇧⌘D open the story browser
 ├── Live text       no    labs.live_text                         provisional words beside the HUD while dictating
 ├── Mouse shortcuts no    labs.mouse_shortcuts         (macOS)   mouse buttons record as shortcuts (#209)
@@ -37,61 +37,61 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Tap or hold      no    labs.tap_or_hold             (macOS, Linux) in Toggle mode, a press held past 300 ms dictates until it lifts; a short tap still locks (#711, #1144)
 ├── Special keys alone no labs.standalone_special_keys (Linux, Windows) Linux: Menu, Pause, Scroll Lock may be a shortcut's key, alone or with modifiers (#767); Windows: Insert, Home, End, Page Up, Page Down may stand alone (#794)
 ├── Section key alone no  labs.section_key_alone       (Linux) the § key, left of 1 on ISO keyboards, may be a shortcut with no modifier (#1050)
-├── Dictation stats no    labs.history_stats           History shows a summary of retained dictations; hex history stats prints it (#790)
+├── Dictation stats no    labs.history_stats           History shows a summary of retained dictations; mumble history stats prints it (#790)
 ├── Copy recent dictations no labs.recent_dictations (macOS) the menu bar's Copy Recent Dictation submenu copies one of the last five dictations (#877)
 ├── Fix results in Output no labs.output_fixes           Output's Try card offers Vocabulary and Fix this, which copies an agent prompt naming the wrong result (#989)
-├── Hide menu bar icon no labs.hide_menu_bar_icon      (macOS) the menu-bar icon hides; shortcuts keep working, reopening Hex shows Settings (#1064)
+├── Hide menu bar icon no labs.hide_menu_bar_icon      (macOS) the menu-bar icon hides; shortcuts keep working, reopening Mumble shows Settings (#1064)
 ├── Restore clipboard on GNOME no labs.gnome_clipboard_restore (Linux) on a Wayland desktop without data-control (GNOME), a paste snapshots and restores
 │                                        the clipboard through XWayland, only while this user's Xwayland already runs; never starts it (#1111)
 └── Terminal paste  no    paste_with_shift             (Windows) paste with Ctrl+Shift+V (#477/#478; Linux keeps it in General)
 
 Settings › Labs                          // labs.page
-├── "Try unfinished features. They may change or break." + Send feedback -> https://github.com/anomalyco/hex/issues/new
-├── Opened by a link (macOS) -> hex://labs opens this page; hex://labs/<feature> also scrolls to the
+├── "Try unfinished features. They may change or break." + Send feedback -> https://github.com/khoi/mumble/issues/new
+├── Opened by a link (macOS) -> mumble://labs opens this page; mumble://labs/<feature> also scrolls to the
 │   feature's row (centred) and pulses it for ~1.4 s (layer_02 fill, then back); it never turns the
-│   feature on. An unknown or absent name -> the page opens and process.log notes it. hex://settings/<pane>
-│   (general, output, history, voice-filter) opens a main pane; one Hex doesn't show -> General.
-│   Links over 2048 bytes are ignored; a test build's scheme is hex-test://
+│   feature on. An unknown or absent name -> the page opens and process.log notes it. mumble://settings/<pane>
+│   (general, output, history, voice-filter) opens a main pane; one Mumble doesn't show -> General.
+│   Links over 2048 bytes are ignored; a test build's scheme is mumble-test://
 ├── One row per feature this OS has -> press flips it, saved at once
 │   ├── A pane feature on -> its pane is a normal top-level sidebar item; off -> hidden entirely
 │   └── Voice Filter while its driver is installed -> on, disabled, "Uninstall the driver in Voice Filter to turn it off."
 └── Run setup again -> replays the onboarding (below)
 
-hex labs                                 // labs.cli; edits settings.json, no running Hex
-├── (list) -> every feature this build has: name, on/off, audience, description, its hex settings key
-├── link <feature> -> macOS: prints hex://labs/<feature> (hex-test:// in a test build); no Copy link on the rows, 20 of them would only add noise
-├── on <feature> | off <feature> -> a running Hex saves and applies it (hex settings set); otherwise settings.json
+mumble labs                                 // labs.cli; edits settings.json, no running Mumble
+├── (list) -> every feature this build has: name, on/off, audience, description, its mumble settings key
+├── link <feature> -> macOS: prints mumble://labs/<feature> (mumble-test:// in a test build); no Copy link on the rows, 20 of them would only add noise
+├── on <feature> | off <feature> -> a running Mumble saves and applies it (mumble settings set); otherwise settings.json
 ├── off voice-filter with the driver installed -> refused: uninstall the driver
-└── hex experiments … -> points at hex labs
+└── mumble experiments … -> points at mumble labs
 
-hex settings set labs.live_text true     // macOS: through the running Hex
+mumble settings set labs.live_text true     // macOS: through the running Mumble
 ```
 
 Checks: `rune_ui::deep_link` tests (parser, every feature's link reads back);
 `a_labs_link_*` in tests/panes.rs and the `mac-labs-link` golden (Linux).
 
 Settings saved before this model may carry `labs.enabled`; it is read and
-ignored, and every feature keeps its own toggle. `hex status` lists the
+ignored, and every feature keeps its own toggle. `mumble status` lists the
 features on (`Labs` line on macOS, `labs` array in the macOS and Linux JSON,
 `labs\t…` on Windows).
 
-Every toggle applies at once, from the window or `hex labs on|off` (issue
+Every toggle applies at once, from the window or `mumble labs on|off` (issue
 568, from @maharshi365): Live text is asked as each dictation starts and its
 plate is always installed (prewarmed only when Live text is on at launch);
 the window always attaches the playground with Rune's own ⇧⌘D off, and its
 sidebar item, ⇧⌘D, the macOS View menu, and story links open it only while
 the toggle is on. Nothing starts at launch for a feature that is off. Limit:
 the macOS window's fixed size is chosen when it is created, so it becomes
-resizable for the playground only after Hex restarts.
+resizable for the playground only after Mumble restarts.
 
 Gate a Labs feature where its work starts (the worker, thread, or capture),
 not only where its UI appears: `labs::live_text()`, `labs::playground()`,
-`labs::vocabulary_biasing()`, or `app_settings::hex_microphone_enabled()`.
+`labs::vocabulary_biasing()`, or `app_settings::mumble_microphone_enabled()`.
 Add a new feature to `labs::Feature` (name, settings key, description, audience), give
-it a row in `rune_ui/labs.rs` and a `hex settings` key, and default it off.
+it a row in `rune_ui/labs.rs` and a `mumble settings` key, and default it off.
 When a feature graduates, remove it from Labs.
 
-Mouse shortcuts off: the recorder ignores mouse buttons, `hex settings`
+Mouse shortcuts off: the recorder ignores mouse buttons, `mumble settings`
 refuses one, and a saved mouse-button shortcut goes back to its default when
 settings load (macOS), with a one-time note in General
 (`mouse_shortcut_notice`). Check:
@@ -103,7 +103,7 @@ General › Advanced › Paste last dictation shows a Restore default shortcut
 button (`restore-paste-last`) whenever the shortcut is not its default
 (Option-Shift-V on macOS, Ctrl+Alt+V elsewhere), and a cleared shortcut's
 row reads "Default shortcut: …". Pressing it saves the default through the
-same checks a recorded shortcut meets; if another Hex shortcut already uses
+same checks a recorded shortcut meets; if another Mumble shortcut already uses
 it, nothing changes and the recorder opens with "Already in use". Off, the
 row is exactly as before. The gate is the row itself (the feature does no
 other work). Check:
@@ -116,7 +116,7 @@ on, a pasted dictation stays on the clipboard. `paste::Paster` reads
 without the nspasteboard.org transient markers (so clipboard managers may
 record it), schedules no 500 ms restore, and drops any earlier snapshot and
 pending restore (`ClipboardRestore::keep`), so a later restoring paste never
-brings back an older clipboard. Into Chromium 155/156, where Hex types the
+brings back an older clipboard. Into Chromium 155/156, where Mumble types the
 text instead of pasting, it also writes the transcript to the clipboard after
 typing. Off, pasting and clipboard restore are exactly as before. Checks:
 `a_kept_paste_leaves_nothing_to_restore` and
@@ -128,7 +128,7 @@ on a Mac with the toggle on.
 
 Copy dictation only (`copy-only`, issue 629, macOS): while on, a finished
 dictation (the dictation shortcut, Dictate without processing, or
-`hex dictation` without `--print`) is put on the clipboard and nothing is
+`mumble dictation` without `--print`) is put on the clipboard and nothing is
 sent to the focused app: no ⌘V, no typed text (Chromium 155/156 included),
 and no 500 ms restore, so selected text is never replaced. The paste worker
 (`dictation_worker::finish_output`) reads `labs::copy_only()` as each dictation's
@@ -225,8 +225,8 @@ Second dictation shortcut (`second-dictation-shortcut`, issue 627, macOS):
 for a Globe/Fn shortcut on the laptop keyboard and another key on an
 external keyboard. While on, General shows a "Second dictation shortcut"
 recorder under Shortcut, unbound by default and clearable
-(`second_dictation_hotkey`, also `hex settings set second_dictation_hotkey
-f5`). It is refused when it shares a key with another Hex shortcut, and the
+(`second_dictation_hotkey`, also `mumble settings set second_dictation_hotkey
+f5`). It is refused when it shares a key with another Mumble shortcut, and the
 others' checks count it while the toggle is on. The gate is
 `AppSettings::active_second_dictation_hotkey`: only on macOS, with the toggle
 on, a binding saved, and no overlap does `RuntimeHotkeys::second_dictation`
@@ -238,7 +238,7 @@ last still comes only from the main machine. The shortcut
 that starts a capture finishes or cancels it, and the other stands down
 until its keys lift while it records. Turning the toggle off or clearing the
 binding mid-capture cancels that capture. Off, nothing is matched,
-suppressed, or checked for it, and Hex is unchanged. Checks:
+suppressed, or checked for it, and Mumble is unchanged. Checks:
 `the_second_dictation_shortcut_needs_its_lab_and_its_own_keys` in
 [app_settings.rs](../../src/app_settings.rs) and
 `the_shortcut_that_starts_a_capture_owns_it` in
@@ -278,7 +278,7 @@ pressed on, so Right ⌘ + Right ⌥ saves as `right-option+right-command` and
 the tray shows R⌥ R⌘; only those keys press it, and the left keys don't.
 The gate is the recorder: `labs::sided_modifier_chords()` is read once when
 a recording starts. Matching, the conflict checks, and saved shortcuts are
-unchanged (chords already store and match sides; `hex settings set` could
+unchanged (chords already store and match sides; `mumble settings set` could
 always save one), a chord with a non-modifier key still records its
 modifiers from either side, and the side picker stays for one-modifier
 shortcuts only. Off, a chord such as ⌥⌘ records from either side exactly as
@@ -311,7 +311,7 @@ finishes its capture, with the usual release tail; a sooner release locks as
 Toggle does. The desktop's key repeats of a held press don't move its start,
 and a release the desktop drops leaves the capture recording until the next
 press finishes it, as before. It applies to the dictation shortcut and
-Dictate without processing, each for the capture it started; `hex dictation`
+Dictate without processing, each for the capture it started; `mumble dictation`
 commands are unchanged. X11 counts a release after its 50 ms auto-repeat
 grace. Windows doesn't have it.
 
@@ -333,19 +333,19 @@ to dictate on GNOME Wayland by remapping it to Menu (GNOME's "Caps Lock is
 also a Menu" keyboard option), or using Pause or Scroll Lock.
 
 ```ts
-hex settings set dictation_hotkey menu        // labs.special-keys
+mumble settings set dictation_hotkey menu        // labs.special-keys
 ├── Toggle on (Linux) -> saved; any shortcut may use menu, pause, scrolllock,
 │   alone like a function key or with modifiers (ctrl+pause)
 │   ├── X11 -> grabs keysym Menu 0xff67, Pause 0xff13, Scroll_Lock 0xff14
 │   └── Wayland portal -> preferred trigger Menu, Pause, Scroll_Lock
-├── Toggle off -> "menu needs Labs › Special keys alone: hex labs on special-keys"
+├── Toggle off -> "menu needs Labs › Special keys alone: mumble labs on special-keys"
 ├── Windows -> Menu, Pause, Scroll Lock always allowed, alone too; the toggle
 │   instead lets Insert, Home, End, Page Up, Page Down stand alone ("home alone
 │   needs Labs › Special keys alone" while off), and off puts a saved one back
 ├── macOS -> no toggle; a bare one still needs a modifier, as before
 ├── Window recorder -> refuses them while off ("Add a modifier"); Rune reports
 │   none of these keys yet, so the recorder can't record them either way
-└── Toggle turned off (row, hex labs off, hex settings), or settings load with
+└── Toggle turned off (row, mumble labs off, mumble settings), or settings load with
     it off -> a Linux shortcut on one goes back to its default (Dictate without
     processing unbound), so the listener never registers it
 ```
@@ -353,7 +353,7 @@ hex settings set dictation_hotkey menu        // labs.special-keys
 The gates are `AppSettings::special_keys_allowed` in `control/settings.rs`'s
 `apply` and the window's `settings::validate`, and
 `AppSettings::repair_special_keys` (`app_settings/shortcut_repair.rs`) where
-settings load and where the toggle turns off. Off, Hex is unchanged: the
+settings load and where the toggle turns off. Off, Mumble is unchanged: the
 added keysym names are reached only by a saved shortcut on one of these keys.
 Checks: `menu_alone_needs_its_labs_toggle` in
 [control/settings.rs](../../src/control/settings.rs) and
@@ -372,24 +372,24 @@ the ISO § key, left of 1 above Tab, without a modifier.
 ```ts
 Settings › General › Shortcut, press § alone      // labs.section-key
 ├── Toggle off -> "Add a modifier", as before; § with a modifier records as before
-├── Toggle on  -> saved as § (hex settings also takes `section`); Settings shows §
+├── Toggle on  -> saved as § (mumble settings also takes `section`); Settings shows §
 │   ├── X11 -> grabs the keycode that types XK_section 0xa7
 │   └── Wayland portal -> preferred trigger `section`
-├── hex settings set dictation_hotkey §, off -> "section needs Labs › Section key
-│   alone: hex labs on section-key"
-└── Toggle turned off (row, hex labs off, hex settings), or settings load with
+├── mumble settings set dictation_hotkey §, off -> "section needs Labs › Section key
+│   alone: mumble labs on section-key"
+└── Toggle turned off (row, mumble labs off, mumble settings), or settings load with
     it off -> a Linux shortcut on § alone goes back to its default (Dictate
     without processing unbound), so the listener never registers it
 ```
 
-While bound, Hex takes § from every app (an X11 grab or a portal shortcut
+While bound, Mumble takes § from every app (an X11 grab or a portal shortcut
 holds its key), so typing § needs another key. The window's
 `settings::recorded_binding` and `control/settings.rs`'s `parse_hotkey` let a
 lone § through on Linux; the gates are `AppSettings::section_key_allowed` in
 the window's `settings::validate` and in `control/settings.rs`'s `apply`
 (`special_key_refusal`), and `AppSettings::repair_section_key`
 (`app_settings/shortcut_repair.rs`) where settings load and where the toggle
-turns off. Off, Hex is unchanged: a lone § is refused everywhere, and the
+turns off. Off, Mumble is unchanged: a lone § is refused everywhere, and the
 added `section` keysym names are reached only by a saved § shortcut (§ with a
 modifier now also resolves on X11 and the portal, where it was refused as an
 unsupported key). macOS and Windows don't have it. Checks:
@@ -407,14 +407,14 @@ goldens need regenerating on Linux with the new row.
 Dictation stats (`history-stats`, issue 790, every OS): while on, the History
 pane shows a "Dictation stats" block above the list once anything is retained:
 dictations, words, words per minute, how often Output changed the text, the
-daily streak, and the top five apps; `hex history stats [--since] [--until]
+daily streak, and the top five apps; `mumble history stats [--since] [--until]
 [--json]` prints the same ([transcript-cli.md](../transcript-cli.md)). It sums
 every entry within retention (`History::stats`, `history/stats.rs`), not the
 pane's 200-entry search, so it ends with what retention removes; the rollup that
 outlives retention, streak notifications, and per-replacement counts are not
 built. The gates are `labs::history_stats()`, read when the pane reloads (off,
 it reads nothing for stats, and sums again only when the entries or the toggle
-change) and where `hex history stats` starts (off, it fails naming `hex labs on
+change) and where `mumble history stats` starts (off, it fails naming `mumble labs on
 history-stats` before History is read), and the window's own setting for the
 block. Off, History is exactly as before. Checks: the tests in
 [history/stats.rs](../../src/history/stats.rs) (words, speed, changes, top
@@ -429,7 +429,7 @@ page goldens need regenerating on Linux with the new row.
 Copy recent dictations (`recent-dictations`, issue 877, macOS): while on,
 the menu-bar menu shows a Copy Recent Dictation submenu right under Paste
 Last Dictation. It lists the five newest History entries within retention,
-newest first, skipping printed (`hex dictation stop --print`) and empty ones
+newest first, skipping printed (`mumble dictation stop --print`) and empty ones
 as Paste Last does, each on one line (whitespace and line breaks collapsed,
 cut to 48 characters with "…"). Clicking one puts its full final text on the
 clipboard as an ordinary entry; nothing is pasted. The gate is the menu's
@@ -453,7 +453,7 @@ result in Settings › Output that comes out wrong. While on, the Try card
 adds a row under the sentence with a Vocabulary button, which opens the same
 Vocabulary sheet as General's Vocabulary row, and, once a sentence is typed,
 Fix this, which copies Edit with agent's prompt ending `What I want: When I
-say "<sentence>", Hex pastes "<result>". It should paste: ` for the person to
+say "<sentence>", Mumble pastes "<result>". It should paste: ` for the person to
 finish in their agent; it reads Copied until the sentence changes or the pane
 is left. The result is what the Try card shows (corrections and built-in
 steps; scripts and rewriting run only when dictating). Nothing is saved:
@@ -475,8 +475,8 @@ dictation, the shortcuts, and the listener are unchanged. The gate,
 `labs::hide_menu_bar_icon()`, is read when the item is installed and on each
 menu-bar refresh (`status_item::update_visibility`, about twice a second), so
 turning it on or off applies at once. With the
-Dock icon off too, a launch stays quiet, and opening Hex again from Finder
-or Spotlight (the reopen Apple event) opens Settings, which has Quit Hex.
+Dock icon off too, a launch stays quiet, and opening Mumble again from Finder
+or Spotlight (the reopen Apple event) opens Settings, which has Quit Mumble.
 Off, the icon is exactly as before. Checks:
 `hide_menu_bar_icon_is_its_own_bit_and_off_by_default` in
 [labs.rs](../../src/labs.rs). Not yet observed: the icon hiding on a real
@@ -489,10 +489,10 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
 
 ## Features
 
-- Run setup again (not a feature toggle; every build): replays Hex's one
+- Run setup again (not a feature toggle; every build): replays Mumble's one
   onboarding, the first-run story every new install gets
   ([setup.tour](README.md)). Labs' **Run setup again** and
-  `hex onboarding reset` (macOS control socket, the Linux service socket,
+  `mumble onboarding reset` (macOS control socket, the Linux service socket,
   and a named event on Windows) forget that onboarding finished
   (`desktop::onboarding::reset_at`) and open it from the start without
   touching settings, history, models, or permissions; ready pages pass at
@@ -511,7 +511,7 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   live stream no partial slot and never reads the model's text between
   feeds, and no host adds the line's overlay. Each dictation's `finished
   live stream` line in process.log counts its text changes (`partials`);
-  `RUST_LOG=hex=debug` adds a `live text` line per change with the audio
+  `RUST_LOG=mumble=debug` adds a `live text` line per change with the audio
   fed and the word counts, never the words. Checks:
   `a_dictation_stream_publishes_its_text_after_each_feed_with_live_text`,
   `without_live_text_a_dictation_stream_publishes_nothing`,
@@ -547,7 +547,7 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   ```
 
   Every group starts folded; opening a story, from the list or a link,
-  unfolds the groups above it, and folds hold until Hex quits. The list
+  unfolds the groups above it, and folds hold until Mumble quits. The list
   keeps only its own keys (arrows, Return, J/K, a story's trigger letters,
   Tab, Esc, `/` to filter) and ⇧⌘D; every other key, ⌘-chords and digits
   included, reaches the open story. Each
@@ -556,7 +556,7 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   beside the playground's columns has room. Off, no shortcut, menu item,
   sidebar item, or link opens it.
   Headless renders take `--playground [story]` while it is on, e.g.
-  `hex app -- --snap out.png --playground "Window/General/Settings"`. Checks: `every_scene_but_live_has_a_path_under_a_group`,
+  `mumble app -- --snap out.png --playground "Window/General/Settings"`. Checks: `every_scene_but_live_has_a_path_under_a_group`,
   `the_playgrounds_keys_work_with_a_story_open`, and
   `a_scene_opened_from_the_list_hears_command_digits` in
   [playground.rs](../../src/rune_ui/playground.rs).
@@ -580,8 +580,8 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   On macOS a story opens from a link or the CLI:
 
   ```ts
-  open 'hex://story/prototypes/hud/notch?variant=pulse-fail&play=1'   // hex-test:// in Hex Test.app
-  hex window story Prototypes/HUD/Processing [--variant 2] [--play]
+  open 'mumble://story/prototypes/hud/notch?variant=pulse-fail&play=1'   // mumble-test:// in Mumble Test.app
+  mumble window story Prototypes/HUD/Processing [--variant 2] [--play]
   ├── the window opens on the story: its path, name, or slug, `/` or `-` between groups and name
   ├── a link from before the groups nested (`hud/processing`, `General/mac-settings`, `mac-settings`) → that story now
   ├── variant=<n|name> → that variant
@@ -597,14 +597,14 @@ vocabulary list itself (rewriting and search), and Linux's Terminal paste.
   playground.rs opens every HUD link headlessly. The URL
   handler and the replay have no automated end-to-end check.
 - Voice Filter: the Voice Filter pane (macOS and Linux), the only home of
-  the Hex Microphone (macOS's driver, Linux's PipeWire virtual source), its
+  the Mumble Microphone (macOS's driver, Linux's PipeWire virtual source), its
   filter modes, and Try it
-  ([Hex Microphone](README.md#experimental-hex-microphone-and-voice-filter)).
-  Its toggle is `experimental.hex_microphone` (off by default). Off, the pane
-  is hidden and Hex neither reads the driver's status nor starts its sink
+  ([Mumble Microphone](README.md#experimental-mumble-microphone-and-voice-filter)).
+  Its toggle is `experimental.mumble_microphone` (off by default). Off, the pane
+  is hidden and Mumble neither reads the driver's status nor starts its sink
   supervisor. While the driver is installed the Voice Filter runs (apps using
-  the Hex Microphone keep their audio), its pane shows, and its Labs row is
-  on and disabled: "On while the Hex Microphone driver is installed.
+  the Mumble Microphone keep their audio), its pane shows, and its Labs row is
+  on and disabled: "On while the Mumble Microphone driver is installed.
   Uninstall the driver in Voice Filter to turn it off." Checks:
   `voice_filter_shows_only_while_its_labs_toggle_is_on` and
   `an_installed_driver_keeps_the_voice_filter_on` in

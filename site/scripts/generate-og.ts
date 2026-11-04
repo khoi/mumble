@@ -1,12 +1,12 @@
 // Renders the Open Graph / Twitter card (public/og.png, 1200 × 630): the app icon, the name,
-// and one line. scripts/og/hex-icon.png is the 1024 px icon exported from the built Hex.app
-// (iconutil -c iconset Hex.app/Contents/Resources/AppIcon.icns), so it carries Icon
+// and one line. scripts/og/mumble-icon.png is the 1024 px icon exported from the built Mumble.app
+// (iconutil -c iconset Mumble.app/Contents/Resources/AppIcon.icns), so it carries Icon
 // Composer's glass and shadow.
 import { chromium } from "playwright"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
-const icon = readFileSync(new URL("./og/hex-icon.png", import.meta.url)).toString("base64")
+const icon = readFileSync(new URL("./og/mumble-icon.png", import.meta.url)).toString("base64")
 const font = readFileSync(new URL("../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2", import.meta.url)).toString("base64")
 
 const html = `<!doctype html>
@@ -24,7 +24,7 @@ const html = `<!doctype html>
   p { margin: 22px 0 0; color: #9b9da3; font-size: 32px; font-weight: 450; letter-spacing: -0.015em; line-height: 1.3; max-width: 15em; }
 </style>
 <img src="data:image/png;base64,${icon}" alt="">
-<div><h1>Hex</h1><p>Local voice dictation for Mac, Windows, and Linux.</p></div>`
+<div><h1>Mumble</h1><p>Local voice dictation for Mac, Windows, and Linux.</p></div>`
 
 const browser = await chromium.launch({ headless: true })
 try {

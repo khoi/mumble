@@ -1,71 +1,71 @@
-# The hex .deb and .rpm, built by scripts/package-linux.sh with nfpm from a
-# release executable, in a directory it stages with hex, anomaly.hex.desktop,
-# the hicolor icons, hex.service, LICENSE, and the postinst/postrm scripts. They install what the AUR package hex-bin does:
-# /usr/bin/hex, the desktop entry, and the systemd user unit. Hex never
+# The mumble .deb and .rpm, built by scripts/package-linux.sh with nfpm from a
+# release executable, in a directory it stages with mumble, anomaly.mumble.desktop,
+# the hicolor icons, mumble.service, LICENSE, and the postinst/postrm scripts. They install what the AUR package mumble-bin does:
+# /usr/bin/mumble, the desktop entry, and the systemd user unit. Mumble never
 # replaces a package-managed executable; it shows the update command the
 # release service lists for the deb-<arch> or rpm-<arch> distribution.
-name: hex
-arch: ${HEX_PACKAGE_ARCH}
+name: mumble
+arch: ${MUMBLE_PACKAGE_ARCH}
 platform: linux
-version: ${HEX_PACKAGE_VERSION}
+version: ${MUMBLE_PACKAGE_VERSION}
 version_schema: none
 release: "1"
 section: utils
 priority: optional
 maintainer: Anomaly <hex@anoma.ly>
 vendor: Anomaly
-homepage: https://anoma.ly/hex
+homepage: https://anoma.ly/mumble
 license: MIT
 description: |-
-  Hex voice dictation: hold a key, speak, and it types.
+  Mumble voice dictation: hold a key, speak, and it types.
   Local speech recognition with optional voice commands (Linux beta).
 contents:
-  - src: hex
-    dst: /usr/bin/hex
+  - src: mumble
+    dst: /usr/bin/mumble
     file_info:
       mode: 0755
-  - src: anomaly.hex.desktop
-    dst: /usr/share/applications/anomaly.hex.desktop
+  - src: anomaly.mumble.desktop
+    dst: /usr/share/applications/anomaly.mumble.desktop
     file_info:
       mode: 0644
-  - src: icons/hicolor/16x16/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/16x16/apps/anomaly.hex.png
+  - src: icons/hicolor/16x16/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/16x16/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: icons/hicolor/24x24/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/24x24/apps/anomaly.hex.png
+  - src: icons/hicolor/24x24/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/24x24/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: icons/hicolor/32x32/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/32x32/apps/anomaly.hex.png
+  - src: icons/hicolor/32x32/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/32x32/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: icons/hicolor/48x48/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/48x48/apps/anomaly.hex.png
+  - src: icons/hicolor/48x48/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/48x48/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: icons/hicolor/64x64/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/64x64/apps/anomaly.hex.png
+  - src: icons/hicolor/64x64/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/64x64/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: icons/hicolor/128x128/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/128x128/apps/anomaly.hex.png
+  - src: icons/hicolor/128x128/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/128x128/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: icons/hicolor/256x256/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/256x256/apps/anomaly.hex.png
+  - src: icons/hicolor/256x256/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/256x256/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: icons/hicolor/512x512/apps/anomaly.hex.png
-    dst: /usr/share/icons/hicolor/512x512/apps/anomaly.hex.png
+  - src: icons/hicolor/512x512/apps/anomaly.mumble.png
+    dst: /usr/share/icons/hicolor/512x512/apps/anomaly.mumble.png
     file_info:
       mode: 0644
-  - src: hex.service
-    dst: /usr/lib/systemd/user/hex.service
+  - src: mumble.service
+    dst: /usr/lib/systemd/user/mumble.service
     file_info:
       mode: 0644
   - src: LICENSE
-    dst: /usr/share/licenses/hex/LICENSE
+    dst: /usr/share/licenses/mumble/LICENSE
     file_info:
       mode: 0644
 scripts:
@@ -117,4 +117,4 @@ overrides:
       - xdg-utils
 rpm:
   group: Applications/Productivity
-  summary: Hex voice dictation by Anomaly
+  summary: Mumble voice dictation by Anomaly

@@ -1,9 +1,9 @@
-// The web globals Hex gives scripts: fetch with Headers and Response,
+// The web globals Mumble gives scripts: fetch with Headers and Response,
 // AbortController and AbortSignal, DOMException, setTimeout and
-// clearTimeout, and queueMicrotask. Hex's native side does the work
-// (`hex:io`); `hex.d.ts` types the supported subset.
+// clearTimeout, and queueMicrotask. Mumble's native side does the work
+// (`mumble:io`); `mumble.d.ts` types the supported subset.
 
-import io from "hex:io"
+import io from "mumble:io"
 
 const INTERNAL = Symbol("internal")
 const ABORT = Symbol("abort")
@@ -191,7 +191,7 @@ class Response {
       this.#body = init.body
       return
     }
-    if (body !== null && typeof body !== "string") throw new TypeError("Hex's Response accepts only string bodies")
+    if (body !== null && typeof body !== "string") throw new TypeError("Mumble's Response accepts only string bodies")
     this.#status = init.status ?? 200
     this.#statusText = init.statusText ?? ""
     this.#headers = new Headers(init.headers)
@@ -246,7 +246,7 @@ function fetch(input, init = {}) {
     const body = init.body ?? null
     if (body !== null) {
       if (method === "GET" || method === "HEAD") throw new TypeError("Request with GET/HEAD method cannot have body.")
-      if (typeof body !== "string") throw new TypeError("Hex's fetch accepts only string bodies; use JSON.stringify")
+      if (typeof body !== "string") throw new TypeError("Mumble's fetch accepts only string bodies; use JSON.stringify")
       if (!headers.has("content-type")) headers.set("content-type", "text/plain;charset=UTF-8")
     }
     const signal = init.signal ?? null

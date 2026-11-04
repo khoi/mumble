@@ -245,8 +245,8 @@ pub(super) fn shortcut_rows(
 }
 
 /// Toggle's cancel shortcut. A shortcuts portal would hold its key from
-/// every app for as long as Hex runs, so on Wayland it says to bind
-/// `hex dictation cancel` in the desktop instead.
+/// every app for as long as Mumble runs, so on Wayland it says to bind
+/// `mumble dictation cancel` in the desktop instead.
 fn cancel_rows(ui: &Ui, p: Paint) -> Vec<CardRow> {
     if matches!(
         ui.shortcuts(),
@@ -259,7 +259,7 @@ fn cancel_rows(ui: &Ui, p: Paint) -> Vec<CardRow> {
                 &CIRCLE_X,
                 tr("Cancel"),
                 Some(tr(
-                    "Bind hex dictation cancel to a key in your desktop's keyboard shortcuts",
+                    "Bind mumble dictation cancel to a key in your desktop's keyboard shortcuts",
                 )),
                 row().key("cancel-shortcut-control"),
             )
@@ -289,7 +289,7 @@ fn configure_shortcuts_row(ui: &Ui, p: Paint) -> Option<El> {
                 "configure-shortcuts",
                 &KEYBOARD,
                 tr("Desktop shortcuts"),
-                Some(tr("Change the keys your desktop gave Hex")),
+                Some(tr("Change the keys your desktop gave Mumble")),
                 button(
                     p,
                     "configure-shortcuts-control",
@@ -326,7 +326,7 @@ fn microphone_release_row(ui: &Ui, p: Paint) -> CardRow {
 }
 
 /// Labs › Also pause the browser's permission, under Pause media on macOS:
-/// Hex hears the browser through System Audio Recording, asked for here,
+/// Mumble hears the browser through System Audio Recording, asked for here,
 /// never while you dictate.
 fn pause_browser_rows(ui: &Ui, p: Paint) -> Vec<El> {
     let on = ui.settings.pause_browser_media;
@@ -344,7 +344,7 @@ fn pause_browser_rows(ui: &Ui, p: Paint) -> Vec<El> {
             "pause-browser-audio",
             &SPEAKER,
             tr("Screen & System Audio Recording"),
-            Some(tr("Lets Hex hear whether a tab is playing")),
+            Some(tr("Lets Mumble hear whether a tab is playing")),
             permission_control(
                 p,
                 "pause-browser-allow",
@@ -443,7 +443,7 @@ fn microphone_rows(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<CardRow> {
     let mac = ui.platform.caps.os == super::platform::Os::Macos;
     let lid_note = |built_in: &str| match default_name {
         Some(name) => tr_named(
-            "{built_in} is off while the lid is closed, so Hex listens to {input}",
+            "{built_in} is off while the lid is closed, so Mumble listens to {input}",
             &[("built_in", built_in), ("input", name)],
         ),
         None => tr_fill("{} is off while the lid is closed", built_in),
@@ -457,9 +457,9 @@ fn microphone_rows(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<CardRow> {
                 tr_fill("{} isn't connected; using the system input", saved)
             }
         }),
-        None if devices.default_is_hex_microphone => default_name.map(|name| {
+        None if devices.default_is_mumble_microphone => default_name.map(|name| {
             tr_fill(
-                "Hex Microphone is the system default, so Hex listens to {}",
+                "Mumble Microphone is the system default, so Mumble listens to {}",
                 name,
             )
         }),
@@ -470,7 +470,7 @@ fn microphone_rows(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<CardRow> {
             .zip(default_name)
             .map(|(bluetooth, input)| {
                 tr_named(
-                    "{bluetooth} is Bluetooth, so Hex listens to {input}",
+                    "{bluetooth} is Bluetooth, so Mumble listens to {input}",
                     &[("bluetooth", bluetooth), ("input", input)],
                 )
             }),
@@ -566,7 +566,7 @@ fn shown_level(level: f32) -> f32 {
     f32::from(level_step(level)) / LEVEL_STEPS
 }
 const MIC_LEVEL: f32 = 14.0;
-/// Three short bars, as tall as Hex hears it.
+/// Three short bars, as tall as Mumble hears it.
 fn mic_bars(p: Paint, level: f32, tint: Color) -> El {
     const WEIGHTS: [f32; 3] = [0.6, 1.0, 0.75];
     let mut bars = row()
@@ -589,7 +589,7 @@ fn mic_bars(p: Paint, level: f32, tint: Color) -> El {
 
 const LEVEL_FRAME: Duration = Duration::from_millis(33);
 
-/// What the microphone row's level shows: the audio Hex receives from the
+/// What the microphone row's level shows: the audio Mumble receives from the
 /// microphone in use, or nothing while none arrives (released while idle,
 /// failed, or not allowed), as flat, dimmed bars.
 pub(super) struct MicLevel {
@@ -927,7 +927,7 @@ fn output(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<CardRow> {
         rows.push(
             note(
                 "clipboard-restore-note",
-                tr("This desktop doesn't let Hex put your clipboard back after a paste. Turn on Labs › Restore clipboard on GNOME to try it."),
+                tr("This desktop doesn't let Mumble put your clipboard back after a paste. Turn on Labs › Restore clipboard on GNOME to try it."),
                 p.muted(),
             )
             .into(),

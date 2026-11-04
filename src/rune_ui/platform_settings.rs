@@ -1,6 +1,6 @@
 //! Rows only some OSes show, chosen by
 //! [`Capabilities`](super::platform::Capabilities): macOS's permission
-//! warnings, Show Dock icon, and the Hex Microphone driver row Voice
+//! warnings, Show Dock icon, and the Mumble Microphone driver row Voice
 //! Filter shows; Launch at login on macOS and Windows. Their
 //! state is [`PlatformState`](super::platform::PlatformState)
 //! data and their actions are [`PlatformRequest`]s.
@@ -13,12 +13,12 @@ use super::paste_access::PasteAccess;
 use super::platform::PlatformRequest;
 use super::{Pane, ShortcutTarget, Ui};
 use crate::app_settings::{AppSettings, HotkeyBinding, ModifierSide};
-use crate::audio::hex_microphone::DriverActionState;
+use crate::audio::mumble_microphone::DriverActionState;
 use crate::desktop::i18n::{tr, tr_fill};
 use crate::desktop::onboarding::{PermissionAction, PermissionKind, PermissionWarning};
 
 /// A permission's row key, its name as System Settings lists it, and what
-/// Hex cannot do without it.
+/// Mumble cannot do without it.
 fn permission_copy(
     kind: PermissionKind,
     accessibility_renamed: bool,
@@ -27,17 +27,17 @@ fn permission_copy(
         PermissionKind::Microphone => (
             "permission-microphone",
             tr("Microphone"),
-            tr("Hex cannot record dictation until microphone access is restored."),
+            tr("Mumble cannot record dictation until microphone access is restored."),
         ),
         PermissionKind::Accessibility => (
             "permission-accessibility",
             accessibility_name(accessibility_renamed),
-            tr("Hex cannot recognize the dictation shortcut or paste into other apps."),
+            tr("Mumble cannot recognize the dictation shortcut or paste into other apps."),
         ),
         PermissionKind::SystemAudio => (
             "permission-system-audio",
             tr("Screen & System Audio Recording"),
-            tr("Lets Hex hear whether a tab is playing"),
+            tr("Lets Mumble hear whether a tab is playing"),
         ),
     }
 }
@@ -81,11 +81,11 @@ pub(super) fn permissions_section(ui: &Ui, p: Paint) -> Option<El> {
                     p,
                     key,
                     name,
-                    Some(tr("Turns on when Hex restarts")),
+                    Some(tr("Turns on when Mumble restarts")),
                     button(
                         p,
                         &format!("{key}-restart"),
-                        tr("Restart Hex"),
+                        tr("Restart Mumble"),
                         ButtonKind::Secondary,
                         |ui: &mut Ui, _| {
                             ui.ask(PlatformRequest::Permission(PermissionAction::Restart))
@@ -96,7 +96,7 @@ pub(super) fn permissions_section(ui: &Ui, p: Paint) -> Option<El> {
             let stale =
                 warning.kind == PermissionKind::Accessibility && ui.platform.stale(warning.kind);
             let description = if stale {
-                tr("An older Hex entry can keep this off")
+                tr("An older Mumble entry can keep this off")
             } else {
                 description
             };
@@ -126,9 +126,9 @@ fn paste_permission(ui: &Ui, p: Paint) -> Option<El> {
         .paste
         .filter(|paste| *paste != PasteAccess::Allowed)?;
     let description = if paste == PasteAccess::Declined {
-        tr("Without it, Hex copies your words and you press Ctrl+V.")
+        tr("Without it, Mumble copies your words and you press Ctrl+V.")
     } else {
-        tr("Hex only sends the paste keystroke. It never sees your screen.")
+        tr("Mumble only sends the paste keystroke. It never sees your screen.")
     };
     let control = permission_control(
         p,
@@ -151,7 +151,7 @@ fn paste_permission(ui: &Ui, p: Paint) -> Option<El> {
 }
 
 /// Records which untrusted permission rows are currently visible in the window
-/// so the macOS host clears retired Hex bundle IDs' stale TCC rows once in the
+/// so the macOS host clears retired Mumble bundle IDs' stale TCC rows once in the
 /// background when a row appears.
 pub(super) fn update_shown_permissions(ui: &mut Ui) {
     use crate::desktop::onboarding::PermissionState;
@@ -209,10 +209,10 @@ pub(super) fn opencode_managed() -> bool {
 /// The virtual microphone driver's row: install, update, or uninstall it.
 pub(super) fn driver_row(ui: &Ui, p: Paint) -> El {
     let title = tr("Virtual microphone driver");
-    let Some(status) = &ui.platform.hex_microphone else {
+    let Some(status) = &ui.platform.mumble_microphone else {
         return setting_row(
             p,
-            "hex-mic-driver",
+            "mumble-mic-driver",
             title,
             Some(tr("Checking…")),
             row().key("none"),
@@ -231,14 +231,14 @@ pub(super) fn driver_row(ui: &Ui, p: Paint) -> El {
         action(
             "install",
             tr("Install"),
-            PlatformRequest::InstallHexMicrophone,
+            PlatformRequest::InstallMumbleMicrophone,
         )
     };
     let uninstall = || {
         action(
             "uninstall",
             tr("Uninstall"),
-            PlatformRequest::UninstallHexMicrophone,
+            PlatformRequest::UninstallMumbleMicrophone,
         )
     };
     let state_tag = |label: &str, tone: Tone| tone_tag(p, "state", label, tone);
@@ -270,7 +270,7 @@ pub(super) fn driver_row(ui: &Ui, p: Paint) -> El {
                     .child(action(
                         "update",
                         tr("Update"),
-                        PlatformRequest::InstallHexMicrophone,
+                        PlatformRequest::InstallMumbleMicrophone,
                     ))
                     .child(uninstall()),
             )
@@ -291,7 +291,7 @@ pub(super) fn driver_row(ui: &Ui, p: Paint) -> El {
                         &status.active_apps.join(", "),
                     ),
                     _ => {
-                        tr("Choose Hex Microphone as your input in Slack, Zoom, or Discord").into()
+                        tr("Choose Mumble Microphone as your input in Slack, Zoom, or Discord").into()
                     }
                 },
                 controls
@@ -318,12 +318,12 @@ pub(super) fn driver_row(ui: &Ui, p: Paint) -> El {
                 .child(install()),
         ),
         _ => (
-            tr("Install the CoreAudio driver to choose Hex Microphone in Slack, Zoom, or Discord")
+            tr("Install the CoreAudio driver to choose Mumble Microphone in Slack, Zoom, or Discord")
                 .into(),
             controls.child(install()),
         ),
     };
-    setting_row(p, "hex-mic-driver", title, Some(&description), controls)
+    setting_row(p, "mumble-mic-driver", title, Some(&description), controls)
 }
 
 /// `target`'s modifier-only shortcut moved to `side`, unless that collides

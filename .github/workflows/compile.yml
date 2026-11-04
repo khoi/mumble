@@ -1,6 +1,6 @@
 name: Compile
 
-# What a pull request runs, besides hex-agent-policy: a fast compile of the app
+# What a pull request runs, besides mumble-agent-policy: a fast compile of the app
 # on Linux, macOS, and Windows x64 (cargo clippy, warnings as errors). Pull
 # requests merge without waiting for it, and a breakage on dev goes to the CI
 # failure pipeline. The full suites (check-linux.yml, check-macos.yml,
@@ -59,7 +59,7 @@ jobs:
             libfontconfig1-dev libfreetype-dev libxcursor-dev libxi-dev \
             libxrandr-dev libopenblas-dev libvulkan-dev glslc libshaderc-dev
       - run: cargo fmt --all --check
-      - run: cargo clippy --locked --bin hex -- -D warnings
+      - run: cargo clippy --locked --bin mumble -- -D warnings
 
   macos:
     name: macOS
@@ -81,7 +81,7 @@ jobs:
           cache-on-failure: true
       - name: Install the Metal toolchain
         run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
-      - run: cargo clippy --locked --bin hex -- -D warnings
+      - run: cargo clippy --locked --bin mumble -- -D warnings
 
   windows:
     name: Windows x64
@@ -114,4 +114,4 @@ jobs:
           $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
           $combined = if ($env:CMAKE_PREFIX_PATH) { "$prefix;$env:CMAKE_PREFIX_PATH" } else { $prefix }
           Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$combined"
-      - run: cargo clippy --locked --bin hex -- -D warnings
+      - run: cargo clippy --locked --bin mumble -- -D warnings

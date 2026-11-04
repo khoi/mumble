@@ -12,8 +12,8 @@ use serde_json::Value;
 use super::transport::ManifestCache;
 use crate::desktop::host::UpdateNotes;
 
-const URL: &str = "https://anoma.ly/hex/files/dev-notes.json";
-const PAGE: &str = "https://anoma.ly/hex/dev";
+const URL: &str = "https://anoma.ly/mumble/files/dev-notes.json";
+const PAGE: &str = "https://anoma.ly/mumble/dev";
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_ITEMS: usize = 40;
 const MAX_TITLE: usize = 200;
@@ -104,7 +104,7 @@ mod tests {
         assert_eq!(notes.items, ["Fix A", "Fix B", "Fix C"]);
         assert_eq!(
             notes.url,
-            "https://anoma.ly/hex/dev?since=0.0.0-dev-8#0.0.0-dev-11"
+            "https://anoma.ly/mumble/dev?since=0.0.0-dev-8#0.0.0-dev-11"
         );
     }
 
@@ -113,7 +113,7 @@ mod tests {
         let notes = parse(NOTES, "0.0.0-dev-2", "0.0.0-dev-9").unwrap();
         assert_eq!(notes.items, ["Fix A", "Fix C", "Already running"]);
         let from_stable = parse(NOTES, "3.1.1", "0.0.0-dev-9").unwrap();
-        assert_eq!(from_stable.url, "https://anoma.ly/hex/dev#0.0.0-dev-9");
+        assert_eq!(from_stable.url, "https://anoma.ly/mumble/dev#0.0.0-dev-9");
     }
 
     #[test]

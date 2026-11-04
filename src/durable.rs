@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn a_write_replaces_the_file_and_leaves_no_staging_file() {
-        let directory = std::env::temp_dir().join(format!("hex-durable-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("mumble-durable-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("settings.json");
         write(&path, b"old").unwrap();
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn a_write_through_a_symlink_replaces_its_target_and_keeps_the_link() {
         let directory =
-            std::env::temp_dir().join(format!("hex-durable-link-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mumble-durable-link-{}", std::process::id()));
         let dotfiles = directory.join("dotfiles");
         let data = directory.join("data");
         fs::create_dir_all(&dotfiles).unwrap();
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn a_write_through_a_dangling_symlink_creates_its_target() {
         let directory =
-            std::env::temp_dir().join(format!("hex-durable-dangling-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mumble-durable-dangling-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let target = directory.join("target.json");
         let link = directory.join("settings.json");

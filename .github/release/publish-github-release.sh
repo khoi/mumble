@@ -8,20 +8,20 @@
 #
 #   publish-github-release.sh <dist>
 #
-# Environment: HEX_VERSION, HEX_RELEASE_COMMIT, HEX_RELEASE_TAG,
-# HEX_RELEASE_SOURCE (a checkout of the commit with docs/releases/), GH_TOKEN.
+# Environment: MUMBLE_VERSION, MUMBLE_RELEASE_COMMIT, MUMBLE_RELEASE_TAG,
+# MUMBLE_RELEASE_SOURCE (a checkout of the commit with docs/releases/), GH_TOKEN.
 set -eu
 
-repo=${HEX_RELEASE_REPO:-anomalyco/hex}
+repo=${MUMBLE_RELEASE_REPO:-khoi/mumble}
 [ $# -eq 1 ] || {
   echo "Usage: $0 <dist>" >&2
   exit 1
 }
 dist=$1
-version=${HEX_VERSION:?Set HEX_VERSION}
-commit=${HEX_RELEASE_COMMIT:?Set HEX_RELEASE_COMMIT}
-tag=${HEX_RELEASE_TAG:?Set HEX_RELEASE_TAG}
-source=${HEX_RELEASE_SOURCE:?Set HEX_RELEASE_SOURCE}
+version=${MUMBLE_VERSION:?Set MUMBLE_VERSION}
+commit=${MUMBLE_RELEASE_COMMIT:?Set MUMBLE_RELEASE_COMMIT}
+tag=${MUMBLE_RELEASE_TAG:?Set MUMBLE_RELEASE_TAG}
+source=${MUMBLE_RELEASE_SOURCE:?Set MUMBLE_RELEASE_SOURCE}
 # Only a stable X.Y.Z release is ever Latest; dev builds and prereleases never
 # reach this script.
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
@@ -36,7 +36,7 @@ printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 
-assets=$(cd "$dist" && { ls hex-*.zip hex-*.dmg hex-*.exe hex-*-linux-* 2>/dev/null || true; })
+assets=$(cd "$dist" && { ls mumble-*.zip mumble-*.dmg mumble-*.exe mumble-*-linux-* 2>/dev/null || true; })
 [ -n "$assets" ] || {
   echo "No release files in $dist." >&2
   exit 1
@@ -53,7 +53,7 @@ if [ "$tagged" != "$commit" ]; then
   exit 1
 fi
 if ! gh release view "$tag" -R "$repo" --json name >/dev/null 2>&1; then
-  gh release create "$tag" -R "$repo" --verify-tag --title "Hex $version" \
+  gh release create "$tag" -R "$repo" --verify-tag --title "Mumble $version" \
     --notes-file "$notes" --latest=true
 fi
 gh release view "$tag" -R "$repo" --json assets > "$temporary/release.json"

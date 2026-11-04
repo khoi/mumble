@@ -36,7 +36,7 @@ const PORTAL_IDLE: Duration = Duration::from_secs(15);
 /// How long after the paste shortcut the previous clipboard comes back, as
 /// on macOS. Nothing acknowledges that the target read the paste.
 const RESTORE_DELAY: Duration = Duration::from_millis(500);
-/// How long an X11 paste waits for modifiers no Hex shortcut holds.
+/// How long an X11 paste waits for modifiers no Mumble shortcut holds.
 const MODIFIER_WAIT_LIMIT: Duration = Duration::from_secs(2);
 
 pub(crate) struct LinuxPaster {
@@ -470,7 +470,7 @@ fn paste_keys(with_shift: bool) -> Vec<String> {
     keys
 }
 
-/// Waits until the X server reports no held modifiers. While one of Hex's
+/// Waits until the X server reports no held modifiers. While one of Mumble's
 /// shortcuts is down, a newer capture owns them, so its predecessor stays
 /// queued for as long as it is held. Otherwise the wait ends after `limit`
 /// and the paste goes ahead: XWayland's modifier state goes stale while a
@@ -493,7 +493,7 @@ fn wait_for_modifiers(
         if began.elapsed() >= limit && !shortcut_held() {
             tracing::warn!(
                 waited_ms = began.elapsed().as_millis() as u64,
-                "modifiers still read as held with no Hex shortcut down; pasting anyway"
+                "modifiers still read as held with no Mumble shortcut down; pasting anyway"
             );
             return Ok(());
         }
@@ -644,7 +644,7 @@ mod tests {
     fn helper_can_read_a_large_transcript_without_argv_or_files() {
         let text = b"--help\nplain text\n".repeat(32_768);
         let mut command = shell("test \"$(wc -c)\" -eq \"$1\"");
-        command.args(["hex-paste-test", &text.len().to_string()]);
+        command.args(["mumble-paste-test", &text.len().to_string()]);
         assert!(run_helper(command, &text, &AtomicBool::new(false), HELPER_TIMEOUT).is_ok());
     }
 
@@ -680,9 +680,9 @@ mod tests {
 
     #[test]
     fn a_clipboard_daemon_inheriting_stderr_does_not_block_parent_completion() {
-        let path = std::env::temp_dir().join(format!("hex-paste-daemon-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("mumble-paste-daemon-{}", std::process::id()));
         let mut command = shell("cat >/dev/null; sleep 10 >&2 & echo $! >\"$1\"");
-        command.arg("hex-paste-test").arg(&path);
+        command.arg("mumble-paste-test").arg(&path);
         let result = run_helper(
             command,
             b"example",
@@ -751,7 +751,7 @@ mod tests {
     #[ignore = "run scripts/test-wayland-paste.sh with the compiled test executable"]
     fn native_wayland_clipboard_shortcut() {
         assert!(LinuxSession::detect().is_wayland());
-        let path = std::env::var_os("HEX_WAYLAND_PASTE_OUTPUT")
+        let path = std::env::var_os("MUMBLE_WAYLAND_PASTE_OUTPUT")
             .expect("the isolated Wayland test runner must supply its output file");
         let expected = "Example dictation: --flags, punctuation, \u{6f22}\u{5b57}.\nSecond line.";
         let wait_for = |what: &str, done: &mut dyn FnMut() -> bool| {

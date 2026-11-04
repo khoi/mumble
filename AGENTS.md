@@ -1,5 +1,5 @@
 <!-- tallow -->
-# Hex Agent Guide
+# Mumble Agent Guide
 
 ## Private Kit Tool
 
@@ -12,7 +12,7 @@ only by a fast-forward from `dev` when Kit releases; never commit to it.
 There is no `main`.
 
 Any change to what the window draws regenerates the goldens in the same PR:
-run `HEX_UPDATE_GOLDENS=1 cargo test --locked --bin hex rune_ui`
+run `MUMBLE_UPDATE_GOLDENS=1 cargo test --locked --bin mumble rune_ui`
 on Linux (the golden tests only run there; from a Mac, dispatch
 `check-linux.yml` on the branch and take its `golden-actual` artifact),
 look at every changed image, and commit them with the change.
@@ -23,10 +23,10 @@ branch from and push to `dev`.
 
 ## Purpose
 
-Build Hex as a local, observable macOS voice appliance with explicit Linux
+Build Mumble as a local, observable macOS voice appliance with explicit Linux
 X11, wlroots-compatible Wayland, and Windows (x64 and ARM64) beta contracts. Keep the engine native Rust
 and keep consequential behavior explicit. Deterministic personal transcript
-transformations live in the explicit TypeScript user config (`~/.config/hex/hex.config.ts`). User-facing
+transformations live in the explicit TypeScript user config (`~/.config/mumble/mumble.config.ts`). User-facing
 runtime settings persist in Application Support.
 
 Every build shows General, Output, History, and Labs. Labs holds features
@@ -72,7 +72,7 @@ substitute for source inspection or a second roadmap.
 ## Architecture
 
 - `audio`: `cpal` device enumeration, input resolution (`--device`, the saved
-  microphone, else the system default, never Hex Microphone), the CoreAudio
+  microphone, else the system default, never Mumble Microphone), the CoreAudio
   default-input and device-list listeners, timestamped mono float PCM
   delivery, live selection, and bounded stream recovery.
 - `suppression`: the macOS event taps, shortcut suppression, and the
@@ -80,7 +80,7 @@ substitute for source inspection or a second roadmap.
 - `keyboard`: active-layout key resolution and balanced synthetic shortcuts.
 - `dictation`, `dictation/diagnostics`: warm pre-roll, growable capture, 16 kHz
   resampling, and owner-only diagnostic WAV retention when
-  `HEX_RETAIN_DICTATION_AUDIO` is set.
+  `MUMBLE_RETAIN_DICTATION_AUDIO` is set.
 - `dictation/audio`: the authoritative microphone timeline, lazy stream
   lifecycle, recording owner, exact shortcut boundaries, recovery handoff,
   and disposable bounded command audio projection.
@@ -103,7 +103,7 @@ substitute for source inspection or a second roadmap.
   for macOS, Windows, and Linux: context-selected corrections, deadline-bounded
   OpenCode rewrite profiles with corrected-transcript fallback, the ranked
   model catalog, and the transformation stage, over `desktop/opencode_service`.
-- `desktop/opencode_service`: the only way Hex reaches OpenCode, on every OS. It reads
+- `desktop/opencode_service`: the only way Mumble reaches OpenCode, on every OS. It reads
   the running service's owner-only registration
   (`${XDG_STATE_HOME:-~/.local/state}/opencode/service.json`, then other
   channels' `service-*.json`), confirms the registered PID through
@@ -133,7 +133,7 @@ substitute for source inspection or a second roadmap.
   that heard past the clip (overfed), sends the whole clip too. Any other failure
   fails the dictation with its reason. The
   provider (`CloudProvider`: Claude or Codex) and language come from the saved
-  transcription selection; Claude also receives the vocabulary as keyterms. Hex
+  transcription selection; Claude also receives the vocabulary as keyterms. Mumble
   never refreshes or writes either app's sign-in.
 - `local_api`: authenticated loopback discovery, bounded HTTP parsing,
   `GET /health` and `GET /capabilities`, the always-on authenticated
@@ -146,10 +146,10 @@ substitute for source inspection or a second roadmap.
   owner tokens, lease, and levels in `dictation::service`; on Windows it
   answers `service-capture-unavailable`, and off macOS `/profile/vitals`
   answers 503.
-  `/control` carries the `hex` control commands on every OS (`control`).
-- `control`: the release `hex` control surface on every OS: the versioned
+  `/control` carries the `mumble` control commands on every OS (`control`).
+- `control`: the release `mumble` control surface on every OS: the versioned
   `ControlRequest`/`ControlReply` protocol, the settings registry behind
-  `hex settings` (one dotted key per persisted setting, with the window's
+  `mumble settings` (one dotted key per persisted setting, with the window's
   rules and the capability each needs), and the one CLI tree and client
   (`control::cli`), which each OS's `main` flattens beside its own commands.
   The transport on every OS is the local API's `/control`.
@@ -158,7 +158,7 @@ substitute for source inspection or a second roadmap.
   `macos_rune::control` is macOS's host. What an OS can't do answers
   `unsupported` at runtime. Contract: `docs/cli.md`.
 - `control/developer_control`: the typed debug-only command/reply protocol the local
-  API uses to drive the running app from `hex dev`.
+  API uses to drive the running app from `mumble dev`.
 - `paste`: clipboard insertion, continuation joins, and generation-safe
   clipboard restoration.
 - `accessibility`: bounded focused-window and selected-text capture through
@@ -166,22 +166,22 @@ substitute for source inspection or a second roadmap.
 - `recognition`: the macOS listener coordinator for hotkey and programmatic
   dictation controls, workers, and observations. It does not own the
   authoritative microphone timeline.
-- `personal_commands`: the user's `hex.config.ts` (or `.js`) in
-  `~/.config/hex`, run in-process by embedded QuickJS (`rquickjs`) on one
+- `personal_commands`: the user's `mumble.config.ts` (or `.js`) in
+  `~/.config/mumble`, run in-process by embedded QuickJS (`rquickjs`) on one
   worker thread: TypeScript erased to same-position JavaScript by
-  `personal_commands/typescript` (oxc's parser), the `@hex/commands` module
-  and managed `hex.d.ts` typings, watch-reloaded transformation calls with
+  `personal_commands/typescript` (oxc's parser), the `@mumble/commands` module
+  and managed `mumble.d.ts` typings, watch-reloaded transformation calls with
   per-transformation timeouts and a runtime memory limit, status snapshots,
-  and `hex commands init|check`. Its host APIs are thin native bindings:
+  and `mumble commands init|check`. Its host APIs are thin native bindings:
   `fetch` through `net` (`personal_commands/fetch`),
   `node:child_process` `exec`/`execFile` over `std::process` with a process
   group or job object per run (`personal_commands/process`), and timers,
   settled through QuickJS's job queue by `personal_commands/io`. They work
   only once the person allows the config's content hash (`personal_commands/trust`,
   the Output pane's trust prompt). Public API docs:
-  `site/public/docs/transforms.md` (https://anoma.ly/hex/docs/transforms).
+  `site/public/docs/transforms.md` (https://anoma.ly/mumble/docs/transforms).
   macOS, Windows, and Linux share it.
-- `desktop/background_process`: the one constructor for child processes Hex starts for
+- `desktop/background_process`: the one constructor for child processes Mumble starts for
   its own work (OpenCode CLI, curl, PowerShell); on Windows they
   never open a console window.
 - `dictation/text_replacements`: phrase-boundary-aware compilation of configured text
@@ -206,58 +206,58 @@ substitute for source inspection or a second roadmap.
 - `desktop/login_item`: the native `SMAppService.mainAppService` adapter and its worker
   thread. macOS owns registration state; it is deliberately not duplicated in
   `settings.json`.
-- `policy`: macOS managed-preference feature locks in `anomaly.hex`
+- `policy`: macOS managed-preference feature locks in `anomaly.mumble`
   (`DisableOpenCodeProcessing`, `DisableTransforms`, `DisableLabs`,
   `RestrictTransformsToLoopback`), forced
   values only. Locked switches read off at load and keep their saved values on
   save; list-driven work checks the policy where it starts.
-- `app_paths`: the Application Support owner (`hex` on every OS) for runtime
+- `app_paths`: the Application Support owner (`mumble` on every OS) for runtime
   logs and shared state.
 - `desktop/onboarding`, `desktop/permission_guide`: required permission health, the native
   floating System Settings guide, the release startup gate, and the practice
   game.
-- `audio/hex_microphone`, `audio/voice_filter`: the experimental virtual microphone
-  (`Hex Microphone`: a CoreAudio driver on macOS, a PipeWire virtual source
+- `audio/mumble_microphone`, `audio/voice_filter`: the experimental virtual microphone
+  (`Mumble Microphone`: a CoreAudio driver on macOS, a PipeWire virtual source
   fed through `pw-cat` on Linux, none on Windows, which would need a signed
   kernel driver), the lock-free capture-to-sink ring buffer, real-time
   voice-filter DSP presets, and the offline WAV renderer behind
-  `hex dev voice-filter render`.
+  `mumble dev voice-filter render`.
 - `linux`, `linux/app`, `linux/dictation`, `linux/paste`:
-  the Linux beta CLI (including the `hex dictation` and
-  `hex paste-last` keybinding commands and launch forwarding), the one Linux
+  the Linux beta CLI (including the `mumble dictation` and
+  `mumble paste-last` keybinding commands and launch forwarding), the one Linux
   process (host thread, window on demand through one seam, Quit), the hotkey
   capture-transcribe-paste loop with Paste Last,
   and paste.
-- `linux/service` also adopts the session's Wayland display at `hex service`
+- `linux/service` also adopts the session's Wayland display at `mumble service`
   start when the unit has none (Hyprland imports nothing into systemd; #756):
   the user manager's `WAYLAND_DISPLAY`, else the newest answering
   `$XDG_RUNTIME_DIR/wayland-*` socket the user owns. `linux/rune_hud`'s
   `limitation()` names the HUD's failure: no display, no layer-shell, or
   Rune's overlay error.
 - `linux/gnome_shortcuts`: on GNOME without a GlobalShortcuts portal
-  (GNOME 46, #781), Hex's own custom keybindings under
-  `…/media-keys/custom-keybindings/hex-*/` via `gsettings`
-  (`linux/gsettings`): `hex dictation toggle` and `hex paste-last`.
-  Opt-in (`gnome_keyboard_shortcuts`), written while Hex
+  (GNOME 46, #781), Mumble's own custom keybindings under
+  `…/media-keys/custom-keybindings/mumble-*/` via `gsettings`
+  (`linux/gsettings`): `mumble dictation toggle` and `mumble paste-last`.
+  Opt-in (`gnome_keyboard_shortcuts`), written while Mumble
   listens and removed when it's disabled; an existing entry keeps the key the
   user set in GNOME, and other custom shortcuts are never touched.
 - `linux/clipboard`: the clipboard a Linux paste restores: every format of the
   CLIPBOARD selection read within a size cap and deadline, then served again
-  from Hex (ext-data-control, else wlr-data-control on Wayland, its own selection owner with INCR on
+  from Mumble (ext-data-control, else wlr-data-control on Wayland, its own selection owner with INCR on
   X11) until another client takes it. Without either protocol (GNOME), only
   the Labs opt-in `gnome-clipboard-restore` reads and restores through an
   already running XWayland's selection.
 - `linux/input`: the one shortcut state machine (hold, double-tap lock, toggle,
-  double-tap only, Paste Last, and `hex` commands) and the
+  double-tap only, Paste Last, and `mumble` commands) and the
   monitor that feeds it from X11 key grabs, the Wayland GlobalShortcuts portal,
-  or, without the portal, the `hex` commands alone.
-- `linux/portal`: Hex's Linux app id `anomaly.hex` (reverse-DNS, #579; the
-  windows' Wayland app_id and X11 WM_CLASS, and the `anomaly.hex.desktop`
-  entry installs ship), the move of a managed pre-#579 `hex.desktop` to that
-  name, the portal bus (a private zbus connection, `Register("anomaly.hex")`
+  or, without the portal, the `mumble` commands alone.
+- `linux/portal`: Mumble's Linux app id `anomaly.mumble` (reverse-DNS, #579; the
+  windows' Wayland app_id and X11 WM_CLASS, and the `anomaly.mumble.desktop`
+  entry installs ship), the move of a managed pre-#579 `mumble.desktop` to that
+  name, the portal bus (a private zbus connection, `Register("anomaly.mumble")`
   after writing a managed fallback entry for a loose binary, requests and
   sessions) and the GlobalShortcuts client on it: one session binding all of
-  Hex's shortcuts once, granted-trigger descriptions, ShortcutsChanged, ConfigureShortcuts, and
+  Mumble's shortcuts once, granted-trigger descriptions, ShortcutsChanged, ConfigureShortcuts, and
   session-closed reporting.
 - `linux/remote_desktop`: the RemoteDesktop portal client Wayland paste uses
   without the virtual keyboard protocol: a keyboard-only session with a
@@ -272,7 +272,7 @@ substitute for source inspection or a second roadmap.
   audio through `audio/output_ducking`, and MPRIS pause over D-Bus (zbus),
   restoring only what it changed, plus idle-sleep prevention for dictations.
 - `linux/input_route`: System default's Bluetooth avoidance on Linux. ALSA's
-  default cannot name another PipeWire source, so Hex marks its ALSA streams
+  default cannot name another PipeWire source, so Mumble marks its ALSA streams
   (`PIPEWIRE_ALSA`: `state.restore-target = false` and its PID, set on the
   main thread at startup) and moves them off a Bluetooth default source to
   the built-in (PCI) input, else the first other hardware input.
@@ -280,7 +280,7 @@ substitute for source inspection or a second roadmap.
   nonempty `WAYLAND_DISPLAY` rule, independent of persisted preferences.
 - `linux/service`: the single-instance lock and owner-only, same-user Unix
   socket that forwards `Activate` (with the activation token), shortcut
-  commands, `Status`, and `Quit` to the one Hex process, plus the per-user
+  commands, `Status`, and `Quit` to the one Mumble process, plus the per-user
   systemd lifecycle (`Type=notify` readiness, `session.env`, start/restart).
 - `linux/rune_hud`: the Linux side of `rune_hud`: `LinuxIndicator` turns the
   listener's capture, meter, and pending-output reports into HUD events and
@@ -296,13 +296,13 @@ substitute for source inspection or a second roadmap.
   `rune_hud_frames` renders a fixed dictation through the shaders offscreen.
 - `linux/tray`: the optional tray icon, a `rune::Tray` (StatusNotifierItem
   with a dbusmenu built by `desktop/tray_menu`). It registers whenever a tray host
-  (`org.kde.StatusNotifierWatcher`) appears; without one Hex runs unchanged.
+  (`org.kde.StatusNotifierWatcher`) appears; without one Mumble runs unchanged.
 - `desktop/tray_menu`: the tray menu Linux and Windows share (recording state, Show
-  Hex, Paste last dictation, the update item, Enable / Disable Hex, Quit Hex).
+  Mumble, Paste last dictation, the update item, Enable / Disable Mumble, Quit Mumble).
   Each tray maps a `TrayCommand` onto its own runtime.
 - `linux/login_item`: Launch at login on Linux, the managed XDG autostart
   entry the installer also writes; the file is the only state.
-- `net`: Hex's own HTTPS (update checks, transformation `fetch`, cloud
+- `net`: Mumble's own HTTPS (update checks, transformation `fetch`, cloud
   transcription): ureq over the platform's TLS and trusted
   roots (`net::tunnel` for a WebSocket's TCP through the same proxy), the proxy the
   computer uses (environment variables everywhere, then Windows' WinHTTP
@@ -340,7 +340,7 @@ substitute for source inspection or a second roadmap.
 - `history`: the owner-only bounded retained-dictation store: retention
   windows with hard entry and byte caps, atomic crash-safe persistence, and
   search. Text and bounded metadata only; no audio is retained.
-- `control/transcript_cli`: the read-only release command `hex history` on
+- `control/transcript_cli`: the read-only release command `mumble history` on
   every OS, versioned JSON projections and filters.
   Reads history snapshots without opening the writable store; its stemmed,
   fuzzy BM25 `--search` is History's own (`history/search`), and its time
@@ -353,7 +353,7 @@ substitute for source inspection or a second roadmap.
   projection over `EventReader`. Transcript rows read retained events directly.
 - `desktop/host`: the in-process listener, transcription, shortcut, and update
   snapshot-and-action types shared by the Linux and Windows hosts, the window,
-  and `hex status`.
+  and `mumble status`.
 - `rune_ui`: the one window on macOS, Windows, and Linux, on Rune with
   `rune-kit` and the OpenCode theme: General, Output, and History (each
   feature owns its settings, rarer ones in the pane's Advanced fold), and under Labs (`labs`:
@@ -361,8 +361,8 @@ substitute for source inspection or a second roadmap.
   Playground (`⇧⌘D`) HUD Lab's live Dot scope sliders (`hud_stories`), the
   Sounds sheet (its stage replays `rune_hud`'s HUD, drawn by the
   window's compositor with `rune_hud.wgsl`), the onboarding pages, the `--snap`
-  fixture scenes, and the macOS `hex://story/…` playground links
-  (`story_link`, `hex-test://` in test builds). `platform::Capabilities` decides which panes and rows exist (and, through `rune_ui::capabilities`, which `hex settings` keys act and what `hex status` reports); every difference between the OSes names a reason in `platform::DIFFERENCES` (an OS pattern, impossible, or pending), which `parity_tests` enforce;
+  fixture scenes, and the macOS `mumble://story/…` playground links
+  (`story_link`, `mumble-test://` in test builds). `platform::Capabilities` decides which panes and rows exist (and, through `rune_ui::capabilities`, which `mumble settings` keys act and what `mumble status` reports); every difference between the OSes names a reason in `platform::DIFFERENCES` (an OS pattern, impossible, or pending), which `parity_tests` enforce;
   `rune_ui/linux_host.rs`, `windows_host.rs`, and `macos_host.rs` connect it to
   each OS's host. Keep shared UI in the pane modules and only OS behavior in
   the hosts.
@@ -389,7 +389,7 @@ substitute for source inspection or a second roadmap.
   cannot open a directory, so file syncs and directory syncs go through it.
 - `microphone_activity`: permission-light observation, on macOS only, of
   which apps use the microphone (CoreAudio processes), for Labs › Also pause
-  the browser, the Hex Microphone status, and browser processes. No samples
+  the browser, the Mumble Microphone status, and browser processes. No samples
   are read.
 - `audio/system_audio`: macOS System Audio Recording consent (TCC
   `kTCCServiceAudioCapture`): the status check and request behind the
@@ -401,12 +401,12 @@ substitute for source inspection or a second roadmap.
 - `labs`: the Labs feature registry (`labs::Feature`: name, settings key,
   description, audience), the runtime gates (`labs::live_text`,
   `playground`, `vocabulary_biasing`, `mouse_shortcuts`), and
-  `hex labs [on|off <feature>]`. `dev_build`: whether this is a dev, local, test,
+  `mumble labs [on|off <feature>]`. `dev_build`: whether this is a dev, local, test,
   or dev-channel build.
 - `desktop/instance`: the exclusive Application Support lock that prevents concurrent
   command listeners.
-- `desktop/process_exit`: how the macOS app ends. Every quit path (menu, `hex quit`
-  and `hex restart`, Ctrl-C, and AppKit's terminate) stops and joins Hex's
+- `desktop/process_exit`: how the macOS app ends. Every quit path (menu, `mumble quit`
+  and `mumble restart`, Ctrl-C, and AppKit's terminate) stops and joins Mumble's
   workers, bounded by a 5 s deadline, then calls `_exit`, so C++ static
   destructors never run under live threads. A restart
   schedules its relaunch first; the new copy waits for the old pid to exit.
@@ -426,7 +426,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   Keep saved values readable by older builds. Do not omit optional fields
   whose absence restores a nonempty default, such as `paste_last_hotkey`.
 - On a new Mac, release dictation starts only after Microphone and
-  Accessibility are ready. Hex never asks for Input
+  Accessibility are ready. Mumble never asks for Input
   Monitoring: Accessibility also grants the listen-event access its shortcut
   taps need (measured on macOS 26 and 27).
 - The dictation shortcut defaults to Option but supports modifier-only,
@@ -454,13 +454,13 @@ CoreAudio formats, AppleScript details, or event serialization.
   as Toggle's cancel shortcut. Releasing Alt or Windows
   after a modifier-only shortcut held them is swallowed and replayed after a
   tap of unassigned VK 0xE8, so the menu bar and Start stay closed (not with
-  Share shortcut). Hex marks every event it injects with `HEX_INJECTED` and its
+  Share shortcut). Mumble marks every event it injects with `MUMBLE_INJECTED` and its
   hook skips them, so a paste's Ctrl never presses a Ctrl-alone shortcut.
 - Windows onboarding shows its permissions page, with one Microphone row,
   only while Settings' microphone switch (device, user, or "Let desktop apps
   access your microphone") is off; Open Settings opens
   `ms-settings:privacy-microphone`, and setup waits for it. Linux has no
-  permissions page. The practice game on every OS follows Hex's own
+  permissions page. The practice game on every OS follows Mumble's own
   dictation of the saved shortcut (the listener's event log on Linux and
   Windows), and Done always skips it.
 - GUI startup must successfully call `keyboard::initialize_layout` on the OS
@@ -469,8 +469,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   Uncached headless lookups retain live-layout resolution, with all native
   lookup and snapshot construction serialized by the same lock.
 - macOS launch order: `main` calls `rune::prewarm_gpu()` (macOS draws with Rune's native Metal
-  backend by default; Hex never picks a backend) right after parsing
-  the command line, only when it will run the app (`hex app` without Rune's
+  backend by default; Mumble never picks a backend) right after parsing
+  the command line, only when it will run the app (`mumble app` without Rune's
   headless flags, or the bundled executable with no command), never for a CLI
   command. A hidden or login launch prewarms too and Rune drops it: whether
   the window opens depends on settings, which load after the keyboard layout.
@@ -484,7 +484,7 @@ CoreAudio formats, AppleScript details, or event serialization.
 - Another app's global shortcut (Carbon hotkeys, such as Spaceman's Option-1)
   consumes its key before the session taps. A listen-only HID tap reports key
   presses as chord evidence only: it discards an early hold or pending gesture
-  like any unrelated key, never tracks key state, and skips Escape and Hex's own
+  like any unrelated key, never tracks key state, and skips Escape and Mumble's own
   shortcuts. Its timestamps may be Mach ticks or nanoseconds.
 - Stale shortcut recovery requires at least 100 ms of sampled keyboard neutrality,
   no pending input, and no hold or pending gesture. A lock is repaired only when
@@ -514,18 +514,18 @@ CoreAudio formats, AppleScript details, or event serialization.
   (`cancel_hotkey`, Escape by default, rebindable in General under Shortcut
   mode) discards the active recording with the cancel tone: nothing is
   transcribed, pasted, or saved to History, and jobs already transcribing
-  always finish. Hex takes the key only while a toggled recording runs, and
+  always finish. Mumble takes the key only while a toggled recording runs, and
   then keeps it (repeats and release included) from the app in front; idle,
   and always in Hold mode, it stays with every app. macOS suppresses it in
   the session tap only while the listener arms it (`set_takes_cancel`),
   Windows' hook only while its capture records, and X11 grabs it only for
-  the recording. A shortcuts portal holds a key for as long as Hex runs, so
-  on Wayland Hex binds nothing for it and Settings says to bind
-  `hex dictation cancel` in the desktop. `hex dictation cancel` discards
+  the recording. A shortcuts portal holds a key for as long as Mumble runs, so
+  on Wayland Mumble binds nothing for it and Settings says to bind
+  `mumble dictation cancel` in the desktop. `mumble dictation cancel` discards
   whatever records, in any mode. Hold mode has no cancel: Escape ends no
   capture there, not even as a chord. Every other intentional dictation
   finishes and pastes; only short taps, chords, and silent captures discard,
-  and Hex itself ends a capture only when its input or microphone is lost.
+  and Mumble itself ends a capture only when its input or microphone is lost.
 - A dictation discarded for silence (level under the silence threshold, or no
   speech the detector hears) is discarded quietly on every OS: no error tone,
   no note, nothing in Settings. The log keeps the measured level and peak
@@ -535,14 +535,14 @@ CoreAudio formats, AppleScript details, or event serialization.
 - Recording audio behavior and idle-sleep prevention begin only after the
   intentional-hold threshold. Ordinary shortcut chords must not mute output,
   pause media, or prevent sleep.
-- A modifier-only shortcut (not Globe/Fn) passes through, so once Hex owns
+- A modifier-only shortcut (not Globe/Fn) passes through, so once Mumble owns
   the press (hold past the threshold, Toggle start after the 40 ms chord
   grace, lock-finishing press) it posts one marked press of unassigned key
   code 0x44 at HID while exactly its modifiers are still down, so other
-  apps' modifier-tap hotkeys read a chord. Hex's annotated-session key tap
+  apps' modifier-tap hotkeys read a chord. Mumble's annotated-session key tap
   drops it, so the focused app never receives it (and never beeps). Short
   taps and chords never get one,
-  and it never reaches Hex's state machines.
+  and it never reaches Mumble's state machines.
 - The start tone confirms the shortcut press itself, not the hold threshold: it
   is provisional, sounds after a 40 ms chord grace, and a chord or short tap
   retracts it (silently inside the grace, else
@@ -559,7 +559,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   never block authoritative audio capture. Their queues remain bounded.
 - Dictation audio always goes to the chosen cloud service (Claude or Codex):
   it is the transcriber, no longer gated by any toggle, and only dictations
-  (shortcut, `hex dictation`, `/dictations`) send audio. A dictation
+  (shortcut, `mumble dictation`, `/dictations`) send audio. A dictation
   streams from the hold threshold (Toggle on Linux and Windows: the press; Linux
   `/dictations`: its start), so short taps and chords send nothing, but a
   dictation discarded later has already sent what it recorded. Nothing pastes
@@ -598,7 +598,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   service; any other failure (empty, late, interrupted, or signed out) fails the
   dictation with its reason, with no local fallback. Nothing pastes or reaches
   the focused app before the final text.
-  With Labs › Live text on, the stream publishes its provisional text for Hex's
+  With Labs › Live text on, the stream publishes its provisional text for Mumble's
   own HUD only; it is never pasted, copied, or kept in History or Paste Last.
   Streams need no GPU. Dictation is never cut at pauses.
 - Starting a new capture never cancels accepted dictation work. Pending jobs
@@ -607,46 +607,46 @@ CoreAudio formats, AppleScript details, or event serialization.
   capture. Shortcut boundaries come from delivered CGEvent timestamps; do not
   fabricate a release timestamp from later physical state.
 - A programmatic dictation's owner cancels it through the API, and the lease
-  ends an abandoned one. While one records, Hex claims no Escape at all.
+  ends an abandoned one. While one records, Mumble claims no Escape at all.
 - The transcription selection is the provider (`transcription.provider`:
   Claude or Codex, default Claude) and the language (`transcription.language`,
-  default `en`), each a `hex settings` key. There is no model to download,
-  verify, switch, or prewarm; Hex never refreshes or writes either app's
+  default `en`), each a `mumble settings` key. There is no model to download,
+  verify, switch, or prewarm; Mumble never refreshes or writes either app's
   sign-in, so an expired one reads as signed out until its app renews it.
-- Hex has one onboarding, on every build and OS, stable and dev alike: the
+- Mumble has one onboarding, on every build and OS, stable and dev alike: the
   first-run story (`rune_ui/onboarding_kit/live.rs`) over the tour state
   machine (`rune_ui/onboarding.rs`, `desktop::onboarding::Flow`). No flag,
   experiment, or build type chooses another. `Ui::new` opens it whenever
   `Tour::start` says this run needs it: a new install, a run quit part-way
   (resumed at its saved step), or an upgrader from 2.3.1 or earlier whose
-  setup isn't ready (#475). Run setup again (Labs) and `hex onboarding reset`
-  replay it from the start on every build. Start using Hex records completion
+  setup isn't ready (#475). Run setup again (Labs) and `mumble onboarding reset`
+  replay it from the start on every build. Start using Mumble records completion
   only once setup is ready. The run covers permissions, then the practice
   game; there is no model step. A quiet Skip shows only on the optional pages
   (the demo and the practice); permissions and the paste permission have no
   Skip. A quiet Skip passes over that part to the next step setup still needs,
-  else Hex is ready, and never records completion.
+  else Mumble is ready, and never records completion.
 - The microphone is either System default (`microphone` unset) or one saved
   device. System default follows the OS default input live: macOS through
   CoreAudio listeners on the default input and the device list (their callbacks
   only bump a counter, never on the audio callback), Windows through the
   default-input stream's change report, and Linux at the next stream open
-  (ALSA's default resolves when it opens). Hex never captures from Hex
-  Microphone: a Hex Microphone default stands in with the built-in microphone,
+  (ALSA's default resolves when it opens). Mumble never captures from Mumble
+  Microphone: a Mumble Microphone default stands in with the built-in microphone,
   else the first real input, logged and shown in Settings. With a MacBook's
   lid closed (`AppleClamshellState`), the built-in microphone is off in
   hardware but still listed, so it is passed over the same way, and with no
-  other input Hex reports why instead of recording silence. With
+  other input Mumble reports why instead of recording silence. With
   `avoid_bluetooth_microphone` on (the default; General › Advanced), a
   Bluetooth default is passed over the same way (macOS: CoreAudio transport
   Bluetooth or Bluetooth LE; Windows: WASAPI enumerator `BTHENUM`, or a
   headset/handset of unknown bus such as a `BTHHFENUM` hands-free endpoint;
-  Linux: a `bluez5` default source, whose stream Hex moves after opening), so the headset never drops into call audio, but kept when
+  Linux: a `bluez5` default source, whose stream Mumble moves after opening), so the headset never drops into call audio, but kept when
   no other usable input exists; a saved Bluetooth microphone and `--device`
   are always honoured, and a change to the setting re-resolves like a
   device-list change. Settings names the stand-in. A saved microphone
   that is missing or will not open falls back to the system default without
-  changing the setting, and Hex switches back when it returns. Any switch
+  changing the setting, and Mumble switches back when it returns. Any switch
   (selection, default, device list, or lid) happens only while capture is idle,
   after the current capture, and opening the replacement must succeed before
   the old stream is dropped; a device that resolves to the one already open is
@@ -673,21 +673,21 @@ CoreAudio formats, AppleScript details, or event serialization.
   allows its exact content hash; any file change asks again, and approval is
   stored outside the config folder. Each transformation runs under its own
   timeout (1 s, 30 s with host APIs, 60 s cap); when it settles or expires,
-  Hex abandons its requests and kills every process tree it started. Requests
+  Mumble abandons its requests and kills every process tree it started. Requests
   and programs stay bounded (8 and 4 at once). Logs name hosts and programs
   with status, duration, and byte counts, never text, bodies, arguments, or
   environment values.
-- Hex never starts, probes, or searches for an OpenCode executable, and never
+- Mumble never starts, probes, or searches for an OpenCode executable, and never
   starts the service: it only talks to an already running OpenCode service
   found through its registration file (`desktop/opencode_service`). Nothing touches
   OpenCode unless a feature that uses it runs: mode rewriting, or the model
   catalog while the Modes pane shows. Checks stay off the UI thread. A stopped
   service is looked for again at a coarse interval only while that pane shows;
-  catalog failures require an explicit retry. Hex's OpenCode workspace folder is
+  catalog failures require an explicit retry. Mumble's OpenCode workspace folder is
   created by the first request that uses it.
 - Personal transformations run in-process: no child process,
   no Node or Bun, and no filesystem, network, process, or timer API in the
-  script engine; scripts import only `@hex/commands` and files inside the
+  script engine; scripts import only `@mumble/commands` and files inside the
   config folder. One worker thread owns the QuickJS runtime; each
   transformation call is interrupted after 1 s and a load after 2 s, and the
   runtime is capped at 64 MiB. A config that fails to load or compile keeps
@@ -705,16 +705,16 @@ CoreAudio formats, AppleScript details, or event serialization.
   hold, toggle, double-tap lock, and queueing as dictation does; the
   shortcut that started a capture owns it. It pastes the trimmed transcript
   with no Output step, records History kind Raw, and updates Paste Last.
-  `hex dictation start|toggle --raw` does the same; a printing stop of a raw
+  `mumble dictation start|toggle --raw` does the same; a printing stop of a raw
   dictation prints the transcript as heard.
-- `hex dictation stop --print` (macOS and Linux) stops through the listener's
+- `mumble dictation stop --print` (macOS and Linux) stops through the listener's
   own queue with a one-shot reply: recording stops at once and only that
   command waits, at most 60 s, for the text, processed as a paste. It never
   pastes, even on failure or timeout; no speech exits 4. History records it as
   Printed and Paste Last skips it.
 - Option-Shift-V pastes the last completed dictation.
 - Do not persist captured audio. Diagnostic dictation retention is the one
-  explicit, bounded, owner-only opt-in through `HEX_RETAIN_DICTATION_AUDIO`;
+  explicit, bounded, owner-only opt-in through `MUMBLE_RETAIN_DICTATION_AUDIO`;
   History never stores audio.
 - Retained dictation history records only successful pasted output: raw and
   final text plus bounded metadata, never full browser URLs or window titles,
@@ -725,26 +725,26 @@ CoreAudio formats, AppleScript details, or event serialization.
   owner; searches never return expired entries while waiting for disk cleanup.
   The hard caps are 10,000 entries and 16 MiB of raw + final text (oldest evicted
   first), with existing per-entry metadata and text limits. There is no archive.
-- `hex history` is read-only, release-available on every OS,
+- `mumble history` is read-only, release-available on every OS,
   independent of feature opt-ins. Dispatch before process
-  logging, the instance lock, local API, GUI, permissions, or Hex Microphone.
+  logging, the instance lock, local API, GUI, permissions, or Mumble Microphone.
   History reads one open
   file through concurrent atomic replacements, applies the saved retention at
   query time, and reports malformed files/settings without repairing them.
   JSON contracts are documented in `docs/transcript-cli.md`; incompatible
   changes require a version increment.
-- `hex` control commands (`status`, `quit`, `dictation`, `settings set`,
+- `mumble` control commands (`status`, `quit`, `dictation`, `settings set`,
   `model use`, `window show`, …) are release-available on
-  every OS and drive only the one running Hex through the owner-only
+  every OS and drive only the one running Mumble through the owner-only
   discovery file and bearer-authenticated `POST /control` (64 KiB request,
   1 MiB reply, 10 s in-app deadline). A command an OS can't do answers `unsupported` at runtime. They dispatch before process logging,
-  or the instance lock, and never launch Hex; only `hex start` and
-  `hex restart` open it. Every command is carried out by the app's own paths
+  or the instance lock, and never launch Mumble; only `mumble start` and
+  `mumble restart` open it. Every command is carried out by the app's own paths
   (the window's settings save followed by `ReloadSettings`, the shortcut
   state machine), so CLI-started dictations look and stop exactly like the
   UI's and opt-ins stay explicit settings.
   Commands are idempotent (`changed: false`). `settings::every_persisted_setting_has_a_cli_key`
-  fails when a persisted setting has no `hex settings` key; a protocol change
+  fails when a persisted setting has no `mumble settings` key; a protocol change
   that breaks either shape increments `CONTROL_VERSION` and `docs/cli.md`.
 - Visible state remains `Transcribing` until every accepted transcription or
   paste output has completed, including ordered post-processing and insertion.
@@ -752,26 +752,26 @@ CoreAudio formats, AppleScript details, or event serialization.
   boundaries, steal focus, or block controls in the foreground application.
 - Desktop UI is governed by [`docs/design-system.md`](docs/design-system.md);
   read it before changing any pane or picker. Rune is the only UI
-  toolkit: compose `rune-kit` components and Hex's pieces in
+  toolkit: compose `rune-kit` components and Mumble's pieces in
   `rune_ui/controls.rs` and `rune_ui/lists.rs`, and name only the OpenCode
   theme's tokens, never colour literals. Use sentence case and the product name
-  "Hex" in all copy. Reserve the accent (Primary) fill for at most one main
+  "Mumble" in all copy. Reserve the accent (Primary) fill for at most one main
   action per screen; states such as recording or an available update use a
   Secondary button with a status dot. Extend a piece instead of adding a
   parallel helper, and verify visual changes with `--snap` scenes in light and
   dark.
-- Neither Hex nor Rune (`anomalyco/rune`, public MIT) is published to
-  crates.io; never run `cargo publish`. Hex depends on `rune`, `rune-kit`,
+- Neither Mumble nor Rune (`anomalyco/rune`, public MIT) is published to
+  crates.io; never run `cargo publish`. Mumble depends on `rune`, `rune-kit`,
   and `rune-theme-opencode` at one pinned Git rev in `Cargo.toml` and
   `Cargo.lock`; every pin bump
   must also update `cargoLock.outputHashes."rune-0.0.1"` in `nix/package.nix`
   and keep `windows` 0.62.2 for `gpu-allocator` in `Cargo.lock`.
-- At the start of each work round, bump Hex's Rune pin to Rune's `dev` head:
+- At the start of each work round, bump Mumble's Rune pin to Rune's `dev` head:
   read the `## dev` section of Rune's `CHANGELOG.md` since the current pin,
   adapt to its breaking changes, update `nix/package.nix`'s outputHash, and
   run `scripts/check rune_ui`, goldens included. If Rune itself breaks, report
   it to Rune rather than working around it.
-- Hex runs as one long-lived process per user and data root on every OS: a
+- Mumble runs as one long-lived process per user and data root on every OS: a
   menu-bar process on macOS (`macos_rune`, native `NSStatusItem`, native Metal
   `NSPanel` HUD), a tray process on Windows
   (`windows/rune`, named-event single instance, Rune overlay HUD), and a
@@ -780,24 +780,24 @@ CoreAudio formats, AppleScript details, or event serialization.
   HUD, or accepted work.
 - Updates follow the release protocol's client rules exactly (the shared
   vectors must pass). Versions are display text and never compared: each
-  channel has one current release, and Hex takes it whenever it is not the
+  channel has one current release, and Mumble takes it whenever it is not the
   running build (Linux and Windows: the executable's SHA-256 against the
   target's; macOS: the exact version). A rollback is the service making an
   earlier release current. `required` releases install without waiting for
   the rollout; others wait for a rollout bucket drawn once from the OS's
   secure random source, kept in `<support>/update-bucket`, and never sent.
-  Each build knows the channel it was published on (`HEX_BUILD_CHANNEL`,
-  stamped by Release); when the Update channel setting names another, Hex
+  Each build knows the channel it was published on (`MUMBLE_BUILD_CHANNEL`,
+  stamped by Release); when the Update channel setting names another, Mumble
   offers that channel's current release as "Switch to Stable 2.3.1" and
   installs it only once the user confirms, never by itself. Dev builds are
   `0.0.0-dev-<run number>`, as OpenCode numbers them. Requests carry nothing about the install. Checks run 10 seconds
   after launch, hourly (every 10 minutes and on window focus, at most once a minute, on the Dev channel), and on the sidebar footer's Check for updates, backing off on errors; manifests are
   not signed, so nothing runs before the download's size and SHA-256 match
   the manifest and, on macOS and Windows, its code signature passes: macOS
-  `app/update-requirement.txt` (Developer ID team `5NZ4Q7NXJ4`, `anomaly.hex`,
+  `app/update-requirement.txt` (Developer ID team `5NZ4Q7NXJ4`, `anomaly.mumble`,
   notarized), Windows a valid Authenticode signature whose signer is
   `AUTHENTICODE_SIGNER`. Linux has no OS signature, so Release signs each
-  Linux executable with Anomaly's ed25519 key (`HEX_RELEASE_SIGNING_KEY`,
+  Linux executable with Anomaly's ed25519 key (`MUMBLE_RELEASE_SIGNING_KEY`,
   `.github/release/sign-linux.sh`, which refuses a key that does not match
   `.github/release/linux-signing.pub`) and publishes the 64-byte signature
   as the `<target>-sig` file; the updater (`updater/linux.rs`
@@ -806,12 +806,12 @@ CoreAudio formats, AppleScript details, or event serialization.
   (`protocol::resolve_url`).
 - Only direct installs replace themselves: Linux and Windows with our
   installer's receipt (`install.json` in the user-owned data root, which also
-  names the channel) and the version layout, macOS a `Hex.app` this user can
+  names the channel) and the version layout, macOS a `Mumble.app` this user can
   rename in a writable, non-translocated folder. A read-only macOS location
   shows Download update (the DMG); package-managed installs (pacman, Nix) show
   their manager's command once it serves another version; source and test
-  builds never check; `DisableUpdates` (macOS `anomaly.hex` defaults domain,
-  Windows `SOFTWARE\Policies\Anomaly\Hex` in HKLM or HKCU) turns checks off.
+  builds never check; `DisableUpdates` (macOS `anomaly.mumble` defaults domain,
+  Windows `SOFTWARE\Policies\Anomaly\Mumble` in HKLM or HKCU) turns checks off.
   Never escalate privileges, and never overwrite development, root, or
   package-manager-owned files.
 - A staged update waits for Restart to update, and checks continue while it
@@ -831,8 +831,8 @@ CoreAudio formats, AppleScript details, or event serialization.
   approved once (restore token, persist mode 2) and kept with the paster.
   With neither, the transcript stays copied and the failure names the
   missing portal. Shortcuts come from the GlobalShortcuts portal when the
-  desktop offers it; otherwise the user binds the `hex dictation` and
-  `hex paste-last` commands in the desktop's own
+  desktop offers it; otherwise the user binds the `mumble dictation` and
+  `mumble paste-last` commands in the desktop's own
   keybindings. One general path: no compositor-specific code, no raw input
   devices, no input-group requirement, and no silent fallback to XWayland or
   privileged input injection (uinput). One allowed exception: on a compositor
@@ -843,74 +843,74 @@ CoreAudio formats, AppleScript details, or event serialization.
   GNOME (`gnome-clipboard-restore`, off by default) snapshots and restores the
   clipboard through XWayland's CLIPBOARD selection, which Mutter bridges both
   ways, only on a Wayland session with no data-control protocol and only while
-  this user's XWayland process already runs with `DISPLAY` set; Hex never
+  this user's XWayland process already runs with `DISPLAY` set; Mumble never
   connects first, so it never starts XWayland. While it is off there, Settings
   › Output says the clipboard can't be restored and points to the toggle.
   Everything else stays on Wayland. The desktop may grant a different
   trigger, keep an older one, or refuse one; Settings shows what it granted,
   follows ShortcutsChanged, and opens ConfigureShortcuts (portal version 2).
-  Hex's app id is `anomaly.hex`: every install (direct, AUR, deb/rpm, Nix)
-  ships `anomaly.hex.desktop` with `StartupWMClass=anomaly.hex`, and the
+  Mumble's app id is `anomaly.mumble`: every install (direct, AUR, deb/rpm, Nix)
+  ships `anomaly.mumble.desktop` with `StartupWMClass=anomaly.mumble`, and the
   windows report that id, so there is one launcher entry. Every entry says
-  `Icon=anomaly.hex`: packages install the hicolor PNGs in
+  `Icon=anomaly.mumble`: packages install the hicolor PNGs in
   `packaging/linux/icons` (16–512 px; deb/rpm refresh the icon cache in
-  postinst/postrm), and without a packaged icon Hex writes the same embedded
+  postinst/postrm), and without a packaged icon Mumble writes the same embedded
   PNGs into `~/.local/share/icons/hicolor` at startup and names that icon in
   the managed entries it or the installer wrote (#652). The PNGs carry an
-  `X-Hex-Managed=true` text chunk: Hex replaces and the installer removes only
+  `X-Mumble-Managed=true` text chunk: Mumble replaces and the installer removes only
   marked regular files, never a user's own icon or a symlink. Launch at login is
-  `~/.config/autostart/anomaly.hex.desktop`; where the Background portal exists
-  (`linux/background`, #812) Hex asks it at startup to run in the background
+  `~/.config/autostart/anomaly.mumble.desktop`; where the Background portal exists
+  (`linux/background`, #812) Mumble asks it at startup to run in the background
   and Launch at login goes through it (the portal writes or removes that file,
-  `X-XDP-Autostart=anomaly.hex`). Every RequestBackground rewrites or removes
-  the file, so Hex asks only while it is absent or Hex's (managed or the
-  portal's); the installer treats the portal's entry as Hex's too. At startup Hex renames its own
-  managed `hex.desktop` entries (the names before #579) and never touches
+  `X-XDP-Autostart=anomaly.mumble`). Every RequestBackground rewrites or removes
+  the file, so Mumble asks only while it is absent or Mumble's (managed or the
+  portal's); the installer treats the portal's entry as Mumble's too. At startup Mumble renames its own
+  managed `mumble.desktop` entries (the names before #579) and never touches
   unmanaged ones. Only a loose binary without any entry writes its own
   managed one so the portal can identify it, NoDisplay beside an older
-  package's `hex.desktop`, and removed once a package ships the entry. Every portal shortcut is bound
+  package's `mumble.desktop`, and removed once a package ships the entry. Every portal shortcut is bound
   in one session with one BindShortcuts call, and that set never changes
-  while Hex runs: desktops keep one set per app, and KDE replaces it with
-  each call (a second session once wiped Hex's shortcuts,
+  while Mumble runs: desktops keep one set per app, and KDE replaces it with
+  each call (a second session once wiped Mumble's shortcuts,
   [#482](https://github.com/anomalyco/hex/issues/482)). Keys the desktop
-  changes in its own settings arrive as ShortcutsChanged and work at once; Hex
+  changes in its own settings arrive as ShortcutsChanged and work at once; Mumble
   shows the granted trigger in Settings (row note and the Status hint) and in
-  `hex status --json` (`listener.shortcuts`). On GNOME the Linux dictation
+  `mumble status --json` (`listener.shortcuts`). On GNOME the Linux dictation
   default is Ctrl+Alt+Space (GNOME keeps Alt+Space; so does KDE Plasma's
   KRunner, #898), and Settings flags a shortcut
   on a key GNOME keeps for itself. Enable and Disable
-  (window, tray) also save `enable_on_launch`, so a disabled Hex stays disabled
+  (window, tray) also save `enable_on_launch`, so a disabled Mumble stays disabled
   after a restart (#575). On GNOME only, Disable then binds an empty set in a
-  fresh session: GNOME Settings stores exactly the set an app binds, so Hex's
+  fresh session: GNOME Settings stores exactly the set an app binds, so Mumble's
   entries leave its list without a dialog, and Enable asks for approval again.
   Never on KDE, where an empty set would drop the user's chosen keys (#482).
-  At startup on GNOME, Hex also removes its pre-#579 `hex` set from GNOME's
+  At startup on GNOME, Mumble also removes its pre-#579 `mumble` set from GNOME's
   `org.gnome.settings-daemon.global-shortcuts` settings through `gsettings`,
   since the portal can no longer reach that id; it touches no other app. A portal shortcut
   is held for as long as it is bound and consumed before the focused app
-  sees it, so the portal never binds Escape. On KDE, Hex removes the
+  sees it, so the portal never binds Escape. On KDE, Mumble removes the
   Cancel dictation entries older builds bound (`cancel`, `cancel-dictation`),
   which could hold Escape or another key from every app. Modifier-only
   shortcuts stay unsupported on Linux.
-- Every Linux shortcut source (X11 grabs, portal presses, `hex` commands) feeds
+- Every Linux shortcut source (X11 grabs, portal presses, `mumble` commands) feeds
   the same `linux/input` state machine and emits the same events. Commands are
   idempotent: starting while recording or stopping while idle does nothing.
-  They talk only to a running, listening Hex and fail with a clear error
+  They talk only to a running, listening Mumble and fail with a clear error
   otherwise; they never start one. The control host hands them straight to
   the listener's queue, never through the window's thread.
-- One Linux Hex process per user and data root owns the microphone, model
+- One Linux Mumble process per user and data root owns the microphone, model
   workers, saved settings, History, the HUD, and the window. The window is
   optional and opened on demand; closing it never stops capture, accepted
   work, or the HUD, and cancels only an uncommitted shortcut capture. A
   relaunch forwards `Activate` (with any activation token) and exits 0;
   hidden and autostart launches never show the window. With the managed unit
-  loaded and the default data root, launches start Hex through systemd
+  loaded and the default data root, launches start Mumble through systemd
   (`Type=notify`), which owns its lifetime and restart; a crash restart opens
-  no window. Otherwise the launching process becomes Hex. The socket stays
+  no window. Otherwise the launching process becomes Mumble. The socket stays
   owner-only and peer-UID checked, with bounded framing, queues, and I/O, and
   carries only `Activate`, shortcut commands, `Status`, and `Quit`. Window
-  failures (no display, no GPU) are logged and never stop Hex. The unit's
-  `ExecStart … service`, `hex app`, `hex app --hidden`, and `hex start` stay
+  failures (no display, no GPU) are logged and never stop Mumble. The unit's
+  `ExecStart … service`, `mumble app`, `mumble app --hidden`, and `mumble start` stay
   valid entry points forever: self-updates replace only the executable.
 - On Linux and Windows, saved settings apply to the running listener in place
   while no dictation records; a settings change never stops listening or
@@ -921,8 +921,8 @@ CoreAudio formats, AppleScript details, or event serialization.
 - Linux shortcut capture uses focused input in the window. Recording a
   shortcut suspends the running listener's global matching and registers the
   shortcuts again when it ends; cancellation restores the old binding unless
-  its save already committed. The window and the CLI must expose Hex's state, recovery, and
-  errors. `hex quit`, the window's Quit Hex, and SIGTERM drain workers before
+  its save already committed. The window and the CLI must expose Mumble's state, recovery, and
+  errors. `mumble quit`, the window's Quit Mumble, and SIGTERM drain workers before
   exit. HUD teardown only hides that listener's HUD.
 - Linux paste keeps transcripts off helper argv and bounds helper I/O. X11 waits
   for physical modifiers without discarding accepted output, and shutdown
@@ -930,7 +930,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   merge held physical modifiers into `wtype`'s virtual keyboard, as the
   RemoteDesktop portal shares the desktop's keyboard. So Wayland paste waits on
   `ShortcutKeys`: a modifier shortcut's portal release plus 250 ms (at most
-  2 s after a press without release), or 250 ms after a `hex` command. Docs
+  2 s after a press without release), or 250 ms after a `mumble` command. Docs
   recommend modifier-free binds there. A sent paste is not a verified one.
   New installs use Ctrl-V;
   the terminal-paste preference selects Ctrl-Shift-V and defaults on for
@@ -956,12 +956,12 @@ CoreAudio formats, AppleScript details, or event serialization.
 ```sh
 ./scripts/setup.sh
 cargo run -- listen
-cargo run -- status --json   # asks the running Hex (docs/cli.md)
+cargo run -- status --json   # asks the running Mumble (docs/cli.md)
 cargo run -- dev dashboard   # debug recognition TUI
 cargo run -- app -- --list-scenes
-cargo run -- app -- --snap /tmp/hex-settings.png --scene mac-settings
-cargo run -- app -- --snap /tmp/hex-modes.png --scene modes --theme light
-cargo run -- app -- --snap /tmp/hex-onboarding.png --scene mac-onboarding
+cargo run -- app -- --snap /tmp/mumble-settings.png --scene mac-settings
+cargo run -- app -- --snap /tmp/mumble-modes.png --scene modes --theme light
+cargo run -- app -- --snap /tmp/mumble-onboarding.png --scene mac-onboarding
 ./scripts/install-app.sh
 scripts/check            # fmt, clippy, every test
 scripts/check history  # fmt, then only matching tests
@@ -974,7 +974,7 @@ New, unproven, user-requested, and externally contributed features
 (including ones the issue pipeline builds) land in Labs, off by default
 ([docs/features/labs.md](docs/features/labs.md)): add a `labs::Feature` with
 its settings key and description, a row on the Labs page, and a
-`hex settings` key; gate where the feature's work starts (worker, thread,
+`mumble settings` key; gate where the feature's work starts (worker, thread,
 capture), not just its UI. Never add a master switch or ship such a feature
 on by default. Remove it from Labs when it graduates or is dropped.
 
@@ -994,7 +994,7 @@ source files warns and over 60 fails (`scripts/folder-shape-exceptions.txt`).
 rules on every check; refresh ratcheted ceilings with
 `python3 scripts/code-shape.py --update-exceptions`.
 
-Use Rune's headless renders as the desktop-UI iteration loop: `hex app --
+Use Rune's headless renders as the desktop-UI iteration loop: `mumble app --
 --snap <png> --scene <name>` draws one named fixture scene from `SCENES` in
 `src/rune_ui.rs` without starting the runtime or touching the data folder
 (no settings, History, or log; only `live` reads, and never writes), on
@@ -1003,7 +1003,7 @@ render). Scenes cover every pane and state the goldens check: the Linux and
 Windows panes (`modes`, `history`, `onboarding`,
 `windows-settings`, …) and the macOS ones (`mac-settings`,
 `mac-voice-filter*`, `mac-hud-lab`, `mac-activity`, `mac-onboarding*`).
-`live` renders the running Linux Hex's real state. On a host without a GPU,
+`live` renders the running Linux Mumble's real state. On a host without a GPU,
 render on lavapipe with `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`.
 `cargo test rune_ui` compares the light and dark goldens in `tests/golden/`.
 A scene is a fixture, not native end-to-end proof; the HUDs have no scene.
@@ -1034,57 +1034,57 @@ Microphone selection is System default (the OS default input, live) unless a
 saved microphone is connected; override everything with `--device`. The app
 bundle build requires Xcode 26 for Icon Composer compilation and a Developer ID
 signing identity. `scripts/release-app.sh prepare` builds the notarized and stapled
-DMG and ZIP the Release workflow publishes. Hex publishes every platform to
+DMG and ZIP the Release workflow publishes. Mumble publishes every platform to
 the Anomaly release service (`anomalyco/release`, `https://anoma.ly/release`;
-its dev stage, `dev.anoma.ly/release`, only tests the service itself, and Hex
+its dev stage, `dev.anoma.ly/release`, only tests the service itself, and Mumble
 never publishes to or reads from it) from the Release workflow with curl and its
-GitHub OIDC token, under app `hex`, artifact `desktop`;
+GitHub OIDC token, under app `mumble`, artifact `desktop`;
 [`docs/plans/release-service.md`](docs/plans/release-service.md) pins the
 target and file names and the direct-install receipt, and
 [`docs/releasing.md`](docs/releasing.md) owns the workflow, channels, secrets,
-and old clients. The 2.3.1 feeds and appcast at `https://anoma.ly/hex/files`
+and old clients. The 2.3.1 feeds and appcast at `https://anoma.ly/mumble/files`
 (and Kit's `downloads.hex.kitlangton.dev`/`.com`, which must keep redirecting
 there) stay frozen. GitHub app releases use `v<VERSION>` tags (`app-v…`
 through 2.3.1); each stable one is created as GitHub's Latest release
 (`--latest=true`, stable only). Nothing
 downloads through GitHub's `releases/latest` redirect. Never overwrite a published artifact with different bytes.
-`https://anoma.ly/hex` (in-repo `site/`) is the only Hex website. One
-`site/cloudflare.config.ts` defines the production Worker `hex-production-site` (anoma.ly/hex,
-bucket `hex-production-files`) and the dev Worker `hex-dev-site` (dev.anoma.ly/hex,
-bucket `hex-dev-files`); `cf deploy --prebuilt --mode <mode>` picks one, and
+`https://anoma.ly/mumble` (in-repo `site/`) is the only Mumble website. One
+`site/cloudflare.config.ts` defines the production Worker `mumble-production-site` (anoma.ly/mumble,
+bucket `mumble-production-files`) and the dev Worker `mumble-dev-site` (dev.anoma.ly/mumble,
+bucket `mumble-dev-files`); `cf deploy --prebuilt --mode <mode>` picks one, and
 only CI deploys: a push to `dev` touching `site/` deploys dev, a stable
 Release deploys production. No subdomains. The site's download links come
 from the service's stable manifest when it builds. After publishing a version,
 bump the explicit GitHub mirror/version link in `README.md`; the Release
 workflow updates the Homebrew cask. `bun run --cwd site check:downloads` fails until every download link
 serves a file; every deploy runs it. Verify the live links afterwards.
-The Rust app is named `Hex`, packaged as `Hex.app`,
-with bundle identifier `anomaly.hex` (deliberately not reverse-DNS) and executable
-`hex`; its virtual microphone driver is
-`anomaly.hex.microphone.driver`. Releases through 2.3.1 were `com.kitlangton.hex2`,
-signed by Kit's team `QC99C9JE59`; macOS treats `anomaly.hex` as a new app (fresh
-permissions, login item, and preferences domain), while the `hex` Application
+The Rust app is named `Mumble`, packaged as `Mumble.app`,
+with bundle identifier `anomaly.mumble` (deliberately not reverse-DNS) and executable
+`mumble`; its virtual microphone driver is
+`anomaly.mumble.microphone.driver`. Releases through 2.3.1 were `com.kitlangton.hex2`,
+signed by Kit's team `QC99C9JE59`; macOS treats `anomaly.mumble` as a new app (fresh
+permissions, login item, and preferences domain), while the `mumble` Application
 Support folder, and with it settings, history, and models, is shared. Signing requires
-an explicit `HEX_TEAM_ID` and matching `HEX_NOTARY_PROFILE`; the build
+an explicit `MUMBLE_TEAM_ID` and matching `MUMBLE_NOTARY_PROFILE`; the build
 and release scripts verify the selected team rather than assuming an Anomaly team.
 `scripts/validate-app.sh` checks this identity before preparation and publication.
 The move to Anomaly's team (`5NZ4Q7NXJ4`) is planned in
 `docs/plans/macos-signing.md`; the manual `macOS signed build` workflow signs
 and notarizes an unpublished candidate once the Apple secrets are in the
 `release` environment.
-`scripts/release-app.sh prepare` leaves `hex-<version>-macos-arm64.dmg` and
-`hex-<version>-macos-arm64.zip` (root `Hex.app`, the updater's archive); both
+`scripts/release-app.sh prepare` leaves `mumble-<version>-macos-arm64.dmg` and
+`mumble-<version>-macos-arm64.zip` (root `Mumble.app`, the updater's archive); both
 contain the same signed, stapled app. Do not reuse a released version for
 changed code. Macs on 2.3.1 or earlier and Swift Hex (Sparkle 2.9.4,
 `com.kitlangton.hex2` and `com.kitlangton.Hex`, one shared EdDSA key) update
 straight into the new app (Kit, 2026-11-02): their feeds offer the released
-`Hex.app` ZIP, signed with that old key, and Sparkle's Install Update
+`Mumble.app` ZIP, signed with that old key, and Sparkle's Install Update
 replaces the old app with it. Sparkle accepts it only because `app/Info.plist`
 keeps the old `SUPublicEDKey` (`validate-app.sh` requires it; nothing reads it
 otherwise, and there is still no `SUFeedURL` or Sparkle framework). Users
 click Install Update; nothing installs by itself.
 There is no Swift migration: never import Swift preferences or data or adopt
-its bundle identifier. Once setup is ready, Hex asks a running old Hex (2.3.1
+its bundle identifier. Once setup is ready, Mumble asks a running old Hex (2.3.1
 or Swift) to quit, leaving it installed. See
 `docs/plans/swift-app-handoff.md`. The Rust data root remains unchanged, but the
 new app identity requires fresh macOS permission grants. Validate signed
@@ -1096,7 +1096,7 @@ smoke test, register the new bundle with Launch Services before launch:
 
 ```sh
 '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister' \
-  -f /Applications/Hex.app
+  -f /Applications/Mumble.app
 ```
 
 Pass the actual installed Rust host path to `lsregister` if it was renamed.
@@ -1109,9 +1109,9 @@ Onboarding gates every stable release. Before any stable release, run
 `scripts/check-onboarding.sh` on the release candidate commit and include its
 result, with the scene images it writes, in the go/no-go given to Dax. It
 renders every onboarding scene (the demo, the macOS permissions and Windows'
-microphone switch, Almost ready, the practice game, Hex is ready) in
+microphone switch, Almost ready, the practice game, Mumble is ready) in
 both appearances against the approved goldens, and walks a first run through
-the real onboarding in a clean temporary data folder until it reaches Hex is
+the real onboarding in a clean temporary data folder until it reaches Mumble is
 ready. Any unexpected
 visual or flow change blocks the release; an intentional change refreshes the
 goldens in its own PR. It runs on Linux, like every golden; the macOS and
@@ -1121,8 +1121,8 @@ the same script, and Release's check and stable channels run the full Check
 Linux, Check macOS, and Check Windows suites on the candidate commit; a stable
 run publishes nothing until all four pass.
 
-CI is minimal (Dax): a pull request runs only `hex-agent-policy` and Compile
-(`compile.yml`: `cargo clippy --bin hex` on Linux, macOS, and Windows x64,
+CI is minimal (Dax): a pull request runs only `mumble-agent-policy` and Compile
+(`compile.yml`: `cargo clippy --bin mumble` on Linux, macOS, and Windows x64,
 for code changes). Merge as soon as it compiles locally, without waiting for
 CI; the CI failure pipeline fixes breakages on `dev` afterwards. A push to
 `dev` runs no checks: its Release dev build compiles every OS, and Test
@@ -1140,7 +1140,7 @@ on the released commit only after every platform published, then creates the
 GitHub release with the built-in `GITHUB_TOKEN`, so a failed run leaves no
 tag; `v*` tags are unrestricted because nothing triggers on them. Like OpenCode's release, build jobs (Linux x64 and ARM64 on
 Ubuntu 24.04 runners with their `.deb` and `.rpm`, Windows x64 and ARM64 through `.github/workflows/build-desktop.yml`,
-macOS as an ad-hoc signed `HEX_RELEASE_UNSIGNED=1` app, installers through
+macOS as an ad-hoc signed `MUMBLE_RELEASE_UNSIGNED=1` app, installers through
 `windows-installers.yml`, AUR and Homebrew staging) run repository code with
 no environment, secret, or id-token; sign and publish jobs run in `release`,
 check out only `.github/release/`, and run only those scripts and SHA-pinned
@@ -1158,11 +1158,11 @@ to a job that holds a secret or an OIDC token, and pin every action by SHA.
 `.github/` changes need Dax (CODEOWNERS and the "release boundary" ruleset).
 `.github/workflows/test-builds.yml` calls the same desktop
 workflow on every push to `dev` with `test-build`, plus an ad-hoc signed
-`Hex Test.app` (`HEX_TEST_BUILD=1 scripts/build-app.sh`: bundle ID
-`anomaly.hex.test`, its own `hex-test` data folder and `~/.config/hex-test`;
-it must never read the real `hex` data), as unsigned 14-day artifacts for
-teammates (`docs/test-builds.md`). `HEX_TEST_BUILD=1` builds never update
-themselves, and neither do local builds (`HEX_LOCAL_BUILD=1`, the owner's own
+`Mumble Test.app` (`MUMBLE_TEST_BUILD=1 scripts/build-app.sh`: bundle ID
+`anomaly.mumble.test`, its own `mumble-test` data folder and `~/.config/mumble-test`;
+it must never read the real `mumble` data), as unsigned 14-day artifacts for
+teammates (`docs/test-builds.md`). `MUMBLE_TEST_BUILD=1` builds never update
+themselves, and neither do local builds (`MUMBLE_LOCAL_BUILD=1`, the owner's own
 build from a checkout: footer "Local build · updates off", version label with its
 commit, no channel row). Every push to `dev` (except docs/site-only changes) publishes a dev-channel
 build (the service lets a run from `dev` publish only the `dev` channel, and
@@ -1172,13 +1172,13 @@ required reviewer; its deployment policy admits `dev` and `production`. Rerunnin
 after an interruption is safe: the service stores files by hash and accepts
 the same version again.
 
-`hex-setup-<version>-windows-<x64|arm64>.exe` is a per-user Inno Setup
-installer (`packaging/windows/hex.iss`, built by
+`mumble-setup-<version>-windows-<x64|arm64>.exe` is a per-user Inno Setup
+installer (`packaging/windows/mumble.iss`, built by
 `scripts/build-windows-installer.ps1`) that installs exactly the managed
 layout `install-windows.ps1` creates, so self-updates keep working:
-`%APPDATA%\hex\versions\<version>\hex.exe`, `current-version`, the
+`%APPDATA%\mumble\versions\<version>\mumble.exe`, `current-version`, the
 `install.json` direct-install receipt, and a Start Menu shortcut carrying the
-managed mark. Its uninstaller lives in `hex\uninstall` because
+managed mark. Its uninstaller lives in `mumble\uninstall` because
 updates prune old version directories; it removes every version, the
 receipt, the shortcut, and Launch at login, and keeps settings. It installs
 its version over whatever is installed (versions are never compared). Keep
@@ -1186,7 +1186,7 @@ its `AppId` forever: the updater rewrites that Apps & Features entry's
 version. Release and the Windows installer workflow install, reinstall,
 install over another version with, and uninstall
 it silently on x64 and ARM64 runners (`scripts/test-windows-installer.ps1`).
-Release's `sign-windows` job Authenticode-signs both `hex.exe` through Azure
+Release's `sign-windows` job Authenticode-signs both `mumble.exe` through Azure
 Artifact Signing (GitHub OIDC, SHA-256, RFC 3161 timestamp), the installers
 are built around the signed bytes, and `sign-windows-installers` signs them
 (`.github/release/verify-authenticode.ps1` checks both). Compile jobs and test
@@ -1196,30 +1196,30 @@ builds never hold signing credentials; until the Azure values exist in
 Run `scripts/build-linux-release.sh` (Docker; `scripts/build-linux.sh` for a
 build against the host's glibc) on x86_64 or aarch64 Linux (then
 `scripts/package-linux.sh` for the `.deb` and `.rpm`) and `scripts/build-windows.sh`
-from Git Bash once per architecture with `HEX_WINDOWS_ARCH=x86_64` (the
+from Git Bash once per architecture with `MUMBLE_WINDOWS_ARCH=x86_64` (the
 default) or `aarch64` (clang-cl and Ninja; best on an
 ARM64 host). The static runtime in `.cargo/config.toml` keeps the Visual C++
 Redistributable unnecessary; the release workflow asserts neither Windows
 executable imports it. Release executables are stripped (`[profile.release]`). The
 installers live in the locked `.github/release/` (`install-linux.sh`,
 `install-windows.ps1`; the Installers workflow serves them at
-`https://anoma.ly/hex/files/`) and install from the service's manifest,
+`https://anoma.ly/mumble/files/`) and install from the service's manifest,
 checking each file's size and SHA-256 plus the Linux ed25519 signature or the
 Windows Authenticode signature; `scripts/test-install-linux-release.sh`
 exercises the Linux one against a fixture service with a fixture key.
 
 Use `termctrl` to verify TUI changes at both wide and narrow dimensions. The
-`hex dev dashboard` shows the activity log; `q`/Escape quits.
+`mumble dev dashboard` shows the activity log; `q`/Escape quits.
 
 ## Diagnostics
 
-- `~/Library/Application Support/hex/logs/live.ndjson`: state,
+- `~/Library/Application Support/mumble/logs/live.ndjson`: state,
   transcript, outcome, processing, and context.
-- `~/Library/Application Support/hex/logs/process.log`: Rust,
+- `~/Library/Application Support/mumble/logs/process.log`: Rust,
   CoreAudio, and context-adapter diagnostics.
 
-Windows uses `%APPDATA%\hex` and Linux `~/.local/share/hex` (or under
-`XDG_DATA_HOME`). Hex keeps no compatibility with earlier `voice-control`
+Windows uses `%APPDATA%\mumble` and Linux `~/.local/share/mumble` (or under
+`XDG_DATA_HOME`). Mumble keeps no compatibility with earlier `voice-control`
 folders or per-OS settings files.
 
 ## Future Direction
@@ -1231,14 +1231,14 @@ seam once there are two real adapters or a current test requires substitution.
 
 `ROADMAP.md` is the authoritative work list. Keep these constraints visible:
 
-- Release freeze (Kit, 2026-10-22): publish no Hex release on any OS, stable or
+- Release freeze (Kit, 2026-10-22): publish no Mumble release on any OS, stable or
   staging-to-stable, and don't move `production` (it stays at `app-v2.3.1`),
   until Kit lifts it after the Rune front end has been tested thoroughly on
   real Macs and Windows PCs. Test builds are fine.
 - Validate public onboarding from a clean macOS account and signed Linux updates
   on the supported Arch/i3 host.
 - Validate native Wayland on a real compatible compositor, including physical
-  portal shortcuts, the `hex` commands from a desktop keybinding,
+  portal shortcuts, the `mumble` commands from a desktop keybinding,
   focus/click-through, target paste, and tray-less shutdown.
 - Add a second real browser adapter before generalizing browser context.
 - Do not turn concrete macOS, Linux X11, or command modules into hypothetical

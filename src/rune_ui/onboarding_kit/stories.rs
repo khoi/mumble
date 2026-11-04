@@ -85,12 +85,12 @@ pub(crate) struct Onboard {
     pub(crate) parked_from: Option<f64>,
     pub(crate) typing_from: Option<f64>,
     pub(crate) voice_from: Option<f64>,
-    /// When the resting HUD plate first showed on `"With Hex"` or
+    /// When the resting HUD plate first showed on `"With Mumble"` or
     /// `"Your turn"`: the HUD unfolds from here and keeps running through the
     /// take, so pressing the shortcut never restarts it.
     pub(crate) hud_from: Option<f64>,
     pub(crate) take_from: Option<f64>,
-    /// How many `"Without Hex"` bubbles have flown out of the field so far.
+    /// How many `"Without Mumble"` bubbles have flown out of the field so far.
     sent_seen: usize,
     pub(crate) partial: &'static str,
     pub(crate) take: &'static Take,
@@ -108,7 +108,7 @@ pub(crate) struct Onboard {
     /// A dictation's text landed since the plate last stepped.
     pub(crate) hud_landed: bool,
     pub(crate) sfx: SfxTrack,
-    /// Set when this is Hex's real first run (Labs):
+    /// Set when this is Mumble's real first run (Labs):
     /// what the window's tour reports, in place of the fixtures.
     pub(crate) live: Option<Live>,
     /// The dictated words flying into the practice field.
@@ -119,12 +119,12 @@ pub(crate) struct Onboard {
     pub(crate) game: Option<super::game::Session>,
     /// The interactive try as the plain practice field, not the game.
     pub(crate) practice_field: bool,
-    /// Where Hex lives once onboarding closes, under `"Hex is ready"`.
+    /// Where Mumble lives once onboarding closes, under `"Mumble is ready"`.
     pub(crate) home: super::landing::Home,
 }
 
 /// A story's dictation of [`ANSWER_TRY`] on the interactive `"Your turn"`,
-/// through the same live words and paste as Hex's real one.
+/// through the same live words and paste as Mumble's real one.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Rehearsal {
     /// Whether the model sends live words while the shortcut is held.
@@ -243,7 +243,7 @@ impl Onboard {
     }
 
     /// Called when the interactive `"Your turn"` [`TextArea`] changes (e.g. a
-    /// real dictation paste from Hex lands or the user types).
+    /// real dictation paste from Mumble lands or the user types).
     pub(crate) fn on_practice_change(&mut self, _: &mut Tx) {
         if super::game::changed(self) {
             return;
@@ -291,7 +291,7 @@ impl Onboard {
     }
 
     /// Skip on the demo or the practice: on to the next step setup still
-    /// needs (the permissions), else Hex is ready.
+    /// needs (the permissions), else Mumble is ready.
     pub(crate) fn skip_optional(&mut self) {
         if !self.step.optional() {
             return;
@@ -322,7 +322,7 @@ impl Onboard {
         self.hud_from = None;
         self.take_from = None;
         self.partial = "";
-        self.sfx.on_without_hex(self.now, tf);
+        self.sfx.on_without_mumble(self.now, tf);
         self.auto_due_at = Some(tf + typing::duration() + 1.15);
     }
 
@@ -396,7 +396,7 @@ pub(crate) fn add<S: 'static>(playground: Playground<S>) -> Playground<S> {
     playground
         .story(
             Story::new(
-                "Prototypes/Onboarding/Without Hex · With Hex",
+                "Prototypes/Onboarding/Without Mumble · With Mumble",
                 || Onboard::new(Flow::Versus),
                 view,
             )
@@ -470,7 +470,7 @@ fn play(s: &mut Onboard, play: &mut Play<'_, Onboard>) {
     play.wake_after(Duration::ZERO);
 }
 
-/// Starts the first run at `now`; the story opens on the `"Without Hex"`
+/// Starts the first run at `now`; the story opens on the `"Without Mumble"`
 /// demo (transcription is cloud-only, so there is no model to download).
 /// The story's next beat is due after the returned seconds.
 pub(super) fn begin_first_run(s: &mut Onboard, now: f64) -> f64 {
@@ -479,7 +479,7 @@ pub(super) fn begin_first_run(s: &mut Onboard, now: f64) -> f64 {
     s.parked_from = Some(now);
     let tf = now + TYPING_LEAD;
     s.typing_from = Some(tf);
-    s.sfx.on_without_hex(now, tf);
+    s.sfx.on_without_mumble(now, tf);
     TYPING_LEAD + typing::duration() + 1.15
 }
 
@@ -650,7 +650,7 @@ pub(super) fn advance_to(s: &mut Onboard, now: f64, tx: &mut Tx) -> bool {
     s.now = now;
     tx.trace_channel("onboarding.step", "phase", s.step as u32 as f32);
     tx.trace_channel("onboarding.mic", "level", s.listening_peak().unwrap_or(0.0));
-    // A sent `"Without Hex"` reply lifts out of the field into its bubble.
+    // A sent `"Without Mumble"` reply lifts out of the field into its bubble.
     let sent = versus::sent_count(s);
     for i in s.sent_seen..sent {
         tx.launch("typed/line0", format!("sent-bubble-{i}"));
@@ -667,7 +667,7 @@ pub(super) fn advance_to(s: &mut Onboard, now: f64, tx: &mut Tx) -> bool {
     if trying && super::game::step(s, now) {
         s.hud.clear();
     } else if trying {
-        // The real first run follows Hex's own dictation, which sounds its
+        // The real first run follows Mumble's own dictation, which sounds its
         // own tones; a rehearsal plays one without them.
         let real = match s.rehearsal {
             Some(rehearsal) => Some(rehearsal.held(now)),
@@ -838,7 +838,7 @@ fn side(s: &Onboard, cx: &mut Cx<Onboard>) -> El {
             side_chip(
                 p,
                 "step-demo",
-                "1 · Without / With Hex",
+                "1 · Without / With Mumble",
                 matches!(
                     s.step,
                     Step::Parked | Step::YourTurn | Step::Hearing | Step::Heard | Step::Done
@@ -862,7 +862,7 @@ fn side(s: &Onboard, cx: &mut Cx<Onboard>) -> El {
             side_chip(
                 p,
                 "step-ready",
-                "4 · Hex is ready",
+                "4 · Mumble is ready",
                 s.step == Step::Ready,
                 Onboard::jump_to_ready,
             ),
@@ -894,9 +894,9 @@ fn side(s: &Onboard, cx: &mut Cx<Onboard>) -> El {
     }
 
     let note = if s.interactive_try() {
-        "On Your turn, hold ⌥ and speak into your Mac's mic — your running Hex pastes your real words into the card."
+        "On Your turn, hold ⌥ and speak into your Mac's mic — your running Mumble pastes your real words into the card."
     } else {
-        "Hex transcribes through Claude or Codex; the demo plays the same answer typed, then spoken."
+        "Mumble transcribes through Claude or Codex; the demo plays the same answer typed, then spoken."
     };
     out.child(
         text(note)
@@ -981,7 +981,7 @@ mod tests {
         let mut s = Onboard::new(Flow::FirstRun);
         s.jump_to_try();
         assert_eq!(s.step, Step::Try);
-        s.practice.text = "Testing live dictation in Hex.".into();
+        s.practice.text = "Testing live dictation in Mumble.".into();
         let mut tx = Tx::default();
         s.on_practice_change(&mut tx);
         assert_eq!(s.step, Step::TryHeard);

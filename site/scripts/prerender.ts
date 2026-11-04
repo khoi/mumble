@@ -19,7 +19,7 @@ const index = join(assets, "index.html")
 const html = readFileSync(index, "utf8")
 const marker = '<div id="root"></div>'
 if (!html.includes(marker)) throw new Error(`index.html has no ${marker}`)
-writeFileSync(index, html.replace(marker, `<div id="root">${render()}</div>`).replaceAll("__HEX_VERSION__", data.version))
+writeFileSync(index, html.replace(marker, `<div id="root">${render()}</div>`).replaceAll("__MUMBLE_VERSION__", data.version))
 for (const name of ["index.html", "llms.txt", "robots.txt", "sitemap.xml"]) {
   const path = join(assets, name)
   writeFileSync(path, readFileSync(path, "utf8").replaceAll("__ORIGIN__", origin))

@@ -2,13 +2,13 @@
 // renderer loads. Needs a capture build, which exposes the engine's frame stepper:
 //
 //   VITE_SHOUT_CAPTURE=1 bunx vite --port 5531
-//   HEX_SITE_URL=http://127.0.0.1:5531 bun run generate:poster
+//   MUMBLE_SITE_URL=http://127.0.0.1:5531 bun run generate:poster
 //
 // Requires cwebp (brew install webp).
 import { chromium } from "playwright"
 import { fileURLToPath } from "node:url"
 
-const site = process.env.HEX_SITE_URL ?? "http://127.0.0.1:5531"
+const site = process.env.MUMBLE_SITE_URL ?? "http://127.0.0.1:5531"
 const png = fileURLToPath(new URL("../node_modules/.cache/shout-idle.png", import.meta.url))
 const webp = fileURLToPath(new URL("../public/shout-idle.webp", import.meta.url))
 

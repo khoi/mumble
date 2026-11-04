@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 const NOW: u64 = 1_792_700_000_000;
 
-/// The shared command tree every OS's `hex` flattens.
+/// The shared command tree every OS's `mumble` flattens.
 #[derive(Parser)]
 struct Cli {
     #[command(subcommand)]
@@ -16,8 +16,12 @@ use crate::control::cli::ControlCli;
 const FIXTURE: &str = include_str!("../../tests/fixtures/history.json");
 
 fn args(extra: &[&str]) -> HistoryArgs {
-    let cli =
-        Cli::try_parse_from(["hex", "history"].into_iter().chain(extra.iter().copied())).unwrap();
+    let cli = Cli::try_parse_from(
+        ["mumble", "history"]
+            .into_iter()
+            .chain(extra.iter().copied()),
+    )
+    .unwrap();
     match cli.command.unwrap() {
         ControlCli::History(args) => args,
         _ => panic!("expected history"),
@@ -26,7 +30,7 @@ fn args(extra: &[&str]) -> HistoryArgs {
 
 fn temp() -> PathBuf {
     let root = std::env::temp_dir().join(format!(
-        "hex-transcript-cli-{}-{}",
+        "mumble-transcript-cli-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -205,7 +209,7 @@ fn history_search_ranks_fuzzy_stemmed_matches_within_retention() {
         )
         .is_err()
     );
-    assert!(Cli::try_parse_from(["hex", "history", "--search", "x", "--oldest-first"]).is_err());
+    assert!(Cli::try_parse_from(["mumble", "history", "--search", "x", "--oldest-first"]).is_err());
 }
 
 #[test]
@@ -340,10 +344,10 @@ fn atomic_replace_read_never_observes_partial_history() {
 
 #[test]
 fn parses_release_commands_and_rejects_invalid_limits_and_times() {
-    assert!(Cli::try_parse_from(["hex", "history"]).is_ok());
+    assert!(Cli::try_parse_from(["mumble", "history"]).is_ok());
     for command in [
-        vec!["hex", "history", "--limit", "0"],
-        vec!["hex", "history", "--limit", "10001"],
+        vec!["mumble", "history", "--limit", "0"],
+        vec!["mumble", "history", "--limit", "10001"],
     ] {
         assert!(Cli::try_parse_from(command).is_err());
     }

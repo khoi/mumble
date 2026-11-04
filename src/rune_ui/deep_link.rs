@@ -1,6 +1,6 @@
-//! Links that open the window on a page: `hex://labs`,
-//! `hex://labs/<feature>` (`hex labs link <feature>` prints it), and
-//! `hex://settings/<pane>` (`hex-test://` in a test build). A Labs link
+//! Links that open the window on a page: `mumble://labs`,
+//! `mumble://labs/<feature>` (`mumble labs link <feature>` prints it), and
+//! `mumble://settings/<pane>` (`mumble-test://` in a test build). A Labs link
 //! scrolls to the feature's row and pulses it; it never turns the feature on.
 //! Story links live in `story_link`.
 
@@ -19,7 +19,7 @@ pub(crate) enum Target {
     Settings(String),
 }
 
-/// The main panes a `hex://settings/<pane>` link names.
+/// The main panes a `mumble://settings/<pane>` link names.
 const PANES: [(&str, Pane); 4] = [
     ("general", Pane::General),
     ("output", Pane::Output),
@@ -81,7 +81,7 @@ pub(crate) fn open(ui: &mut Ui, target: Target, tx: &mut Tx) {
                     ui.select_pane(pane, tx);
                 }
                 _ => {
-                    tracing::warn!(pane = %name, "a settings link named no pane this Hex shows");
+                    tracing::warn!(pane = %name, "a settings link named no pane this Mumble shows");
                     super::show(ui, super::Destination::Settings, tx);
                 }
             }
@@ -95,23 +95,23 @@ mod tests {
     use crate::labs::Feature;
 
     fn read(link: &str) -> Option<Result<Target, String>> {
-        parse(link, "hex")
+        parse(link, "mumble")
     }
 
     #[test]
     fn reads_labs_links() {
-        assert_eq!(read("hex://labs"), Some(Ok(Target::Labs(None))));
-        assert_eq!(read("hex://labs/"), Some(Ok(Target::Labs(None))));
+        assert_eq!(read("mumble://labs"), Some(Ok(Target::Labs(None))));
+        assert_eq!(read("mumble://labs/"), Some(Ok(Target::Labs(None))));
         assert_eq!(
-            read("hex://labs/live-text"),
+            read("mumble://labs/live-text"),
             Some(Ok(Target::Labs(Some("live-text".into()))))
         );
         assert_eq!(
-            read("hex://labs/Live-Text/"),
+            read("mumble://labs/Live-Text/"),
             Some(Ok(Target::Labs(Some("live-text".into()))))
         );
         assert_eq!(
-            parse("hex-test://labs/playground", "hex-test"),
+            parse("mumble-test://labs/playground", "mumble-test"),
             Some(Ok(Target::Labs(Some("playground".into()))))
         );
     }
@@ -119,33 +119,33 @@ mod tests {
     #[test]
     fn reads_settings_links() {
         assert_eq!(
-            read("hex://settings/history"),
+            read("mumble://settings/history"),
             Some(Ok(Target::Settings("history".into())))
         );
-        assert!(matches!(read("hex://settings"), Some(Err(_))));
-        assert!(matches!(read("hex://labs/%FF"), Some(Err(_))));
+        assert!(matches!(read("mumble://settings"), Some(Err(_))));
+        assert!(matches!(read("mumble://labs/%FF"), Some(Err(_))));
     }
 
     #[test]
     fn leaves_other_links_alone() {
         for other in [
-            "hex://story/hud/processing",
-            "hex-test://labs/live-text",
+            "mumble://story/hud/processing",
+            "mumble-test://labs/live-text",
             "https://labs/live-text",
-            "hex://elsewhere",
+            "mumble://elsewhere",
             "not a link",
             "",
         ] {
             assert_eq!(read(other), None, "{other}");
         }
-        let long = format!("hex://labs/{}", "a".repeat(MAX_LINK));
+        let long = format!("mumble://labs/{}", "a".repeat(MAX_LINK));
         assert_eq!(read(&long), None);
     }
 
     #[test]
     fn every_feature_has_a_link_that_reads_back() {
         for feature in Feature::ALL {
-            let link = labs_link("hex", feature);
+            let link = labs_link("mumble", feature);
             assert_eq!(
                 read(&link),
                 Some(Ok(Target::Labs(Some(feature.name().into())))),

@@ -22,7 +22,7 @@ use color_eyre::eyre::eyre;
 use crate::app_settings::{AppSettings, LabsSettings};
 
 /// Where people send feedback on Labs features.
-pub const FEEDBACK_URL: &str = "https://github.com/anomalyco/hex/issues/new";
+pub const FEEDBACK_URL: &str = "https://github.com/khoi/mumble/issues/new";
 
 /// Who a Labs feature is for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -155,7 +155,7 @@ impl Feature {
         }
     }
 
-    /// The feature `hex settings` key `key` switches.
+    /// The feature `mumble settings` key `key` switches.
     pub fn for_settings_key(key: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
@@ -191,7 +191,7 @@ impl Feature {
         }
     }
 
-    /// The name `hex labs on|off` takes.
+    /// The name `mumble labs on|off` takes.
     pub const fn name(self) -> &'static str {
         match self {
             Self::VoiceFilter => "voice-filter",
@@ -221,10 +221,10 @@ impl Feature {
         }
     }
 
-    /// Its `hex settings` key.
+    /// Its `mumble settings` key.
     pub const fn settings_key(self) -> &'static str {
         match self {
-            Self::VoiceFilter => "experimental.hex_microphone",
+            Self::VoiceFilter => "experimental.mumble_microphone",
             Self::Playground => "labs.playground",
             Self::LiveText => "labs.live_text",
             Self::TerminalPaste => "paste_with_shift",
@@ -256,7 +256,7 @@ impl Feature {
     pub const fn description(self) -> &'static str {
         match self {
             Self::VoiceFilter => {
-                "Hex Microphone virtual input and real-time voice filters (its own pane)"
+                "Mumble Microphone virtual input and real-time voice filters (its own pane)"
             }
             Self::Playground => "Scene and story browser in the window",
             Self::LiveText => "Show provisional words beside the HUD while dictating",
@@ -297,7 +297,7 @@ impl Feature {
                 "Use Menu, Pause, or Scroll Lock alone as a shortcut, such as Caps Lock remapped to Menu"
             }
             Self::HistoryStats => {
-                "Show a summary of your retained dictations at the top of History, with hex history stats"
+                "Show a summary of your retained dictations at the top of History, with mumble history stats"
             }
             Self::RecentDictations => {
                 "Copy one of your last five dictations from the menu bar, under Paste Last Dictation"
@@ -306,10 +306,10 @@ impl Feature {
                 "Offer Vocabulary and Fix this beside Output's Try result, to correct a wrong result"
             }
             Self::SectionKeyAlone => {
-                "Use the § key, left of 1 on ISO keyboards, alone as a shortcut; Hex takes § from every app while it's bound"
+                "Use the § key, left of 1 on ISO keyboards, alone as a shortcut; Mumble takes § from every app while it's bound"
             }
             Self::HideMenuBarIcon => {
-                "Hide Hex's menu bar icon; shortcuts keep working, and opening Hex again shows Settings"
+                "Hide Mumble's menu bar icon; shortcuts keep working, and opening Mumble again shows Settings"
             }
             Self::GnomeClipboardRestore => {
                 "Put the previous clipboard back after a paste on GNOME Wayland, through the XWayland clipboard while XWayland is running"
@@ -324,7 +324,7 @@ impl Feature {
     /// Whether `settings` turn it on.
     pub fn on(self, settings: &AppSettings) -> bool {
         match self {
-            Self::VoiceFilter => settings.experimental.hex_microphone,
+            Self::VoiceFilter => settings.experimental.mumble_microphone,
             Self::Playground => settings.labs.playground,
             Self::LiveText => settings.labs.live_text,
             Self::TerminalPaste => settings.paste_with_shift,
@@ -356,7 +356,7 @@ impl Feature {
     pub fn switches(settings: &mut AppSettings) -> Vec<&mut bool> {
         let labs = &mut settings.labs;
         vec![
-            &mut settings.experimental.hex_microphone,
+            &mut settings.experimental.mumble_microphone,
             &mut settings.paste_with_shift,
             &mut settings.pause_browser_media,
             &mut settings.share_dictation_shortcut,
@@ -390,7 +390,7 @@ impl Feature {
 
     pub fn set(self, settings: &mut AppSettings, on: bool) {
         match self {
-            Self::VoiceFilter => settings.experimental.hex_microphone = on,
+            Self::VoiceFilter => settings.experimental.mumble_microphone = on,
             Self::Playground => settings.labs.playground = on,
             Self::LiveText => settings.labs.live_text = on,
             Self::TerminalPaste => settings.paste_with_shift = on,
@@ -532,7 +532,7 @@ pub fn tap_or_hold() -> bool {
     on(TAP_OR_HOLD)
 }
 
-/// History's summary of retained dictations and `hex history stats` (read
+/// History's summary of retained dictations and `mumble history stats` (read
 /// when the History pane reloads and when the command starts).
 pub fn history_stats() -> bool {
     on(HISTORY_STATS)
@@ -629,7 +629,7 @@ fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u
     .fold(KNOWN, |state, (_, _, bit)| state | bit)
 }
 
-/// The names of the features on, for `hex status`.
+/// The names of the features on, for `mumble status`.
 pub fn active_names(settings: &AppSettings) -> Vec<String> {
     Feature::available()
         .filter(|feature| feature.on(settings))
@@ -637,7 +637,7 @@ pub fn active_names(settings: &AppSettings) -> Vec<String> {
         .collect()
 }
 
-/// Logs the switches to process.log; call once logging is up in a long-lived Hex.
+/// Logs the switches to process.log; call once logging is up in a long-lived Mumble.
 pub fn log_launch() {
     tracing::info!(live_text = live_text(), playground = playground(), "labs");
 }
@@ -650,12 +650,12 @@ pub enum LabsCommand {
     On { feature: String },
     /// Turn a Labs feature off.
     Off { feature: String },
-    /// Print the link that opens Hex's Labs page at a feature's row (macOS).
+    /// Print the link that opens Mumble's Labs page at a feature's row (macOS).
     #[cfg(target_os = "macos")]
     Link { feature: String },
 }
 
-/// `hex labs`: edits `settings.json`; a running Hex applies most changes
+/// `mumble labs`: edits `settings.json`; a running Mumble applies most changes
 /// when it next starts.
 pub fn run(command: Option<&LabsCommand>) -> Result<()> {
     #[cfg(target_os = "macos")]
@@ -669,7 +669,7 @@ pub fn run(command: Option<&LabsCommand>) -> Result<()> {
         );
         return Ok(());
     }
-    // Listing, or handing the change to a running Hex, never writes the file.
+    // Listing, or handing the change to a running Mumble, never writes the file.
     let settings = AppSettings::read()?;
     let (name, on) = match command {
         None | Some(LabsCommand::List) => {
@@ -691,15 +691,15 @@ pub fn run(command: Option<&LabsCommand>) -> Result<()> {
     }
     if feature == Feature::VoiceFilter
         && !on
-        && crate::audio::hex_microphone::driver_bundle_installed()
+        && crate::audio::mumble_microphone::driver_bundle_installed()
     {
         return Err(eyre!(
-            "voice-filter stays on while the Hex Microphone driver is installed; uninstall the driver in its pane to turn it off"
+            "voice-filter stays on while the Mumble Microphone driver is installed; uninstall the driver in its pane to turn it off"
         ));
     }
     let state = if on { "on" } else { "off" };
-    // A running Hex saves and applies it at once, as its Labs row would.
-    if let Some(reply) = crate::control::cli::set_in_running_hex(
+    // A running Mumble saves and applies it at once, as its Labs row would.
+    if let Some(reply) = crate::control::cli::set_in_running_mumble(
         feature.settings_key(),
         if on { "true" } else { "false" },
     ) {
@@ -723,7 +723,7 @@ pub fn run(command: Option<&LabsCommand>) -> Result<()> {
 }
 
 /// The feature `name` names, if this OS has it and `reaches` admits it.
-/// Features that left Labs: `hex labs` still knows their names.
+/// Features that left Labs: `mumble labs` still knows their names.
 const GRADUATED: [(&str, &str); 1] = [(
     "custom-models",
     "custom-models graduated: adding a model file and models found on this computer are always on now",
@@ -737,7 +737,7 @@ fn resolve(name: &str, reaches: impl Fn(Feature) -> bool + Copy) -> Result<Featu
         .filter(|feature| feature.on_this_os() && reaches(*feature))
         .ok_or_else(|| {
             eyre!(
-                "unknown Labs feature {name:?}; this Hex has: {}",
+                "unknown Labs feature {name:?}; this Mumble has: {}",
                 Feature::available_where(reaches)
                     .map(Feature::name)
                     .collect::<Vec<_>>()
@@ -755,9 +755,9 @@ fn list(settings: &AppSettings) -> String {
     for feature in Feature::available() {
         let on = feature.on(settings)
             || (feature == Feature::VoiceFilter
-                && crate::audio::hex_microphone::driver_bundle_installed());
+                && crate::audio::mumble_microphone::driver_bundle_installed());
         out.push_str(&format!(
-            "{:<width$}  {:<7}  {:<8}  {} (hex settings {})\n",
+            "{:<width$}  {:<7}  {:<8}  {} (mumble settings {})\n",
             feature.name(),
             if feature.managed().is_some() {
                 "managed"
@@ -774,9 +774,9 @@ fn list(settings: &AppSettings) -> String {
     out
 }
 
-/// `hex experiments …`, from before Labs.
+/// `mumble experiments …`, from before Labs.
 pub fn run_retired_experiments() -> Result<()> {
-    println!("Experiments are now Labs: hex labs, hex labs on|off <feature>");
+    println!("Experiments are now Labs: mumble labs, mumble labs on|off <feature>");
     Ok(())
 }
 

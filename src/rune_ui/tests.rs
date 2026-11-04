@@ -145,7 +145,7 @@ fn a_mouse_shortcut_on_wayland_explains_the_desktop_command_route() {
     assert!(
         shown
             .iter()
-            .any(|text| text.contains("Wayland desktop using the hex commands"))
+            .any(|text| text.contains("Wayland desktop using the mumble commands"))
     );
     assert!(!shown.iter().any(|text| text.contains("config.kdl")));
 }
@@ -176,7 +176,7 @@ fn a_refused_portal_shortcut_says_how_to_free_it() {
 }
 
 /// #635: Hyprland's portal names no trigger, since its config binds the
-/// keys, so the row says Hex can't confirm it and shows no refusal.
+/// keys, so the row says Mumble can't confirm it and shows no refusal.
 #[test]
 fn an_unconfirmed_portal_shortcut_is_not_called_refused() {
     let mut rt = runtime("portal", true, GOLDEN_SIZE);
@@ -193,7 +193,7 @@ fn an_unconfirmed_portal_shortcut_is_not_called_refused() {
     assert!(
         shown
             .iter()
-            .any(|text| text == "Your desktop assigns this key itself, so Hex can't confirm it")
+            .any(|text| text == "Your desktop assigns this key itself, so Mumble can't confirm it")
     );
     assert!(
         !shown
@@ -232,7 +232,7 @@ fn an_asked_update_check_says_how_it_went() {
             .any(|text| text == "Checking for updates…")
     );
     status(&mut rt, DesktopUpdateStatus::Current);
-    assert!(texts(&rt).iter().any(|text| text == "Hex is up to date"));
+    assert!(texts(&rt).iter().any(|text| text == "Mumble is up to date"));
     status(&mut rt, DesktopUpdateStatus::Failed);
     assert!(
         texts(&rt)
@@ -283,7 +283,11 @@ fn each_panes_advanced_fold_starts_closed_and_stays_its_own() {
 #[test]
 fn desktops_without_a_portal_list_commands_instead_of_recording_rows() {
     let rt = runtime("commands", true, GOLDEN_SIZE);
-    assert!(texts(&rt).iter().any(|text| text == "hex dictation toggle"));
+    assert!(
+        texts(&rt)
+            .iter()
+            .any(|text| text == "mumble dictation toggle")
+    );
     assert!(rt.find("dictation-hotkey").is_none());
     assert!(rt.find("paste-last-hotkey").is_none());
 }
@@ -434,14 +438,14 @@ fn installs_that_never_update_hide_the_update_channel() {
 }
 
 #[test]
-fn quit_hex_in_the_sidebar_asks_the_host_to_quit() {
+fn quit_mumble_in_the_sidebar_asks_the_host_to_quit() {
     let mut rt = runtime("portal", true, PANE_SIZE);
     tap(&mut rt, "quit");
     assert!(rt.state.quit_requested);
 }
 
 #[test]
-fn ctrl_q_quits_hex() {
+fn ctrl_q_quits_mumble() {
     let mut rt = runtime("portal", true, PANE_SIZE);
     key(&mut rt, Key::Command('q'), Mods::default());
     assert!(rt.state.quit_requested);
@@ -656,7 +660,7 @@ fn a_draft_saves_over_what_another_writer_changed_meanwhile() {
         .push(TextEdit::new("OpenCode"), TextEdit::default());
     let start = std::time::Instant::now();
     assert!(!ui.save_drafts(start), "waits for a pause");
-    // `hex settings set` saves while it waits.
+    // `mumble settings set` saves while it waits.
     let mut elsewhere = service;
     elsewhere.enable_on_launch = !elsewhere.enable_on_launch;
     ui.adopt(elsewhere.clone());
@@ -1257,7 +1261,8 @@ fn history_copy_writes_the_clipboard() {
 #[test]
 fn history_search_without_matches_says_so() {
     use crate::history::{History, HistoryDraft, HistoryKind, HistoryRetention, HistoryStore};
-    let directory = std::env::temp_dir().join(format!("hex-rune-history-{}", std::process::id()));
+    let directory =
+        std::env::temp_dir().join(format!("mumble-rune-history-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).unwrap();
     let store = HistoryStore::open(
@@ -1338,7 +1343,7 @@ fn mode_corrections_and_names_save_from_their_fields() {
         .iter()
         .map(|r| r.matched_phrase.clone())
         .collect();
-    assert_eq!(phrases, ["hex app", "dax"]);
+    assert_eq!(phrases, ["mumble app", "dax"]);
 }
 
 #[test]
@@ -1719,7 +1724,7 @@ fn the_microphone_field_names_the_input_in_use() {
 
 #[test]
 fn a_closed_lid_names_the_input_standing_in_for_the_built_in_microphone() {
-    let note = "MacBook Pro Microphone is off while the lid is closed, so Hex listens to Studio Display Microphone";
+    let note = "MacBook Pro Microphone is off while the lid is closed, so Mumble listens to Studio Display Microphone";
     let field = |rt: &Runtime<Ui>| element(rt, "microphone-control").label;
     let mut rt = runtime("mac-microphone-lid-closed", true, PANE_SIZE);
     assert_eq!(
@@ -1746,7 +1751,7 @@ fn a_closed_lid_names_the_input_standing_in_for_the_built_in_microphone() {
 
 #[test]
 fn a_passed_over_bluetooth_default_names_the_input_in_use() {
-    let note = "Kit Pods is Bluetooth, so Hex listens to MacBook Pro Microphone";
+    let note = "Kit Pods is Bluetooth, so Mumble listens to MacBook Pro Microphone";
     let mut rt = runtime("mac-microphone-bluetooth", true, TALL_SIZE);
     assert_eq!(
         element(&rt, "microphone-control").label.as_deref(),
@@ -1766,9 +1771,9 @@ fn a_passed_over_bluetooth_default_names_the_input_in_use() {
 
 // ---------------------------------------------------------------------------
 // Goldens: offscreen GPU renders compared with checked-in PNGs. Set
-// HEX_UPDATE_GOLDENS=1 to rewrite them. Without a GPU adapter they skip,
-// unless HEX_REQUIRE_GPU is set (scripts/check-onboarding.sh).
-// HEX_GOLDEN_RENDERS=<folder> also writes every render there.
+// MUMBLE_UPDATE_GOLDENS=1 to rewrite them. Without a GPU adapter they skip,
+// unless MUMBLE_REQUIRE_GPU is set (scripts/check-onboarding.sh).
+// MUMBLE_GOLDEN_RENDERS=<folder> also writes every render there.
 
 /// One device for every golden, used one render at a time: creating Vulkan
 /// devices from parallel test threads crashed Mesa's RADV on Linux.
@@ -1845,20 +1850,20 @@ fn check_golden(scene: &str, dark: bool, size: (f32, f32)) {
     let name = format!("{scene}-{}", if dark { "dark" } else { "light" });
     let Some((width, height, pixels)) = render(scene, dark, size) else {
         assert!(
-            std::env::var_os("HEX_REQUIRE_GPU").is_none(),
-            "golden {name}: no GPU adapter, and HEX_REQUIRE_GPU is set"
+            std::env::var_os("MUMBLE_REQUIRE_GPU").is_none(),
+            "golden {name}: no GPU adapter, and MUMBLE_REQUIRE_GPU is set"
         );
         eprintln!("skipping golden {name}: no GPU adapter");
         return;
     };
-    if let Some(folder) = std::env::var_os("HEX_GOLDEN_RENDERS") {
+    if let Some(folder) = std::env::var_os("MUMBLE_GOLDEN_RENDERS") {
         let folder = std::path::PathBuf::from(folder);
         std::fs::create_dir_all(&folder).unwrap();
         rune::render::write_png(&folder.join(format!("{name}.png")), width, height, &pixels)
             .unwrap();
     }
     let path = golden_path(&name);
-    if std::env::var_os("HEX_UPDATE_GOLDENS").is_some() {
+    if std::env::var_os("MUMBLE_UPDATE_GOLDENS").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         rune::render::write_png(&path, width, height, &pixels).unwrap();
         return;
@@ -1867,7 +1872,7 @@ fn check_golden(scene: &str, dark: bool, size: (f32, f32)) {
         let actual = std::env::temp_dir().join(format!("rune-settings-{name}-actual.png"));
         rune::render::write_png(&actual, width, height, &pixels).unwrap();
         let miss = format!(
-            "{} is missing; run with HEX_UPDATE_GOLDENS=1 (render at {})",
+            "{} is missing; run with MUMBLE_UPDATE_GOLDENS=1 (render at {})",
             path.display(),
             actual.display()
         );
@@ -2036,7 +2041,7 @@ fn output_fixes_show_only_with_their_lab_and_fix_this_copies_for_the_sentence() 
     assert!(on.state.output.prompt_copied);
     assert_eq!(
         on.state.output.fix_copied.as_deref(),
-        Some("Um, open code shipped the hex app today.")
+        Some("Um, open code shipped the mumble app today.")
     );
     tap(&mut on, "output-vocabulary");
     assert!(on.state.vocabulary.open);

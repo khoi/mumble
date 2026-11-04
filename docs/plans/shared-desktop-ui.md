@@ -42,7 +42,7 @@ such as moving English dictation to the streaming model, record their ID in
 ## Shared Dictation Behavior
 
 The Windows and Linux listeners share `dictation_modes::ModeRuntime` for mode
-selection and processing, and both record History. On Linux, the single Hex
+selection and processing, and both record History. On Linux, the single Mumble
 process owns the window, registers the shortcuts Settings records (X11 grabs or
 the Wayland shortcuts portal), prepares models, applies saved settings live, and
 shares `History` in-process (also rereading the file when a standalone CLI run

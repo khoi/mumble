@@ -4,14 +4,14 @@
 //!   default, `Muted felt`, `Soft warm`, and `Silent typing`), never repeating
 //!   an adjacent sample.
 //! - Tactile shortcut keycap press and release (`⌥` down / up).
-//! - Hex's real `#292` `DictationStart`, `DictationStop`, `DictationDone`, and
+//! - Mumble's real `#292` `DictationStart`, `DictationStop`, `DictationDone`, and
 //!   `OnboardingSuccess` tones played through [`crate::feedback`], respecting
 //!   the user's sound set and feedback volume (`volume == 0` is silent;
 //!   `reduced_motion` never suppresses sound).
 //! - Quiet motion landing cues: the hexagon mark, permission rows ticking to
 //!   `Allowed`, the Accessibility helper detaching and docking beside System
 //!   Settings, and `"Almost ready"`.
-//! - Optional offline WAV export (`HEX_ONBOARDING_AUDIO_OUT`) so headless
+//! - Optional offline WAV export (`MUMBLE_ONBOARDING_AUDIO_OUT`) so headless
 //!   `--video` renders produce a frame-accurate 48 kHz soundtrack without ever
 //!   opening an audio output device.
 
@@ -83,8 +83,8 @@ impl SfxTrack {
             .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     }
 
-    /// `"Without Hex"`: every typing stroke.
-    pub(crate) fn on_without_hex(&mut self, _now: f64, typing_from: f64) {
+    /// `"Without Mumble"`: every typing stroke.
+    pub(crate) fn on_without_mumble(&mut self, _now: f64, typing_from: f64) {
         let style = self.style;
         let mut prev_variant: Option<u8> = None;
         for (i, stroke) in typing::all_strokes().iter().enumerate() {
@@ -108,7 +108,7 @@ impl SfxTrack {
         }
     }
 
-    /// `"With Hex"` or scripted `"Your turn"` dictation: physical shortcut
+    /// `"With Mumble"` or scripted `"Your turn"` dictation: physical shortcut
     /// down, real `DictationStart`, then shortcut up, `DictationStop`, and
     /// `DictationDone`.
     pub(crate) fn on_voice_take(&mut self, start: f64, take: &Take) {
@@ -151,7 +151,7 @@ impl SfxTrack {
         );
     }
 
-    /// `"Hex is ready"` finale: hexagon arrival + Hex's `#292` success motif.
+    /// `"Mumble is ready"` finale: hexagon arrival + Mumble's `#292` success motif.
     pub(crate) fn on_ready(&mut self, now: f64) {
         self.push(now, Tone::Onboarding(OnboardingTone::Hexagon));
         self.push(now + 0.12, Tone::OnboardingSuccess);
@@ -178,24 +178,24 @@ impl SfxTrack {
         &self.cues[..self.fired]
     }
 
-    /// Writes the fired soundtrack offline when `HEX_ONBOARDING_AUDIO_OUT` is set.
+    /// Writes the fired soundtrack offline when `MUMBLE_ONBOARDING_AUDIO_OUT` is set.
     pub(crate) fn flush_offline_if_requested(&mut self, fallback_secs: f64) {
         if self.flushed {
             return;
         }
-        let Ok(path) = std::env::var("HEX_ONBOARDING_AUDIO_OUT") else {
+        let Ok(path) = std::env::var("MUMBLE_ONBOARDING_AUDIO_OUT") else {
             return;
         };
         if path.is_empty() || self.fired == 0 {
             return;
         }
         self.flushed = true;
-        let duration_secs = std::env::var("HEX_ONBOARDING_AUDIO_SECS")
+        let duration_secs = std::env::var("MUMBLE_ONBOARDING_AUDIO_SECS")
             .ok()
             .and_then(|v| v.parse::<f64>().ok())
             .unwrap_or(fallback_secs)
             .max(fallback_secs);
-        let gain = std::env::var("HEX_ONBOARDING_AUDIO_GAIN")
+        let gain = std::env::var("MUMBLE_ONBOARDING_AUDIO_GAIN")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
             .unwrap_or(0.88)
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn typing_clacks_never_repeat_an_adjacent_key_sample() {
         let mut track = SfxTrack::default();
-        track.on_without_hex(0.0, 0.5);
+        track.on_without_mumble(0.0, 0.5);
         track.advance_to(20.0);
 
         let mut last_key: Option<u8> = None;

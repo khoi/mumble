@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn plain_javascript_is_unchanged() {
-        let source = "export default { commands: { a: { phrases: [\"x\"], run: ({ hex }) => hex.press(\"a\") } } }\n";
+        let source = "export default { commands: { a: { phrases: [\"x\"], run: ({ mumble }) => mumble.press(\"a\") } } }\n";
         assert_eq!(strip(source).unwrap(), source);
     }
 }

@@ -35,11 +35,11 @@ enum FinishResult {
 #[derive(Debug)]
 pub enum RecognitionControl {
     /// Pastes the last dictation once nothing records; `reply` answers
-    /// `hex paste-last`, and the menu bar sends none.
+    /// `mumble paste-last`, and the menu bar sends none.
     PasteLast {
         reply: Option<SyncSender<ControlReply>>,
     },
-    /// `hex dictation`: drives the shortcut machine as a press would, so the
+    /// `mumble dictation`: drives the shortcut machine as a press would, so the
     /// shortcut still finishes it.
     /// A dictation `stop` with `print` answers `reply` once recording stops
     /// and sends the transcript to `print` instead of pasting it.
@@ -50,7 +50,7 @@ pub enum RecognitionControl {
         raw: bool,
         reply: SyncSender<ControlReply>,
     },
-    /// What is recording, for `hex status`.
+    /// What is recording, for `mumble status`.
     CaptureStatus { reply: SyncSender<CaptureSnapshot> },
     /// `/dictations`, which a local API client owns.
     Dictation(DictationControl),
@@ -133,7 +133,7 @@ struct Hotkeys {
     second: Option<DictationHotkey>,
     raw: Option<DictationHotkey>,
     /// The recording (or the last) skips processing: the raw shortcut or
-    /// `hex dictation start --raw` started it.
+    /// `mumble dictation start --raw` started it.
     raw_capture: bool,
 }
 
@@ -905,7 +905,7 @@ pub fn listen(
                 event => handle_dictation_event(event, &mut events, indicator.as_ref())?,
             }
         }
-        // Toggle's cancel key is Hex's only while one of its shortcuts'
+        // Toggle's cancel key is Mumble's only while one of its shortcuts'
         // recordings runs; the listener ignores keys during a programmatic one.
         input_monitor.set_takes_cancel(programmatic.is_none() && hotkeys.any_recording());
         if received_worker_event {
@@ -1261,7 +1261,7 @@ fn capture_refusal(other_recording: bool, suspended: bool) -> Option<ControlRepl
     } else if suspended {
         Some(ControlReply::error(
             "busy",
-            "Hex is recording a shortcut in Settings or reopening the microphone; try again",
+            "Mumble is recording a shortcut in Settings or reopening the microphone; try again",
         ))
     } else {
         None
@@ -1299,7 +1299,7 @@ fn finish_reply(finished: Option<FinishResult>, submitted: &str) -> ControlReply
     }
 }
 
-/// `hex dictation`: a start locks the shortcut machine as a double tap
+/// `mumble dictation`: a start locks the shortcut machine as a double tap
 /// does, so the next press or `stop` finishes it.
 #[allow(clippy::too_many_arguments)]
 fn control_dictation(
@@ -1368,7 +1368,7 @@ fn control_dictation(
             if accepted {
                 // A warm start already queued its provisional tone.
                 make_control_capture_intentional(input, release_while_idle)?;
-                ControlReply::done("Recording; `hex dictation stop` or the shortcut finishes")
+                ControlReply::done("Recording; `mumble dictation stop` or the shortcut finishes")
             } else {
                 hotkeys.dictation.suspend();
                 ControlReply::error("busy", "the microphone is busy; try again")
@@ -1404,14 +1404,14 @@ fn control_dictation(
                 ),
                 finished => finish_reply(
                     Some(finished),
-                    "Finished recording; Hex pastes the text when it's ready",
+                    "Finished recording; Mumble pastes the text when it's ready",
                 ),
             }
         }
     })
 }
 
-/// A `hex paste-last` (or the menu bar's Paste Last Dictation) waits for
+/// A `mumble paste-last` (or the menu bar's Paste Last Dictation) waits for
 /// every capture and shortcut gesture to end: pasting cancels the audio
 /// owner's capture, which would strand the machine that started it.
 fn paste_last_refusal(capture_active: bool) -> Option<ControlReply> {
@@ -1470,7 +1470,7 @@ fn fail_capture(
 enum CaptureEnd {
     /// The capture never became a dictation; no feedback tone.
     Discarded(Option<DiscardCause>),
-    /// The capture ended unfinished: the cancel shortcut, or Hex itself
+    /// The capture ended unfinished: the cancel shortcut, or Mumble itself
     /// when its shortcuts were suspended or the event tap was lost.
     Cancelled,
 }

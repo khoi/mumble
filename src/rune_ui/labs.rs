@@ -16,7 +16,7 @@ use crate::desktop::i18n::tr;
 use crate::labs::Feature;
 
 pub(super) static LABS_ICON: Icon = Icon {
-    name: "hex-labs",
+    name: "mumble-labs",
     view: 16.0,
     body: r#"<path d="M6.25 2.5h3.5M6.75 2.5v4L3.2 12.3a.8.8 0 0 0 .7 1.2h8.2a.8.8 0 0 0 .7-1.2L9.25 6.5v-4M4.8 10h6.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>"#,
 };
@@ -112,7 +112,10 @@ pub(super) fn reveal(ui: &mut Ui, name: Option<&str>, tx: &mut Tx) {
             tx.scroll_center(row_key(feature));
             tx.wake_after(FLASH);
         }
-        None => tracing::warn!(feature = name, "a Labs link named no feature this Hex has"),
+        None => tracing::warn!(
+            feature = name,
+            "a Labs link named no feature this Mumble has"
+        ),
     }
 }
 
@@ -140,7 +143,7 @@ struct Row {
     title: &'static str,
     about: &'static str,
     on: bool,
-    /// Can't be switched: on while an installed Hex Microphone driver or
+    /// Can't be switched: on while an installed Mumble Microphone driver or
     /// the dictation model needs it, off under an organization's lock.
     locked: bool,
 }
@@ -180,9 +183,9 @@ fn rows(ui: &Ui) -> Vec<Row> {
             on: super::fun::running(ui),
             locked,
             about: if locked {
-                tr("On while the Hex Microphone driver is installed. Uninstall the driver in Voice Filter to turn it off.")
+                tr("On while the Mumble Microphone driver is installed. Uninstall the driver in Voice Filter to turn it off.")
             } else {
-                tr("Hex Microphone virtual input and real-time voice filters")
+                tr("Mumble Microphone virtual input and real-time voice filters")
             },
             ..row(Feature::VoiceFilter, &VOICE_FILTER_ICON, tr("Voice Filter"), "")
         });
@@ -210,7 +213,7 @@ fn rows(ui: &Ui) -> Vec<Row> {
             Feature::PauseBrowser,
             &GLOBE,
             tr("Also pause the browser"),
-            tr("While dictating with Pause media: YouTube and other tabs, resumed only if Hex paused them"),
+            tr("While dictating with Pause media: YouTube and other tabs, resumed only if Mumble paused them"),
         ));
         rows.push(row(
             Feature::KeepOnClipboard,
@@ -265,7 +268,7 @@ fn rows(ui: &Ui) -> Vec<Row> {
                 Feature::HideMenuBarIcon,
                 &HINTS,
                 tr("Hide menu bar icon"),
-                tr("Hide Hex's icon from the menu bar. Shortcuts keep working; open Hex again from Finder or Spotlight for Settings"),
+                tr("Hide Mumble's icon from the menu bar. Shortcuts keep working; open Mumble again from Finder or Spotlight for Settings"),
             ));
         }
     }
@@ -281,7 +284,7 @@ fn rows(ui: &Ui) -> Vec<Row> {
             Feature::SectionKeyAlone,
             &KEYBOARD,
             tr("Section key alone"),
-            tr("Use the § key, left of 1 on ISO keyboards, as a shortcut without a modifier. Hex takes § from every app while it's bound"),
+            tr("Use the § key, left of 1 on ISO keyboards, as a shortcut without a modifier. Mumble takes § from every app while it's bound"),
         ));
         // Linux's shortcut machine reads it with the listener's options.
         rows.push(row(
@@ -325,7 +328,7 @@ fn rows(ui: &Ui) -> Vec<Row> {
         Feature::HistoryStats,
         &HINTS,
         tr("Dictation stats"),
-        tr("Show a summary of your retained dictations at the top of History, with hex history stats"),
+        tr("Show a summary of your retained dictations at the top of History, with mumble history stats"),
     ));
     rows.push(row(
         Feature::OutputFixes,
@@ -391,7 +394,7 @@ fn flip(ui: &mut Ui, feature: Feature) {
     let on = !feature.on(&ui.settings);
     ui.update(|settings| feature.set(settings, on));
     match feature {
-        // Hex hears the browser through System Audio Recording.
+        // Mumble hears the browser through System Audio Recording.
         Feature::PauseBrowser if on && !ui.platform.system_audio => {
             ui.ask(super::platform::PlatformRequest::SystemAudio);
         }

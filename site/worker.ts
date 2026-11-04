@@ -1,8 +1,8 @@
-// One Worker serves Hex under /hex on its host: the site, the release files
-// bucket at /hex/files (feeds, appcast, installers, artifacts), and
-// /hex/download/dev, the latest dev channel Mac download, /hex/dev, the dev
+// One Worker serves Mumble under /mumble on its host: the site, the release files
+// bucket at /mumble/files (feeds, appcast, installers, artifacts), and
+// /mumble/download/dev, the latest dev channel Mac download, /mumble/dev, the dev
 // builds' changelog, and
-// /hex/download/<target>, the release every download button names. Other hosts and
+// /mumble/download/<target>, the release every download button names. Other hosts and
 // plain HTTP redirect to the canonical host. `cf dev` with ANY_HOST set turns
 // the redirect off for local testing.
 import { BASE_PATH, DEV_DOWNLOAD_PATH, DEV_NOTES_PATH, DOWNLOAD_PATH, FILES_PATH, RELEASE_SERVICE, stripBase, withBase } from "./src/base"
@@ -87,9 +87,9 @@ const DOWNLOAD_TARGETS = new Set([
   "windows-arm64",
 ])
 
-// Redirects /hex/download/<target> to the release service's alias for
+// Redirects /mumble/download/<target> to the release service's alias for
 // <target> on the stable channel (the dev channel while there is no stable
-// release, decided per request), and /hex/download/dev/<target> to the dev
+// release, decided per request), and /mumble/download/dev/<target> to the dev
 // channel's.
 async function download(request: Request, path: string): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -101,13 +101,13 @@ async function download(request: Request, path: string): Promise<Response> {
   let channel = "dev"
   if (!dev) {
     try {
-      const stable = await fetch(`${RELEASE_SERVICE}/hex/desktop/stable.json`, { headers: { "User-Agent": "hex-site" }, cache: "no-store" })
+      const stable = await fetch(`${RELEASE_SERVICE}/mumble/desktop/stable.json`, { headers: { "User-Agent": "mumble-site" }, cache: "no-store" })
       if (stable.ok) channel = "stable"
     } catch {
       // The service is unreachable: the dev alias fails the same way, visibly.
     }
   }
-  const headers = new Headers({ Location: `${RELEASE_SERVICE}/hex/desktop/${channel}/${target}`, "Cache-Control": "no-store" })
+  const headers = new Headers({ Location: `${RELEASE_SERVICE}/mumble/desktop/${channel}/${target}`, "Cache-Control": "no-store" })
   secure(headers)
   return new Response(null, { status: 302, headers })
 }
@@ -120,7 +120,7 @@ async function devDownload(request: Request): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, HEAD" } })
   }
-  const manifestUrl = `${RELEASE_SERVICE}/hex/desktop/dev.json`
+  const manifestUrl = `${RELEASE_SERVICE}/mumble/desktop/dev.json`
   const text = (body: string, status: number) => {
     const headers = new Headers({ "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" })
     secure(headers)
@@ -128,35 +128,35 @@ async function devDownload(request: Request): Promise<Response> {
   }
   let response: Response
   try {
-    response = await fetch(manifestUrl, { headers: { "User-Agent": "hex-site" }, cache: "no-store" })
+    response = await fetch(manifestUrl, { headers: { "User-Agent": "mumble-site" }, cache: "no-store" })
   } catch {
-    return text("Hex's release service did not answer. Try again in a minute.", 502)
+    return text("Mumble's release service did not answer. Try again in a minute.", 502)
   }
-  if (response.status === 404) return text("No dev build of Hex has been published yet.", 404)
-  if (!response.ok) return text(`Hex's release service answered ${response.status}. Try again in a minute.`, 502)
+  if (response.status === 404) return text("No dev build of Mumble has been published yet.", 404)
+  if (!response.ok) return text(`Mumble's release service answered ${response.status}. Try again in a minute.`, 502)
   type Manifest = { app?: string; artifact?: string; channel?: string; release?: { version?: string; targets?: Record<string, { url?: string }> } }
   let manifest: Manifest
   try {
     manifest = (await response.json()) as Manifest
   } catch {
-    return text("Hex's dev release manifest is not valid JSON.", 502)
+    return text("Mumble's dev release manifest is not valid JSON.", 502)
   }
-  if (manifest.app !== "hex" || manifest.artifact !== "desktop" || manifest.channel !== "dev") {
-    return text("Hex's dev release manifest names another release.", 502)
+  if (manifest.app !== "mumble" || manifest.artifact !== "desktop" || manifest.channel !== "dev") {
+    return text("Mumble's dev release manifest names another release.", 502)
   }
   const version = manifest.release?.version ?? "unknown"
   const dmg = manifest.release?.targets?.["macos-arm64-dmg"]?.url
-  if (!dmg) return text(`The latest dev build of Hex (${version}) has no Mac download.`, 404)
+  if (!dmg) return text(`The latest dev build of Mumble (${version}) has no Mac download.`, 404)
   // Target URLs resolve against the manifest's URL (anomalyco/release docs/protocol.md).
   // Only redirect to the service's own files, never to another origin.
   let location: URL
   try {
     location = new URL(dmg, manifestUrl)
   } catch {
-    return text("Hex's dev release manifest has an invalid Mac download URL.", 502)
+    return text("Mumble's dev release manifest has an invalid Mac download URL.", 502)
   }
-  if (location.origin !== new URL(manifestUrl).origin || !location.pathname.startsWith("/release/hex/files/")) {
-    return text("Hex's dev release manifest points the Mac download outside the release service.", 502)
+  if (location.origin !== new URL(manifestUrl).origin || !location.pathname.startsWith("/release/mumble/files/")) {
+    return text("Mumble's dev release manifest points the Mac download outside the release service.", 502)
   }
   const headers = new Headers({ Location: location.toString(), "Cache-Control": "no-store" })
   secure(headers)
@@ -167,7 +167,7 @@ async function devDownload(request: Request): Promise<Response> {
 // The Release workflow writes it to the production bucket only, so the dev
 // site reads the production copy.
 const DEV_NOTES_KEY = "dev-notes.json"
-const PRODUCTION_DEV_NOTES = "https://anoma.ly/hex/files/dev-notes.json"
+const PRODUCTION_DEV_NOTES = "https://anoma.ly/mumble/files/dev-notes.json"
 
 async function devNotes(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -178,7 +178,7 @@ async function devNotes(request: Request, env: Env): Promise<Response> {
     const object = await env.FILES.get(DEV_NOTES_KEY)
     if (object) value = await object.json()
     else if (env.CANONICAL_HOST !== "anoma.ly") {
-      const response = await fetch(PRODUCTION_DEV_NOTES, { headers: { "User-Agent": "hex-site" } })
+      const response = await fetch(PRODUCTION_DEV_NOTES, { headers: { "User-Agent": "mumble-site" } })
       if (response.ok) value = await response.json()
     }
   } catch {

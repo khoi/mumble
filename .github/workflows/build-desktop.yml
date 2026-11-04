@@ -22,7 +22,7 @@ on:
         required: true
         type: string
       channel:
-        description: The release channel this build is published on, compiled in as HEX_BUILD_CHANNEL (src/updater.rs); empty for test builds
+        description: The release channel this build is published on, compiled in as MUMBLE_BUILD_CHANNEL (src/updater.rs); empty for test builds
         type: string
         default: ""
       test-build:
@@ -58,10 +58,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      HEX_VERSION: ${{ inputs.version }}
-      HEX_BUILD_CHANNEL: ${{ inputs.channel }}
-      HEX_LINUX_ARCH: x86_64
-      HEX_LINUX_LABEL: x64
+      MUMBLE_VERSION: ${{ inputs.version }}
+      MUMBLE_BUILD_CHANNEL: ${{ inputs.channel }}
+      MUMBLE_LINUX_ARCH: x86_64
+      MUMBLE_LINUX_LABEL: x64
       NFPM_ARCHIVE: nfpm_2.48.0_Linux_x86_64.tar.gz
       NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
     outputs:
@@ -91,52 +91,52 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Build
         env:
-          HEX_RELEASE_DIST: ${{ runner.temp }}/dist
+          MUMBLE_RELEASE_DIST: ${{ runner.temp }}/dist
           CARGO_BUILD_JOBS: 4
           OPENSSL_NO_VENDOR: 1
           CC: clang
           CXX: clang++
         run: |
           executable=$(scripts/build-linux-release.sh)
-          scripts/package-linux.sh "$executable" "$HEX_VERSION" "$HEX_LINUX_LABEL" "$HEX_RELEASE_DIST"
+          scripts/package-linux.sh "$executable" "$MUMBLE_VERSION" "$MUMBLE_LINUX_LABEL" "$MUMBLE_RELEASE_DIST"
       - name: Check the glibc floor
         shell: bash
         run: |
-          bash .github/release/check-glibc-floor.sh "$RUNNER_TEMP/dist/hex-$HEX_VERSION-linux-$HEX_LINUX_LABEL" \
+          bash .github/release/check-glibc-floor.sh "$RUNNER_TEMP/dist/mumble-$MUMBLE_VERSION-linux-$MUMBLE_LINUX_LABEL" \
             | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Install the .deb here and on Debian 12, and the .rpm on Fedora
         run: |
-          base="$RUNNER_TEMP/dist/hex-$HEX_VERSION-linux-$HEX_LINUX_LABEL"
+          base="$RUNNER_TEMP/dist/mumble-$MUMBLE_VERSION-linux-$MUMBLE_LINUX_LABEL"
           dpkg-deb --info "$base.deb"
           sudo apt-get update
           sudo apt-get install -y "$base.deb"
-          test "$(/usr/bin/hex --version | awk 'NF { value=$NF } END { print value }')" = "$HEX_VERSION"
-          dpkg-query -S /usr/bin/hex /usr/lib/systemd/user/hex.service /usr/share/applications/anomaly.hex.desktop /usr/share/icons/hicolor/256x256/apps/anomaly.hex.png
-          sudo apt-get remove -y hex
-          docker run --rm -v "$RUNNER_TEMP/dist:/dist:ro" -e HEX_VERSION -e HEX_LINUX_LABEL fedora:42 sh -euc '
-            dnf install -y -q "/dist/hex-$HEX_VERSION-linux-$HEX_LINUX_LABEL.rpm"
-            test "$(hex --version | awk "NF { value=\$NF } END { print value }")" = "$HEX_VERSION"
-            rpm -qf /usr/bin/hex /usr/lib/systemd/user/hex.service /usr/share/applications/anomaly.hex.desktop /usr/share/icons/hicolor/256x256/apps/anomaly.hex.png'
+          test "$(/usr/bin/mumble --version | awk 'NF { value=$NF } END { print value }')" = "$MUMBLE_VERSION"
+          dpkg-query -S /usr/bin/mumble /usr/lib/systemd/user/mumble.service /usr/share/applications/anomaly.mumble.desktop /usr/share/icons/hicolor/256x256/apps/anomaly.mumble.png
+          sudo apt-get remove -y mumble
+          docker run --rm -v "$RUNNER_TEMP/dist:/dist:ro" -e MUMBLE_VERSION -e MUMBLE_LINUX_LABEL fedora:42 sh -euc '
+            dnf install -y -q "/dist/mumble-$MUMBLE_VERSION-linux-$MUMBLE_LINUX_LABEL.rpm"
+            test "$(mumble --version | awk "NF { value=\$NF } END { print value }")" = "$MUMBLE_VERSION"
+            rpm -qf /usr/bin/mumble /usr/lib/systemd/user/mumble.service /usr/share/applications/anomaly.mumble.desktop /usr/share/icons/hicolor/256x256/apps/anomaly.mumble.png'
           # The oldest supported distribution: the packaged and bare
           # executables start and answer model-free commands.
-          docker run --rm -v "$RUNNER_TEMP/dist:/dist:ro" -e HEX_VERSION -e HEX_LINUX_LABEL debian:12 sh -euc '
+          docker run --rm -v "$RUNNER_TEMP/dist:/dist:ro" -e MUMBLE_VERSION -e MUMBLE_LINUX_LABEL debian:12 sh -euc '
             apt-get update -qq
-            apt-get install -y -qq "/dist/hex-$HEX_VERSION-linux-$HEX_LINUX_LABEL.deb" > /dev/null
-            for hex in /usr/bin/hex "/dist/hex-$HEX_VERSION-linux-$HEX_LINUX_LABEL"; do
-              test "$("$hex" --version | awk "NF { value=\$NF } END { print value }")" = "$HEX_VERSION"
-              "$hex" history > /dev/null
-              status=0; "$hex" status > /dev/null 2>&1 || status=$?
+            apt-get install -y -qq "/dist/mumble-$MUMBLE_VERSION-linux-$MUMBLE_LINUX_LABEL.deb" > /dev/null
+            for mumble in /usr/bin/mumble "/dist/mumble-$MUMBLE_VERSION-linux-$MUMBLE_LINUX_LABEL"; do
+              test "$("$mumble" --version | awk "NF { value=\$NF } END { print value }")" = "$MUMBLE_VERSION"
+              "$mumble" history > /dev/null
+              status=0; "$mumble" status > /dev/null 2>&1 || status=$?
               test "$status" = 3
             done'
       - name: Check the x86_64 CPU floor
-        if: env.HEX_LINUX_ARCH == 'x86_64'
+        if: env.MUMBLE_LINUX_ARCH == 'x86_64'
         run: |
-          bash .github/release/check-x86-baseline.sh "$RUNNER_TEMP/dist/hex-$HEX_VERSION-linux-$HEX_LINUX_LABEL" \
+          bash .github/release/check-x86-baseline.sh "$RUNNER_TEMP/dist/mumble-$MUMBLE_VERSION-linux-$MUMBLE_LINUX_LABEL" \
             target/release/build/transcribe-cpp-sys-*/out/lib/libggml*.a
       - id: upload
         uses: ./.github/release/upload
         with:
-          name: ${{ inputs.artifact-prefix }}-linux-${{ env.HEX_LINUX_ARCH }}
+          name: ${{ inputs.artifact-prefix }}-linux-${{ env.MUMBLE_LINUX_ARCH }}
           path: ${{ runner.temp }}/dist
           retention-days: ${{ inputs.retention-days }}
 
@@ -145,10 +145,10 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     env:
-      HEX_VERSION: ${{ inputs.version }}
-      HEX_BUILD_CHANNEL: ${{ inputs.channel }}
-      HEX_LINUX_ARCH: aarch64
-      HEX_LINUX_LABEL: arm64
+      MUMBLE_VERSION: ${{ inputs.version }}
+      MUMBLE_BUILD_CHANNEL: ${{ inputs.channel }}
+      MUMBLE_LINUX_ARCH: aarch64
+      MUMBLE_LINUX_LABEL: arm64
       NFPM_ARCHIVE: nfpm_2.48.0_Linux_arm64.tar.gz
       NFPM_SHA256: a9a75213763783b7669719e505474c748c5ad7dc66591a195619deb50f85c2f4
     outputs:
@@ -160,13 +160,13 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     env:
-      HEX_VERSION: ${{ inputs.version }}
-      HEX_BUILD_CHANNEL: ${{ inputs.channel }}
-      HEX_WINDOWS_ARCH: x86_64
-      HEX_WINDOWS_LABEL: x64
+      MUMBLE_VERSION: ${{ inputs.version }}
+      MUMBLE_BUILD_CHANNEL: ${{ inputs.channel }}
+      MUMBLE_WINDOWS_ARCH: x86_64
+      MUMBLE_WINDOWS_LABEL: x64
       DUMPBIN_HOST: Hostx64\\x64
       # Compiled into src/updater.rs: test builds never self-update.
-      HEX_TEST_BUILD: ${{ inputs.test-build && '1' || '' }}
+      MUMBLE_TEST_BUILD: ${{ inputs.test-build && '1' || '' }}
     outputs:
       digest: ${{ steps.upload.outputs.digest }}
     steps: &windows-steps
@@ -180,7 +180,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
-          targets: ${{ env.HEX_WINDOWS_ARCH }}-pc-windows-msvc
+          targets: ${{ env.MUMBLE_WINDOWS_ARCH }}-pc-windows-msvc
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: inputs.test-build
         with:
@@ -188,13 +188,13 @@ jobs:
           key: test-build
           cache-on-failure: true
       - name: Install the Vulkan SDK
-        if: env.HEX_WINDOWS_ARCH == 'x86_64'
+        if: env.MUMBLE_WINDOWS_ARCH == 'x86_64'
         uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
         with:
           version: 1.4.309.0
           cache: true
       - name: Install SPIRV-Headers for the Vulkan backend
-        if: env.HEX_WINDOWS_ARCH == 'x86_64'
+        if: env.MUMBLE_WINDOWS_ARCH == 'x86_64'
         shell: pwsh
         run: |
           vcpkg install spirv-headers:x64-windows
@@ -203,7 +203,7 @@ jobs:
           $combined = if ($env:CMAKE_PREFIX_PATH) { "$prefix;$env:CMAKE_PREFIX_PATH" } else { $prefix }
           Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$combined"
       - name: Configure clang-cl for ARM64
-        if: env.HEX_WINDOWS_ARCH == 'aarch64'
+        if: env.MUMBLE_WINDOWS_ARCH == 'aarch64'
         shell: pwsh
         run: |
           @(
@@ -219,15 +219,15 @@ jobs:
           # Git Bash would rewrite CL=/EHsc into a path that clang-cl reads as
           # a second source file.
           export MSYS2_ENV_CONV_EXCL=CL
-          export HEX_RELEASE_DIST="$(cygpath -u "$RUNNER_TEMP")/dist"
+          export MUMBLE_RELEASE_DIST="$(cygpath -u "$RUNNER_TEMP")/dist"
           source/scripts/build-windows.sh
       - name: Check the x86_64 CPU floor
-        if: env.HEX_WINDOWS_ARCH == 'x86_64'
+        if: env.MUMBLE_WINDOWS_ARCH == 'x86_64'
         shell: bash
         run: |
           OBJDUMP="$(cygpath -u "$PROGRAMFILES")/LLVM/bin/llvm-objdump.exe" \
             bash source/.github/release/check-x86-baseline.sh \
-            "$(cygpath -u "$RUNNER_TEMP")/dist/hex-$HEX_VERSION-windows-$HEX_WINDOWS_LABEL.exe" \
+            "$(cygpath -u "$RUNNER_TEMP")/dist/mumble-$MUMBLE_VERSION-windows-$MUMBLE_WINDOWS_LABEL.exe" \
             source/target/x86_64-pc-windows-msvc/release/build/transcribe-cpp-sys-*/out/lib/ggml*.lib
       - name: Check the executable needs no Visual C++ Redistributable
         shell: pwsh
@@ -235,14 +235,14 @@ jobs:
           $dumpbin = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match $env:DUMPBIN_HOST } | Select-Object -First 1
           if (-not $dumpbin) { throw "dumpbin.exe was not found" }
-          $imports = & $dumpbin.FullName /dependents "$env:RUNNER_TEMP/dist/hex-$env:HEX_VERSION-windows-$env:HEX_WINDOWS_LABEL.exe"
+          $imports = & $dumpbin.FullName /dependents "$env:RUNNER_TEMP/dist/mumble-$env:MUMBLE_VERSION-windows-$env:MUMBLE_WINDOWS_LABEL.exe"
           $imports
           $redist = $imports | Select-String -Pattern 'VCRUNTIME|MSVCP|vcomp'
-          if ($redist) { throw "hex.exe imports Visual C++ runtime DLLs: $redist" }
+          if ($redist) { throw "mumble.exe imports Visual C++ runtime DLLs: $redist" }
       - id: upload
         uses: ./source/.github/release/upload
         with:
-          name: ${{ inputs.artifact-prefix }}-windows-${{ env.HEX_WINDOWS_ARCH }}
+          name: ${{ inputs.artifact-prefix }}-windows-${{ env.MUMBLE_WINDOWS_ARCH }}
           path: ${{ runner.temp }}/dist
           retention-days: ${{ inputs.retention-days }}
 
@@ -251,12 +251,12 @@ jobs:
     runs-on: windows-11-arm
     timeout-minutes: 120
     env:
-      HEX_VERSION: ${{ inputs.version }}
-      HEX_BUILD_CHANNEL: ${{ inputs.channel }}
-      HEX_WINDOWS_ARCH: aarch64
-      HEX_WINDOWS_LABEL: arm64
+      MUMBLE_VERSION: ${{ inputs.version }}
+      MUMBLE_BUILD_CHANNEL: ${{ inputs.channel }}
+      MUMBLE_WINDOWS_ARCH: aarch64
+      MUMBLE_WINDOWS_LABEL: arm64
       DUMPBIN_HOST: Hostarm64\\arm64
-      HEX_TEST_BUILD: ${{ inputs.test-build && '1' || '' }}
+      MUMBLE_TEST_BUILD: ${{ inputs.test-build && '1' || '' }}
     outputs:
       digest: ${{ steps.upload.outputs.digest }}
     steps: *windows-steps

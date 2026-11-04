@@ -1,9 +1,9 @@
-# Builds hex-setup-<version>-windows-<x64|arm64>.exe, the per-user Windows
-# installer, around an already-built (and signed) release hex.exe. Installs
+# Builds mumble-setup-<version>-windows-<x64|arm64>.exe, the per-user Windows
+# installer, around an already-built (and signed) release mumble.exe. Installs
 # Inno Setup 6 when ISCC is missing. The installer embeds the executable byte
 # for byte.
 #
-#   scripts/build-windows-installer.ps1 -Executable dist\hex-2.4.0-windows-x64.exe `
+#   scripts/build-windows-installer.ps1 -Executable dist\mumble-2.4.0-windows-x64.exe `
 #     -Version 2.3.0 -Arch x86_64 -OutDir dist
 [CmdletBinding()]
 param(
@@ -19,7 +19,7 @@ $Executable = (Resolve-Path $Executable).Path
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $OutDir = (Resolve-Path $OutDir).Path
 $label = if ($Arch -eq 'x86_64') { 'x64' } else { 'arm64' }
-$script = Join-Path (Split-Path -Parent $PSScriptRoot) 'packaging\windows\hex.iss'
+$script = Join-Path (Split-Path -Parent $PSScriptRoot) 'packaging\windows\mumble.iss'
 
 function Find-Iscc {
     $candidates = @(
@@ -46,6 +46,6 @@ if (-not $iscc) {
 
 & $iscc /Qp "/DAppVersion=$Version" "/DArch=$label" "/DExecutable=$Executable" "/DOutputDir=$OutDir" $script
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
-$installer = Join-Path $OutDir "hex-setup-$Version-windows-$label.exe"
+$installer = Join-Path $OutDir "mumble-setup-$Version-windows-$label.exe"
 if (-not (Test-Path $installer)) { throw "ISCC did not produce $installer." }
 Write-Output $installer

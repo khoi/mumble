@@ -6,38 +6,38 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use color_eyre::eyre::{Result, eyre};
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
-/// Whether this is a local build (`HEX_LOCAL_BUILD=1`): made from a checkout
+/// Whether this is a local build (`MUMBLE_LOCAL_BUILD=1`): made from a checkout
 /// for its owner's own machine, so it never checks for or offers updates.
 pub fn is_local_build() -> bool {
-    option_env!("HEX_LOCAL_BUILD") == Some("1")
+    option_env!("MUMBLE_LOCAL_BUILD") == Some("1")
 }
 
-/// Whether this is a macOS `Hex Test.app` build (`HEX_TEST_BUILD=1`), which
-/// keeps its data, settings, and user config apart from the installed Hex.
+/// Whether this is a macOS `Mumble Test.app` build (`MUMBLE_TEST_BUILD=1`), which
+/// keeps its data, settings, and user config apart from the installed Mumble.
 pub fn is_macos_test_build() -> bool {
-    cfg!(target_os = "macos") && option_env!("HEX_TEST_BUILD") == Some("1")
+    cfg!(target_os = "macos") && option_env!("MUMBLE_TEST_BUILD") == Some("1")
 }
 
-/// The name menus show, so a test build running beside Hex reads as itself.
+/// The name menus show, so a test build running beside Mumble reads as itself.
 #[cfg(target_os = "macos")]
 pub fn app_name() -> &'static str {
     if is_macos_test_build() {
-        "Hex Test"
+        "Mumble Test"
     } else {
-        "Hex"
+        "Mumble"
     }
 }
 
 pub fn support_dir() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("HEX_APPLICATION_SUPPORT_DIR") {
+    if let Some(path) = std::env::var_os("MUMBLE_APPLICATION_SUPPORT_DIR") {
         return Ok(path.into());
     }
     let data =
         dirs::data_dir().ok_or_else(|| eyre!("application data directory is unavailable"))?;
     let folder = if is_macos_test_build() {
-        "hex-test"
+        "mumble-test"
     } else {
-        "hex"
+        "mumble"
     };
     Ok(data.join(folder))
 }
@@ -57,7 +57,7 @@ pub fn init_process_logging(shutdown: &'static AtomicBool) -> Result<PathBuf> {
         .append(true)
         .open(log_dir.join("process.log"))?;
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("hex=info"));
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("mumble=info"));
     tracing_subscriber::fmt()
         .with_env_filter(without_secrets(filter))
         .with_writer(std::io::stderr.and(Mutex::new(process_log)))
@@ -115,7 +115,7 @@ pub fn personal_commands_workspace() -> Result<PathBuf> {
     user_config_dir()
 }
 
-/// The per-user config folder holding `hex.config.ts` on every OS: `~/.config/hex`, or `~/.config/hex-test` for `Hex Test.app`.
+/// The per-user config folder holding `mumble.config.ts` on every OS: `~/.config/mumble`, or `~/.config/mumble-test` for `Mumble Test.app`.
 fn user_config_dir() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| eyre!("home directory is unavailable"))?;
     Ok(user_config_dir_in(&home, is_macos_test_build()))
@@ -123,7 +123,7 @@ fn user_config_dir() -> Result<PathBuf> {
 
 fn user_config_dir_in(home: &std::path::Path, test_build: bool) -> PathBuf {
     home.join(".config")
-        .join(if test_build { "hex-test" } else { "hex" })
+        .join(if test_build { "mumble-test" } else { "mumble" })
 }
 
 #[cfg(test)]
@@ -143,7 +143,7 @@ mod tests {
                 Ok(())
             }
         }
-        for asked in ["trace", "tungstenite=trace,hex=trace"] {
+        for asked in ["trace", "tungstenite=trace,mumble=trace"] {
             let captured = Captured::default();
             let writer = captured.clone();
             let subscriber = tracing_subscriber::fmt()
@@ -152,7 +152,7 @@ mod tests {
                 .finish();
             tracing::subscriber::with_default(subscriber, || {
                 tracing::trace!(target: "tungstenite::handshake::client", "Bearer sk-ant-secret");
-                tracing::trace!(target: "hex", "still logged");
+                tracing::trace!(target: "mumble", "still logged");
             });
             let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
             assert!(log.contains("still logged"), "{asked}: {log}");
@@ -165,11 +165,11 @@ mod tests {
         let home = std::path::Path::new("/Users/kit");
         assert_eq!(
             user_config_dir_in(home, false),
-            home.join(".config").join("hex")
+            home.join(".config").join("mumble")
         );
         assert_eq!(
             user_config_dir_in(home, true),
-            home.join(".config").join("hex-test")
+            home.join(".config").join("mumble-test")
         );
     }
 }

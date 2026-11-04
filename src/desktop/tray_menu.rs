@@ -1,5 +1,5 @@
-//! The tray menu the Linux and Windows trays share (status, Show Hex, Paste
-//! last dictation, the update, Enable / Disable Hex, Quit Hex). Each tray
+//! The tray menu the Linux and Windows trays share (status, Show Mumble, Paste
+//! last dictation, the update, Enable / Disable Mumble, Quit Mumble). Each tray
 //! maps a picked [`TrayCommand`] onto its own runtime.
 
 #[cfg(not(target_os = "macos"))]
@@ -67,13 +67,13 @@ mod tray {
 
         pub(crate) fn tooltip(&self) -> &'static str {
             if self.recording() {
-                tr("Hex Dictation: recording")
+                tr("Mumble Dictation: recording")
             } else if self.transcribing() {
-                tr("Hex Dictation: transcribing")
+                tr("Mumble Dictation: transcribing")
             } else if self.update.is_some() {
-                tr("Hex Dictation: update available")
+                tr("Mumble Dictation: update available")
             } else {
-                tr("Hex Dictation")
+                tr("Mumble Dictation")
             }
         }
 
@@ -91,7 +91,7 @@ mod tray {
                 menu.push(TrayItem::action("status", status).enabled(false));
                 menu.push(TrayItem::Separator);
             }
-            menu.push(TrayItem::action("show", tr("Show Hex")));
+            menu.push(TrayItem::action("show", tr("Show Mumble")));
             menu.push(
                 TrayItem::action("paste-last", tr("Paste last dictation")).enabled(self.listening),
             );
@@ -101,8 +101,8 @@ mod tray {
                     .as_ref()
                     .map(|label| TrayItem::action("update", label.clone())),
             );
-            menu.push(TrayItem::action("toggle", tr("Enable / Disable Hex")));
-            menu.push(TrayItem::action("quit", tr("Quit Hex")));
+            menu.push(TrayItem::action("toggle", tr("Enable / Disable Mumble")));
+            menu.push(TrayItem::action("quit", tr("Quit Mumble")));
             menu
         }
     }
@@ -165,12 +165,12 @@ mod tests {
             Some(TrayCommand::PasteLast)
         );
         assert_eq!(TrayCommand::from_id("status"), None);
-        assert_eq!(view.tooltip(), "Hex Dictation: recording");
+        assert_eq!(view.tooltip(), "Mumble Dictation: recording");
         let stopped = TrayView::new(
             false,
             Some(VoiceState::Dictating),
             &DesktopUpdateStatus::Current,
         );
-        assert_eq!(stopped.tooltip(), "Hex Dictation");
+        assert_eq!(stopped.tooltip(), "Mumble Dictation");
     }
 }

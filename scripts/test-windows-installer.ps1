@@ -1,10 +1,10 @@
 # Silently installs, reinstalls, installs over another version with, and
-# uninstalls a hex-setup-*.exe on a disposable Windows machine (CI), checking
+# uninstalls a mumble-setup-*.exe on a disposable Windows machine (CI), checking
 # the managed layout that src/updater/windows.rs expects at every step. It
-# uses the real %APPDATA%, so never run it on a machine with Hex installed.
+# uses the real %APPDATA%, so never run it on a machine with Mumble installed.
 #
-#   scripts/test-windows-installer.ps1 -Installer dist\hex-setup-2.4.0-windows-x64.exe `
-#     -Executable dist\hex-2.4.0-windows-x64.exe -Version 2.4.0
+#   scripts/test-windows-installer.ps1 -Installer dist\mumble-setup-2.4.0-windows-x64.exe `
+#     -Executable dist\mumble-2.4.0-windows-x64.exe -Version 2.4.0
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string]$Installer,
@@ -13,14 +13,14 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-$support = Join-Path $env:APPDATA 'hex'
-$installed = Join-Path $support "versions\$Version\hex.exe"
+$support = Join-Path $env:APPDATA 'mumble'
+$installed = Join-Path $support "versions\$Version\mumble.exe"
 $pointer = Join-Path $support 'current-version'
 $receipt = Join-Path $support 'install.json'
-$shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Hex.lnk'
+$shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Mumble.lnk'
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6ED48C92-5177-41F4-B8D6-37B7B02CFDF4}_is1'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$logs = Join-Path $env:RUNNER_TEMP 'hex-installer-logs'
+$logs = Join-Path $env:RUNNER_TEMP 'mumble-installer-logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 
 function Check([bool]$condition, [string]$message) {
@@ -39,18 +39,18 @@ if (Test-Path $support) { throw "$support already exists; run this only on a cle
 $expected = (Get-FileHash -Algorithm SHA256 $Executable).Hash
 
 Check ((Run-Setup 'install') -eq 0) 'silent install exits 0'
-Check (Test-Path $installed) "hex.exe is at versions\$Version"
-Check ((Get-FileHash -Algorithm SHA256 $installed).Hash -eq $expected) 'installed hex.exe matches the release bytes'
+Check (Test-Path $installed) "mumble.exe is at versions\$Version"
+Check ((Get-FileHash -Algorithm SHA256 $installed).Hash -eq $expected) 'installed mumble.exe matches the release bytes'
 Check ((Get-Content $pointer -Raw).Trim() -eq $Version) "current-version names $Version"
 $installReceipt = Get-Content $receipt -Raw | ConvertFrom-Json
-Check ($installReceipt.app -eq 'hex' -and $installReceipt.artifact -eq 'desktop' -and $installReceipt.channel -eq 'stable' -and $installReceipt.method -eq 'direct') 'install.json marks a direct install of hex desktop stable'
+Check ($installReceipt.app -eq 'mumble' -and $installReceipt.artifact -eq 'desktop' -and $installReceipt.channel -eq 'stable' -and $installReceipt.method -eq 'direct') 'install.json marks a direct install of mumble desktop stable'
 Check ($installReceipt.root -eq $support) 'install.json names the install root'
 $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
 Check ($link.TargetPath -eq $installed) 'Start Menu shortcut targets the managed executable'
 Check ($link.Arguments -eq 'app') 'Start Menu shortcut launches the app'
-Check ($link.Description -eq 'Hex managed install') 'Start Menu shortcut carries the managed mark the updater repoints'
+Check ($link.Description -eq 'Mumble managed install') 'Start Menu shortcut carries the managed mark the updater repoints'
 $entry = Get-ItemProperty $uninstallKey
-Check ($entry.DisplayName -eq 'Hex') 'Apps & Features lists Hex'
+Check ($entry.DisplayName -eq 'Mumble') 'Apps & Features lists Mumble'
 Check ($entry.DisplayVersion -eq $Version) "Apps & Features shows $Version"
 $uninstaller = ($entry.UninstallString -replace '"', '')
 Check ($uninstaller -like "$support\uninstall\*") 'the uninstaller lives outside versions\, which updates prune'
@@ -58,9 +58,9 @@ Check (Test-Path $uninstaller) 'the uninstaller exists'
 
 if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or (Test-Path "$env:SystemRoot\System32\vulkan-1.dll")) {
     $reported = (& $installed --version) -split '\s+' | Select-Object -Last 1
-    Check ($reported -eq $Version) "installed hex.exe reports $Version"
+    Check ($reported -eq $Version) "installed mumble.exe reports $Version"
 } else {
-    Write-Output 'skip - hex.exe --version needs vulkan-1.dll, which this runner lacks'
+    Write-Output 'skip - mumble.exe --version needs vulkan-1.dll, which this runner lacks'
 }
 
 Check ((Run-Setup 'reinstall') -eq 0) 'reinstalling the same version exits 0'
@@ -72,12 +72,12 @@ Check ((Run-Setup 'over-another') -eq 0) 'installing over another version exits 
 Check ((Get-Content $pointer -Raw).Trim() -eq $Version) 'current-version names this installer''s version'
 
 # Simulate what a self-update and Launch at login leave behind.
-$updated = Join-Path $support 'versions\99.0.0\hex.exe'
+$updated = Join-Path $support 'versions\99.0.0\mumble.exe'
 New-Item -ItemType Directory -Force (Split-Path $updated) | Out-Null
 Copy-Item $installed $updated
 New-Item -ItemType Directory -Force (Join-Path $support 'updates') | Out-Null
 if (-not (Test-Path $runKey)) { New-Item -Path $runKey | Out-Null }
-Set-ItemProperty -Path $runKey -Name 'Hex' -Value "`"$updated`" app --hidden"
+Set-ItemProperty -Path $runKey -Name 'Mumble' -Value "`"$updated`" app --hidden"
 Set-Content -Path (Join-Path $support 'settings.json') -Value '{}'
 
 $process = Start-Process $uninstaller -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$logs\uninstall.log"
@@ -91,7 +91,7 @@ Check (-not (Test-Path (Join-Path $support 'updates'))) 'staged updates are remo
 Check (-not (Test-Path $pointer)) 'current-version is removed'
 Check (-not (Test-Path $receipt)) 'install.json is removed'
 Check (-not (Test-Path $shortcut)) 'Start Menu shortcut is removed'
-Check ($null -eq (Get-ItemProperty -Path $runKey -Name 'Hex' -ErrorAction SilentlyContinue)) 'Launch at login is removed'
+Check ($null -eq (Get-ItemProperty -Path $runKey -Name 'Mumble' -ErrorAction SilentlyContinue)) 'Launch at login is removed'
 Check (Test-Path (Join-Path $support 'settings.json')) 'settings are kept'
 Remove-Item $support -Recurse -Force
 Write-Output "Installer $([IO.Path]::GetFileName($Installer)) passed."

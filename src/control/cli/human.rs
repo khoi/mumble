@@ -27,7 +27,7 @@ pub(crate) fn print(reply: ControlReply, output: Output) -> u8 {
         ControlReply::Settings { settings } => print!("{}", human_settings(&settings)),
         ControlReply::Vocabulary { entries } => print!("{}", human_vocabulary(&entries)),
         ControlReply::Transcript { text } => println!("{text}"),
-        ControlReply::Error { message, .. } => eprintln!("hex: {message}"),
+        ControlReply::Error { message, .. } => eprintln!("mumble: {message}"),
     }
     code
 }
@@ -82,7 +82,7 @@ pub(super) fn human_settings(settings: &[SettingValue]) -> String {
 
 pub(super) fn human_vocabulary(entries: &[VocabularyEntry]) -> String {
     if entries.is_empty() {
-        return "The vocabulary is empty; `hex vocabulary add <term>` adds one\n".into();
+        return "The vocabulary is empty; `mumble vocabulary add <term>` adds one\n".into();
     }
     entries
         .iter()
@@ -137,7 +137,7 @@ pub(super) fn human_status(report: &StatusReport) -> String {
         _ => "closed".into(),
     };
     format!(
-        "Hex {} (pid {}{memory})\n\
+        "Mumble {} (pid {}{memory})\n\
          Listener     {}\n\
          Capture      {capture}{pending}\n\
          Transcription {transcription_line}\n\

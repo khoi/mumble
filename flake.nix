@@ -1,5 +1,5 @@
 {
-  description = "HEX local-first voice dictation";
+  description = "Mumble local-first voice dictation";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -17,39 +17,39 @@
         "aarch64-linux"
       ];
       forSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
-      package = pkgs: self.packages.${pkgs.stdenv.hostPlatform.system}.hex;
+      package = pkgs: self.packages.${pkgs.stdenv.hostPlatform.system}.mumble;
     in
     {
       packages = forSystems (
         pkgs:
         let
-          hex = pkgs.callPackage ./nix/package.nix { };
+          mumble = pkgs.callPackage ./nix/package.nix { };
         in
         {
-          inherit hex;
-          default = hex;
+          inherit mumble;
+          default = mumble;
         }
       );
 
       overlays.default = final: _prev: {
-        hex = final.callPackage ./nix/package.nix { };
+        mumble = final.callPackage ./nix/package.nix { };
       };
 
-      nixosModules.hex =
+      nixosModules.mumble =
         { pkgs, ... }:
         {
           imports = [ ./nix/module.nix ];
-          programs.hex.package = nixpkgs.lib.mkDefault (package pkgs);
+          programs.mumble.package = nixpkgs.lib.mkDefault (package pkgs);
         };
-      nixosModules.default = self.nixosModules.hex;
+      nixosModules.default = self.nixosModules.mumble;
 
-      homeManagerModules.hex =
+      homeManagerModules.mumble =
         { pkgs, ... }:
         {
           imports = [ ./nix/hm-module.nix ];
-          programs.hex.package = nixpkgs.lib.mkDefault (package pkgs);
+          programs.mumble.package = nixpkgs.lib.mkDefault (package pkgs);
         };
-      homeManagerModules.default = self.homeManagerModules.hex;
+      homeManagerModules.default = self.homeManagerModules.mumble;
 
       devShells = forSystems (pkgs: {
         default = (package pkgs).devShell;

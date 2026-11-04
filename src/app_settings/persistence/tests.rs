@@ -11,7 +11,7 @@ impl SettingsFile {
     fn new(data: &[u8]) -> Self {
         let sequence = crate::app_settings::SETTINGS_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let directory = std::env::temp_dir().join(format!(
-            "hex-settings-recovery-{}-{sequence}",
+            "mumble-settings-recovery-{}-{sequence}",
             std::process::id()
         ));
         fs::create_dir_all(&directory).unwrap();

@@ -942,7 +942,7 @@ impl StageRuntime {
 // ── Engine ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-pub struct HexMicEngine {
+pub struct MumbleMicEngine {
     sr: f64,
     g: f64,
     dictating: bool,
@@ -955,7 +955,7 @@ pub struct HexMicEngine {
     strength: f64,
 }
 
-impl HexMicEngine {
+impl MumbleMicEngine {
     pub fn new(sr: f64, mode: &ModeSpec) -> Self {
         let mut engine = Self {
             sr,
@@ -1111,7 +1111,7 @@ pub fn render(
     strength: f64,
 ) -> Vec<f32> {
     let mut out = vec![0.0_f32; input.len()];
-    let mut eng = HexMicEngine::new(sr, mode);
+    let mut eng = MumbleMicEngine::new(sr, mode);
     eng.set_strength(strength);
 
     let mut edges: Vec<(usize, bool)> = Vec::with_capacity(spans.len() * 2);

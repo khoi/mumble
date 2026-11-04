@@ -43,7 +43,7 @@ let
       fontconfig
     ];
     ALSA_PLUGIN_DIR = symlinkJoin {
-      name = "hex-alsa-plugins";
+      name = "mumble-alsa-plugins";
       paths = [
         "${pipewire}/lib/alsa-lib"
         "${alsa-plugins}/lib/alsa-lib"
@@ -57,7 +57,7 @@ let
   ];
 in
 rustPlatform.buildRustPackage (finalAttrs: {
-  pname = "hex";
+  pname = "mumble";
   version = (builtins.fromTOML (builtins.readFile ../Cargo.toml)).package.version;
 
   src = lib.fileset.toSource {
@@ -73,7 +73,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
       ../resources
       ../assets
       ../packaging
-      ../macos/HexMicrophoneDriver/Info.plist
+      ../macos/MumbleMicrophoneDriver/Info.plist
       # Built in: a 2.3.1 install moves itself into this installer's layout.
       ../.github/release/install-linux.sh
     ];
@@ -118,20 +118,20 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # Desktop and installed-model tests are #[ignore]; run the remaining suite.
   doCheck = true;
   preCheck = ''
-    export HOME="$TMPDIR/hex-test-home"
+    export HOME="$TMPDIR/mumble-test-home"
     mkdir -p "$HOME"
   '';
 
   postInstall = ''
-    install -Dm644 ${../packaging/anomaly.hex.desktop} $out/share/applications/anomaly.hex.desktop
+    install -Dm644 ${../packaging/anomaly.mumble.desktop} $out/share/applications/anomaly.mumble.desktop
     mkdir -p $out/share/icons
     cp -R ${../packaging/linux/icons/hicolor} $out/share/icons/hicolor
-    substituteInPlace $out/share/applications/anomaly.hex.desktop \
-      --replace-fail '@HEX_BIN@' "$out/bin/hex"
+    substituteInPlace $out/share/applications/anomaly.mumble.desktop \
+      --replace-fail '@MUMBLE_BIN@' "$out/bin/mumble"
   '';
 
   postFixup = ''
-    wrapProgram $out/bin/hex \
+    wrapProgram $out/bin/mumble \
       --prefix PATH : ${lib.makeBinPath runtimePackages} \
       --prefix LD_LIBRARY_PATH : ${runtimeEnv.LD_LIBRARY_PATH} \
       --set ALSA_PLUGIN_DIR ${runtimeEnv.ALSA_PLUGIN_DIR}
@@ -149,9 +149,9 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   meta = {
     description = "Local-first voice dictation (Linux beta)";
-    homepage = "https://anoma.ly/hex/";
+    homepage = "https://anoma.ly/mumble/";
     license = lib.licenses.mit;
-    mainProgram = "hex";
+    mainProgram = "mumble";
     platforms = [
       "x86_64-linux"
       "aarch64-linux"

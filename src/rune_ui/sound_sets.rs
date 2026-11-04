@@ -1,6 +1,6 @@
 //! Sounds: a sheet from General's Sounds row where each sound set can be
 //! heard in context. A stage at the top plays a short dictation (start, a
-//! moment of speaking, stop, a moment of transcribing, done) while Hex's own
+//! moment of speaking, stop, a moment of transcribing, done) while Mumble's own
 //! HUD, where this OS puts it, does what it does at each sound; its chips
 //! play one sound at a time. Below it each set has its name, what it sounds
 //! like and a play button; picking one is the setting, and plays it.
@@ -37,7 +37,7 @@ const MENU_BAR: f32 = 24.0;
 const FRAME: Duration = Duration::from_micros(16_667);
 
 static PLAY: Icon = Icon {
-    name: "hex-play",
+    name: "mumble-play",
     view: 20.0,
     body: r#"<path d="M6.5 5.1v9.8c0 .5.5.8.9.5l7.6-4.9c.4-.2.4-.8 0-1L7.4 4.6c-.4-.3-.9 0-.9.5Z" fill="currentColor"/>"#,
 };
@@ -385,7 +385,7 @@ fn chip(p: Paint, set: SoundSet, cue: Cue, lit: bool) -> El {
     chip
 }
 
-/// A slice of the screen with Hex's HUD where this OS puts it: on a Mac its
+/// A slice of the screen with Mumble's HUD where this OS puts it: on a Mac its
 /// plate 6 pt under the menu bar or 24 pt above the Dock, on Linux and
 /// Windows its window 12 pt from the top or 24 pt from the bottom. Off shows
 /// nothing. The window's compositor draws the HUD itself.

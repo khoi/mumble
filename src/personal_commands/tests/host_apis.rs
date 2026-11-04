@@ -164,8 +164,8 @@ export default {
           resolve(`${error.code} ${error.killed} ${error.signal} ${stdout.trim()} ${stderr.trim()} ${error.message.startsWith("Command failed: ")}`))
       }),
     },
-    env: { name: "Env", transform: async () => (await shell("echo \"$HEX_TEST:$CARGO_MANIFEST_DIR\"", { env: { HEX_TEST: "set" } })).stdout.trim() },
-    missing: { name: "Missing", transform: async () => { try { await run("hex-no-such-program") } catch (error) { return `${error.code} ${error.syscall}` } } },
+    env: { name: "Env", transform: async () => (await shell("echo \"$MUMBLE_TEST:$CARGO_MANIFEST_DIR\"", { env: { MUMBLE_TEST: "set" } })).stdout.trim() },
+    missing: { name: "Missing", transform: async () => { try { await run("mumble-no-such-program") } catch (error) { return `${error.code} ${error.syscall}` } } },
     slow: { name: "Slow", transform: async () => { try { await shell("sleep 5", { timeout: 100 }) } catch (error) { return `${error.killed} ${error.signal} ${error.code}` } } },
     big: { name: "Big", transform: async () => { try { await shell("yes | head -c 5000", { maxBuffer: 1000 }) } catch (error) { return `${error.code} ${error.stdout.length}` } } },
   },
@@ -190,7 +190,7 @@ export default {
     assert_eq!(harness.transform(&["env"], "").unwrap(), "set:");
     assert_eq!(
         harness.transform(&["missing"], "").unwrap(),
-        "ENOENT spawn hex-no-such-program"
+        "ENOENT spawn mumble-no-such-program"
     );
     let started = Instant::now();
     assert_eq!(
@@ -248,18 +248,18 @@ export default {
 }
 
 /// Dictation's processing stage over a worker running on its own thread,
-/// as Hex runs it.
+/// as Mumble runs it.
 #[test]
 fn a_throwing_or_slow_transformation_pastes_the_text_unchanged() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let root = std::env::temp_dir().join(format!("hex-fallback-{unique}"));
-    let workspace = root.join("hex");
+    let root = std::env::temp_dir().join(format!("mumble-fallback-{unique}"));
+    let workspace = root.join("mumble");
     fs::create_dir_all(&workspace).unwrap();
     fs::write(
-        workspace.join("hex.config.ts"),
+        workspace.join("mumble.config.ts"),
         r#"export default {
   transformations: {
     slow: { name: "Slow", timeout: 200, transform: () => new Promise((resolve) => setTimeout(resolve, 5000, "late")) },

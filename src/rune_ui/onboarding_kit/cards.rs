@@ -1,6 +1,6 @@
 //! Example macOS notifications to answer by voice, drawn strictly with
 //! OpenCode theme tokens. Supports stacked sent bubbles above the input field
-//! during the `"Without Hex"` double-send typo comedy!
+//! during the `"Without Mumble"` double-send typo comedy!
 
 use rune::{Color, El, Path, Shape, Spring, TextStyle, Transition, canvas, col, el, row, text};
 
@@ -74,8 +74,8 @@ pub(crate) const ADAM: Notice = Notice {
     key: "adam",
     app: App::Slack,
     from: "Adam",
-    place: Some("#hex"),
-    body: "hex just typed my standup into figma",
+    place: Some("#mumble"),
+    body: "mumble just typed my standup into figma",
     field: "Reply in thread",
 };
 

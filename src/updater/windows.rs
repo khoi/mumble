@@ -1,6 +1,6 @@
 //! Windows installs: the per-user version layout our installers receipt
-//! (`%APPDATA%\hex\install.json`) updates itself by staging the
-//! new `hex.exe` into its own version directory and switching the
+//! (`%APPDATA%\mumble\install.json`) updates itself by staging the
+//! new `mumble.exe` into its own version directory and switching the
 //! `current-version` pointer. Before anything runs, the download must carry
 //! a valid Authenticode signature from Anomaly's Artifact Signing identity.
 //! Administrators turn updates off with the `DisableUpdates` policy value.
@@ -29,12 +29,12 @@ pub const DOWNLOAD_TARGET: &str = "windows-arm64-setup";
 /// Anomaly (as on OpenCode's signed Windows builds); updates signed by
 /// anyone else are refused.
 pub const AUTHENTICODE_SIGNER: &str = "Anomaly Innovations, Inc https://anoma.ly/";
-/// `HKLM` (or `HKCU`) `\SOFTWARE\Policies\Anomaly\Hex`, value `DisableUpdates`.
-const POLICY_KEY: &str = r"SOFTWARE\Policies\Anomaly\Hex";
-/// The Apps & Features entry that packaging/windows/hex.iss registers.
+/// `HKLM` (or `HKCU`) `\SOFTWARE\Policies\Anomaly\Mumble`, value `DisableUpdates`.
+const POLICY_KEY: &str = r"SOFTWARE\Policies\Anomaly\Mumble";
+/// The Apps & Features entry that packaging/windows/mumble.iss registers.
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{6ED48C92-5177-41F4-B8D6-37B7B02CFDF4}_is1";
 
-/// The activated `hex.exe`.
+/// The activated `mumble.exe`.
 #[derive(Clone, Debug)]
 pub struct Staged(PathBuf);
 
@@ -109,7 +109,7 @@ pub fn stage(file: &Path, version: &str) -> Result<Staged> {
         .open(support.join("updates").join("update.lock"))?;
     lock.try_lock_exclusive()
         .wrap_err("another Windows update is already in progress")?;
-    let staging = support.join("updates").join("hex.exe.staging");
+    let staging = support.join("updates").join("mumble.exe.staging");
     let _ = fs::remove_file(&staging);
     fs::copy(file, &staging)?;
     let activation =
@@ -119,10 +119,10 @@ pub fn stage(file: &Path, version: &str) -> Result<Staged> {
     }
     let executable = activation?;
     if let Err(error) = crate::windows::login_item::repoint(&executable) {
-        tracing::warn!(%error, "could not repoint Launch at login to the updated Hex");
+        tracing::warn!(%error, "could not repoint Launch at login to the updated Mumble");
     }
     if let Err(error) = repoint_start_menu_shortcut(&executable) {
-        tracing::warn!(%error, "could not repoint the Start Menu shortcut to the updated Hex");
+        tracing::warn!(%error, "could not repoint the Start Menu shortcut to the updated Mumble");
     }
     if let Err(error) = update_uninstall_entry(version) {
         tracing::warn!(%error, "could not update the Apps & Features version");
@@ -138,11 +138,11 @@ pub fn verify_authenticode(file: &Path, signer: &str) -> Result<()> {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "$s = Get-AuthenticodeSignature -LiteralPath $env:HEX_UPDATE_FILE; \
+            "$s = Get-AuthenticodeSignature -LiteralPath $env:MUMBLE_UPDATE_FILE; \
              [Console]::Out.Write(\"$($s.Status)`n\"); \
              if ($s.SignerCertificate) { [Console]::Out.Write($s.SignerCertificate.GetNameInfo('SimpleName', $false)) }",
         ])
-        .env("HEX_UPDATE_FILE", file)
+        .env("MUMBLE_UPDATE_FILE", file)
         // A PowerShell 7 parent's module path breaks Windows PowerShell's
         // own modules, Microsoft.PowerShell.Security among them.
         .env_remove("PSModulePath")
@@ -167,7 +167,7 @@ fn repoint_start_menu_shortcut(executable: &Path) -> Result<()> {
     let Some(appdata) = dirs::config_dir() else {
         return Ok(());
     };
-    let shortcut = appdata.join(r"Microsoft\Windows\Start Menu\Programs\Hex.lnk");
+    let shortcut = appdata.join(r"Microsoft\Windows\Start Menu\Programs\Mumble.lnk");
     if !shortcut.exists() {
         return Ok(());
     }
@@ -177,14 +177,14 @@ fn repoint_start_menu_shortcut(executable: &Path) -> Result<()> {
             "-WindowStyle",
             "Hidden",
             "-Command",
-            "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:HEX_SHORTCUT); \
-             if ($s.Description -eq 'Hex managed install') { \
-             $s.TargetPath = $env:HEX_EXECUTABLE; \
-             $s.WorkingDirectory = (Split-Path -Parent $env:HEX_EXECUTABLE); \
+            "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:MUMBLE_SHORTCUT); \
+             if ($s.Description -eq 'Mumble managed install') { \
+             $s.TargetPath = $env:MUMBLE_EXECUTABLE; \
+             $s.WorkingDirectory = (Split-Path -Parent $env:MUMBLE_EXECUTABLE); \
              $s.Save() }",
         ])
-        .env("HEX_SHORTCUT", &shortcut)
-        .env("HEX_EXECUTABLE", executable)
+        .env("MUMBLE_SHORTCUT", &shortcut)
+        .env("MUMBLE_EXECUTABLE", executable)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -197,7 +197,7 @@ fn repoint_start_menu_shortcut(executable: &Path) -> Result<()> {
 }
 
 /// Show the activated version in Apps & Features when Setup.exe installed
-/// Hex; script installs have no entry and are left alone.
+/// Mumble; script installs have no entry and are left alone.
 fn update_uninstall_entry(version: &str) -> Result<()> {
     use winreg::RegKey;
     use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
@@ -243,8 +243,8 @@ pub(super) fn activate(support: &Path, version: &str, staging: &Path) -> Result<
     let versions = support.join("versions");
     let version_dir = versions.join(version);
     fs::create_dir_all(&version_dir)?;
-    let executable = version_dir.join("hex.exe");
-    let staged = version_dir.join("hex.exe.partial");
+    let executable = version_dir.join("mumble.exe");
+    let staged = version_dir.join("mumble.exe.partial");
     let _ = fs::remove_file(&staged);
     fs::rename(staging, &staged)?;
     // FlushFileBuffers requires write access on Windows, unlike fsync.
@@ -271,7 +271,7 @@ pub(super) fn activate(support: &Path, version: &str, staging: &Path) -> Result<
             && is_version_name(name)
             && let Err(error) = fs::remove_dir_all(entry.path())
         {
-            tracing::warn!(%error, path = %entry.path().display(), "could not prune an old Hex version");
+            tracing::warn!(%error, path = %entry.path().display(), "could not prune an old Mumble version");
         }
     }
     Ok(executable)
@@ -289,13 +289,13 @@ pub fn restart_into(staged: &Staged) -> Result<()> {
             "-Command",
             &restart_script(std::process::id()),
         ])
-        .env("HEX_EXECUTABLE", &staged.0)
+        .env("MUMBLE_EXECUTABLE", &staged.0)
         .env_remove("PSModulePath")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .wrap_err("could not schedule the updated Hex version")?;
+        .wrap_err("could not schedule the updated Mumble version")?;
     Ok(())
 }
 
@@ -307,7 +307,7 @@ fn restart_script(pid: u32) -> String {
     format!(
         "$old = Get-Process -Id {pid} -ErrorAction SilentlyContinue; \
          if ($old -and -not $old.WaitForExit(300000)) {{ exit 1 }}; \
-         Start-Process -FilePath $env:HEX_EXECUTABLE -ArgumentList 'app'"
+         Start-Process -FilePath $env:MUMBLE_EXECUTABLE -ArgumentList 'app'"
     )
 }
 
@@ -317,14 +317,14 @@ mod tests {
 
     #[test]
     fn activation_switches_the_pointer_without_removing_the_old_version() {
-        let root = std::env::temp_dir().join(format!("hex-win-activate-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("mumble-win-activate-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("versions/1.0.0")).unwrap();
-        fs::write(root.join("versions/1.0.0/hex.exe"), b"old").unwrap();
+        fs::write(root.join("versions/1.0.0/mumble.exe"), b"old").unwrap();
         fs::create_dir_all(root.join("versions/0.9.0")).unwrap();
-        fs::write(root.join("versions/0.9.0/hex.exe"), b"older").unwrap();
+        fs::write(root.join("versions/0.9.0/mumble.exe"), b"older").unwrap();
         fs::write(root.join("current-version"), "1.0.0\n").unwrap();
-        let staging = root.join("hex.exe.staging");
+        let staging = root.join("mumble.exe.staging");
         fs::write(&staging, b"new").unwrap();
 
         let executable = activate(&root, "1.1.0", &staging).unwrap();
@@ -337,7 +337,7 @@ mod tests {
             "1.1.0"
         );
         assert_eq!(
-            fs::read(root.join("versions/1.0.0/hex.exe")).unwrap(),
+            fs::read(root.join("versions/1.0.0/mumble.exe")).unwrap(),
             b"old"
         );
         assert!(!root.join("versions/0.9.0").exists());
@@ -355,10 +355,10 @@ mod tests {
                 .args([
                     "-NoProfile",
                     "-Command",
-                    "$s = Get-AuthenticodeSignature -LiteralPath $env:HEX_UPDATE_FILE; \
+                    "$s = Get-AuthenticodeSignature -LiteralPath $env:MUMBLE_UPDATE_FILE; \
                      if ($s.Status -eq 'Valid') { $s.SignerCertificate.GetNameInfo('SimpleName', $false) }",
                 ])
-                .env("HEX_UPDATE_FILE", path)
+                .env("MUMBLE_UPDATE_FILE", path)
                 .env_remove("PSModulePath")
                 .output()
                 .unwrap();
@@ -378,7 +378,7 @@ mod tests {
         assert!(verify_authenticode(&signed, AUTHENTICODE_SIGNER).is_err());
 
         let unsigned =
-            std::env::temp_dir().join(format!("hex-unsigned-{}.exe", std::process::id()));
+            std::env::temp_dir().join(format!("mumble-unsigned-{}.exe", std::process::id()));
         fs::write(&unsigned, b"MZ not a signed program").unwrap();
         assert!(verify_authenticode(&unsigned, &signer).is_err());
         let _ = fs::remove_file(unsigned);

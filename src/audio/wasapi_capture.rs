@@ -27,12 +27,12 @@ use windows::Win32::System::Com::{
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{HSTRING, Interface, PCWSTR};
 
-use super::hex_microphone::{CaptureFeed, CaptureFeedSwitch, capture_feed};
 use super::input_format::{InputStream, StartedStream};
 use super::mix_format::MixFormat;
+use super::mumble_microphone::{CaptureFeed, CaptureFeedSwitch, capture_feed};
 use super::{CaptureInstant, duration_for_frames};
 
-/// How long opening may take before Hex gives up on this path.
+/// How long opening may take before Mumble gives up on this path.
 const OPEN_TIMEOUT: Duration = Duration::from_secs(5);
 /// The polling fallback's buffer: one second, which the Intel Smart Sound
 /// driver accepted without event callbacks in #988.
@@ -110,7 +110,7 @@ pub(super) fn start(device: &Device, device_name: &str) -> Result<StartedStream>
             run(&id, &name, &worker_stop, &ready_sender, &streams);
         })
         .map_err(|error| eyre!("could not start the microphone thread: {error}"))?;
-    let (sample_rate, hex_microphone) = match ready.recv_timeout(OPEN_TIMEOUT) {
+    let (sample_rate, mumble_microphone) = match ready.recv_timeout(OPEN_TIMEOUT) {
         Ok(Ok(opened)) => opened,
         Ok(Err(error)) => {
             let _ = worker.join();
@@ -133,7 +133,7 @@ pub(super) fn start(device: &Device, device_name: &str) -> Result<StartedStream>
         },
         chunks,
         stream_errors,
-        hex_microphone,
+        mumble_microphone,
         sample_rate,
     })
 }
@@ -332,7 +332,7 @@ fn open_with(
     if !format.is_decodable() {
         return Err(Failure {
             format: Some(format),
-            error: "Hex cannot decode this mix format".into(),
+            error: "Mumble cannot decode this mix format".into(),
         });
     }
     unsafe {

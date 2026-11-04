@@ -65,7 +65,7 @@ fn is_browser_id(canonical_bundle_id: Option<&str>) -> bool {
     )
 }
 
-/// One of the browsers Hex knows, or one of their audio helpers.
+/// One of the browsers Mumble knows, or one of their audio helpers.
 pub(crate) fn browser_bundle(bundle_id: &str, name: Option<&str>) -> bool {
     is_browser_id(canonical_bundle_id_for(bundle_id, name))
 }
@@ -87,7 +87,7 @@ impl BrowserProcesses {
     }
 }
 
-/// The Core Audio process objects of the running browsers, Hex excluded.
+/// The Core Audio process objects of the running browsers, Mumble excluded.
 pub(crate) fn browser_process_objects(which: BrowserProcesses) -> Result<Vec<AudioObjectID>> {
     objc2::rc::autoreleasepool(|_| {
         let own_pid = std::process::id() as i32;
@@ -783,7 +783,7 @@ mod tests {
                 true,
             ),
             ("company.thebrowser.dia", "Dia", None, false),
-            ("anomaly.hex", "Hex", None, false),
+            ("anomaly.mumble", "Mumble", None, false),
             (
                 "com.vivaldi.Vivaldi.helper",
                 "Vivaldi Helper",

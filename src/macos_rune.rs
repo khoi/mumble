@@ -1,4 +1,4 @@
-//! Hex on macOS (`hex app`): one menu-bar process.
+//! Mumble on macOS (`mumble app`): one menu-bar process.
 //!
 //! - The main thread runs Rune's event loop (`rune::App`, windowless and
 //!   kept running, as an accessory app) and, beside it on the same AppKit
@@ -11,7 +11,7 @@
 //! - The listener (`recognition::listen`) and the local API keep their own
 //!   threads.
 //!
-//! Closing the window hides it; Quit (menu bar, ⌘Q, `hex quit`, `hex restart`
+//! Closing the window hides it; Quit (menu bar, ⌘Q, `mumble quit`, `mumble restart`
 //! and the onboarding relaunch after scheduling the new copy, or Ctrl-C) ends
 //! the loop, then stops and joins everything and ends the process with
 //! `_exit` ([`crate::desktop::process_exit`]). AppKit's own terminate
@@ -144,7 +144,7 @@ impl RuntimeHandle {
     pub(crate) fn send(&self, request: Request) -> Result<()> {
         self.requests
             .send(request)
-            .map_err(|_| eyre!("Hex's runtime stopped"))
+            .map_err(|_| eyre!("Mumble's runtime stopped"))
     }
 
     pub(crate) fn published(&self) -> Option<Arc<Published>> {
@@ -172,7 +172,7 @@ pub(crate) fn runtime() -> Option<RuntimeHandle> {
     RUNTIME.get().cloned()
 }
 
-/// Carries out an update control from the window, a menu, or `hex`. Restart
+/// Carries out an update control from the window, a menu, or `mumble`. Restart
 /// to update finishes on the updater's worker; the pump then quits.
 pub(crate) fn update_action(action: &crate::desktop::host::DesktopAction) -> Result<()> {
     UPDATER
@@ -188,7 +188,7 @@ pub(crate) fn update_status() -> DesktopUpdateStatus {
     )
 }
 
-/// Quits Hex from any thread.
+/// Quits Mumble from any thread.
 pub(crate) fn quit() {
     if let Some(window) = WINDOW.get() {
         window.quit();
@@ -219,10 +219,10 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|error| error.into_inner())
 }
 
-/// Asks a running 2.3.1 or Swift Hex to quit once this Hex is ready to
+/// Asks a running 2.3.1 or Swift Hex to quit once this Mumble is ready to
 /// listen, so the two never answer the same shortcut. The old app stays
 /// installed.
-fn quit_legacy_hex() {
+fn quit_legacy_mumble() {
     objc2::rc::autoreleasepool(|_| {
         for bundle_id in crate::desktop::onboarding::LEGACY_MAC_BUNDLE_IDS {
             for app in objc2_app_kit::NSRunningApplication::runningApplicationsWithBundleIdentifier(
@@ -242,9 +242,9 @@ fn quit_legacy_hex() {
 /// builds) and logs a warning on a large footprint, steady growth, or a busy core.
 fn watch_process() {
     let config = if cfg!(debug_assertions) {
-        procwatch::Config::dev("hex")
+        procwatch::Config::dev("mumble")
     } else {
-        procwatch::Config::release("hex")
+        procwatch::Config::release("mumble")
     };
     procwatch::watch_with(config, |event, _| tracing::warn!(%event, "process watch"));
 }
@@ -312,7 +312,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     let listener_failure = Arc::new(Mutex::new(None::<String>));
     let recognition_failure = listener_failure.clone();
     let recognition = thread::Builder::new()
-        .name("hex-listener".into())
+        .name("mumble-listener".into())
         .spawn(move || {
             if !setup_ready {
                 loop {
@@ -326,7 +326,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
                     }
                 }
             }
-            quit_legacy_hex();
+            quit_legacy_mumble();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 crate::recognition::listen(
                     event_log,
@@ -366,10 +366,10 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     };
     RUNTIME
         .set(handle.clone())
-        .map_err(|_| eyre!("the Hex runtime already started"))?;
+        .map_err(|_| eyre!("the Mumble runtime already started"))?;
     let runtime_settings = settings.clone();
     let runtime = thread::Builder::new()
-        .name("hex-runtime".into())
+        .name("mumble-runtime".into())
         .spawn(move || {
             run_runtime(
                 runtime_settings,
@@ -396,7 +396,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     }
     let window = app.handle();
     let _ = WINDOW.set(window.clone());
-    // The status item is created inside the loop; Hex can't run without a
+    // The status item is created inside the loop; Mumble can't run without a
     // way back to its window, so a failed item opens the window there.
     let open_at_launch = settings_error.is_some()
         || should_open_app_on_launch(
@@ -637,7 +637,7 @@ struct Launch {
 }
 
 /// AppKit's terminate (the quit Apple event, logout) calls `exit` right after
-/// this notification, so Hex finishes there ([`crate::desktop::process_exit`]).
+/// this notification, so Mumble finishes there ([`crate::desktop::process_exit`]).
 fn observe_termination(target: &MenuTarget) {
     // SAFETY: the target outlives the observer (kept in LAUNCH, then PUMP,
     // for the app's life), and the selector matches its method.
@@ -666,7 +666,7 @@ fn start_main_thread_after(seconds: f64) {
 /// the pump's timer; the first call does, later ones do nothing.
 fn start_main_thread() {
     let Some(mtm) = MainThreadMarker::new() else {
-        tracing::error!("Hex's main-thread setup ran off the main thread");
+        tracing::error!("Mumble's main-thread setup ran off the main thread");
         return;
     };
     let Some(Launch { mut pump, target }) = LAUNCH.with(|slot| slot.borrow_mut().take()) else {
@@ -675,7 +675,7 @@ fn start_main_thread() {
     pump.status_actions = match crate::macos_rune::status_item::install() {
         Ok(actions) => Some(actions),
         Err(error) => {
-            tracing::error!(%error, "could not install Hex status item; opening the window");
+            tracing::error!(%error, "could not install Mumble status item; opening the window");
             show(&pump.window, Destination::Settings);
             None
         }
@@ -754,7 +754,7 @@ pub(crate) fn bring_window_forward() {
 
 fn bring_forward(window: &rune::AppHandle<Ui>) {
     // An open window always shows the Dock icon: hiding it
-    // would deactivate Hex and drop the window behind other apps.
+    // would deactivate Mumble and drop the window behind other apps.
     crate::app_settings::set_dock_icon_visible(true);
     if let Some(mtm) = MainThreadMarker::new() {
         let app = NSApplication::sharedApplication(mtm);
@@ -939,13 +939,13 @@ objc2::define_class!(
             let _ = update_action(&crate::desktop::host::DesktopAction::CheckForUpdates);
         }
 
-        #[unsafe(method(hideHex:))]
-        fn hide_hex(&self, _sender: Option<&AnyObject>) {
+        #[unsafe(method(hideMumble:))]
+        fn hide_mumble(&self, _sender: Option<&AnyObject>) {
             crate::app_settings::hide_application();
         }
 
-        #[unsafe(method(quitHex:))]
-        fn quit_hex(&self, _sender: Option<&AnyObject>) {
+        #[unsafe(method(quitMumble:))]
+        fn quit_mumble(&self, _sender: Option<&AnyObject>) {
             with_window(|window| window.quit());
         }
 
@@ -996,7 +996,7 @@ fn with_window(f: impl FnOnce(&rune::AppHandle<Ui>)) {
     }
 }
 
-/// The menu bar while the window is active: Hex, File, View (with the
+/// The menu bar while the window is active: Mumble, File, View (with the
 /// Labs), Window.
 /// Rune draws no Edit menu items, so ⌘C/⌘V reach its text fields as keys.
 fn install_main_menu(target: &MenuTarget, mtm: MainThreadMarker) {
@@ -1011,9 +1011,9 @@ fn install_main_menu(target: &MenuTarget, mtm: MainThreadMarker) {
     application.extend([
         Some(("Settings…", sel!(showSettings:), ",")),
         None,
-        Some((hide.as_str(), sel!(hideHex:), "h")),
+        Some((hide.as_str(), sel!(hideMumble:), "h")),
         None,
-        Some((quit.as_str(), sel!(quitHex:), "q")),
+        Some((quit.as_str(), sel!(quitMumble:), "q")),
     ]);
     let mut menus = vec![
         (name, application),

@@ -7,9 +7,9 @@ pub fn is_dev_build() -> bool {
     is_dev_build_for(
         cfg!(debug_assertions),
         cfg!(test),
-        option_env!("HEX_LOCAL_BUILD"),
-        option_env!("HEX_TEST_BUILD"),
-        option_env!("HEX_BUILD_CHANNEL"),
+        option_env!("MUMBLE_LOCAL_BUILD"),
+        option_env!("MUMBLE_TEST_BUILD"),
+        option_env!("MUMBLE_BUILD_CHANNEL"),
         crate::VERSION,
     )
 }

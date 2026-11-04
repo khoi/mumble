@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-support="$HOME/Library/Application Support/hex"
+support="$HOME/Library/Application Support/mumble"
 destination="${1:-$support/test-fixtures/dictation-protocol}"
 recording_pid=""
 
@@ -51,7 +51,7 @@ done
 
 mkdir -p "$destination"
 
-printf '\nHEX dictation protocol fixture recorder\n'
+printf '\nMUMBLE dictation protocol fixture recorder\n'
 printf 'Audio stays local in:\n  %s\n\n' "$destination"
 printf 'Use a normal speaking pace. Leave a short pause before the final control.\n'
 
@@ -94,4 +94,4 @@ done
 
 printf '\nCaptured %s fixtures.\n' "${#names[@]}"
 printf 'Run the fixture test with:\n\n'
-printf '  HEX_DICTATION_FIXTURE_DIR=%q cargo test dictation_protocol_audio -- --ignored --nocapture\n' "$destination"
+printf '  MUMBLE_DICTATION_FIXTURE_DIR=%q cargo test dictation_protocol_audio -- --ignored --nocapture\n' "$destination"

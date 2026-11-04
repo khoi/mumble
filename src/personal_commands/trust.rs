@@ -1,7 +1,7 @@
 //! The trust prompt's data: what a loaded config can reach (`fetch`, or
 //! programs through `node:child_process`), the hosts and programs its source
 //! names where they are written literally, and the content hash the person's
-//! approval is pinned to. Approval lives in Hex's own support folder, not the
+//! approval is pinned to. Approval lives in Mumble's own support folder, not the
 //! config folder, and any change to the config's files asks again.
 
 use std::fs;
@@ -159,7 +159,7 @@ mod tests {
     use super::*;
 
     fn sources(text: &str) -> Vec<(String, String)> {
-        vec![("hex.config.ts".into(), text.into())]
+        vec![("mumble.config.ts".into(), text.into())]
     }
 
     #[test]
@@ -216,7 +216,7 @@ await run("git", ["status"])
     #[test]
     fn approval_pins_one_hash() {
         let path = std::env::temp_dir().join(format!(
-            "hex-trust-{}.json",
+            "mumble-trust-{}.json",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

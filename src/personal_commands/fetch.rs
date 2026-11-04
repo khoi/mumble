@@ -59,7 +59,7 @@ pub fn send(
     let duration_ms = started.elapsed().as_millis() as u64;
     match &result {
         Ok(response) => tracing::info!(
-            target: "hex_config",
+            target: "mumble_config",
             host,
             method,
             status = response.status,
@@ -69,7 +69,7 @@ pub fn send(
             "fetch"
         ),
         Err(error) => tracing::warn!(
-            target: "hex_config",
+            target: "mumble_config",
             host,
             method,
             duration_ms,

@@ -630,7 +630,7 @@ mod tests {
         let now = Instant::now();
         // A shortcut dictation records: the client is refused, not the
         // shortcut ended.
-        let (effect, client) = start(&mut owner, "hex_a", true, now);
+        let (effect, client) = start(&mut owner, "mumble_a", true, now);
         assert_eq!(effect, Effect::None);
         assert_eq!(
             client.start.try_recv().unwrap().unwrap_err(),
@@ -638,7 +638,7 @@ mod tests {
         );
         assert!(!owner.is_active());
 
-        let (effect, client) = start(&mut owner, "hex_a", false, now);
+        let (effect, client) = start(&mut owner, "mumble_a", false, now);
         assert_eq!(effect, Effect::Start);
         assert!(owner.is_starting());
         assert!(client.start.try_recv().is_err());
@@ -648,7 +648,7 @@ mod tests {
         assert!(!owner.is_starting());
 
         // One client dictation at a time.
-        let (effect, other) = start(&mut owner, "hex_b", false, now);
+        let (effect, other) = start(&mut owner, "mumble_b", false, now);
         assert_eq!(effect, Effect::None);
         assert_eq!(
             other.start.try_recv().unwrap().unwrap_err(),
@@ -666,7 +666,7 @@ mod tests {
     #[test]
     fn a_start_its_client_abandoned_is_dropped() {
         let mut owner = ServiceDictations::default();
-        let (_, client) = start(&mut owner, "hex_a", false, Instant::now());
+        let (_, client) = start(&mut owner, "mumble_a", false, Instant::now());
         drop(client);
         assert!(!owner.started(16_000));
         assert!(!owner.is_active());
@@ -676,10 +676,10 @@ mod tests {
     fn only_the_owner_token_finishes_cancels_or_renews() {
         let mut owner = ServiceDictations::default();
         let now = Instant::now();
-        let (_, client) = start(&mut owner, "hex_a", false, now);
+        let (_, client) = start(&mut owner, "mumble_a", false, now);
         assert!(owner.started(16_000));
 
-        let (effect, answer) = cancel(&mut owner, 1, "hex_wrong");
+        let (effect, answer) = cancel(&mut owner, 1, "mumble_wrong");
         assert_eq!(effect, Effect::None);
         assert_eq!(answer.unwrap_err(), "dictation-not-active");
         let (_, answer) = ask(&mut owner, now, |reply| DictationControl::Heartbeat {
@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(answer.unwrap_err(), "dictation-not-active");
         let (effect, answer) = ask(&mut owner, now, |reply| DictationControl::Finish {
             id: 1,
-            owner_token: "hex_wrong".into(),
+            owner_token: "mumble_wrong".into(),
             reply,
         });
         assert_eq!(effect, Effect::None);
@@ -717,7 +717,7 @@ mod tests {
     fn finishing_answers_every_waiting_finish_with_the_transcript() {
         let mut owner = ServiceDictations::default();
         let now = Instant::now();
-        let (_, client) = start(&mut owner, "hex_a", false, now);
+        let (_, client) = start(&mut owner, "mumble_a", false, now);
         assert!(owner.started(16_000));
         let finish = |owner: &mut ServiceDictations| {
             let (reply, answer) = mpsc::sync_channel(1);
@@ -757,7 +757,7 @@ mod tests {
     fn a_lapsed_lease_cancels_only_that_clients_dictation() {
         let mut owner = ServiceDictations::default();
         let now = Instant::now();
-        let (_, client) = start(&mut owner, "hex_a", false, now);
+        let (_, client) = start(&mut owner, "mumble_a", false, now);
         assert!(owner.started(16_000));
         assert!(!owner.expire(now + LEASE - Duration::from_millis(1)));
 
@@ -785,14 +785,14 @@ mod tests {
         let mut owner = ServiceDictations::default();
         let now = Instant::now();
         // Still opening: the start itself fails.
-        let (_, waiting) = start(&mut owner, "hex_a", false, now);
+        let (_, waiting) = start(&mut owner, "mumble_a", false, now);
         owner.lost("microphone-unavailable");
         assert_eq!(
             waiting.start.try_recv().unwrap().unwrap_err(),
             "microphone-unavailable"
         );
 
-        let (_, client) = start(&mut owner, "hex_b", false, now);
+        let (_, client) = start(&mut owner, "mumble_b", false, now);
         assert!(owner.started(16_000));
         owner.lost("microphone-interrupted");
         let (_, answer) = ask(&mut owner, now, |reply| DictationControl::Finish {

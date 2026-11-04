@@ -1,4 +1,4 @@
-# Regenerates resources/windows/hex.ico, the executable, taskbar, and shortcut
+# Regenerates resources/windows/mumble.ico, the executable, taskbar, and shortcut
 # icon: the macOS icon's glyph on a flat dark tile with a thin lighter rim, so
 # it reads on both dark and light taskbars. Windows icons are flat; the macOS
 # gradient collapses into a hard band at taskbar sizes.
@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $Out) { $Out = Join-Path $root "resources\windows\hex.ico" }
+if (-not $Out) { $Out = Join-Path $root "resources\windows\mumble.ico" }
 $glyph = [Drawing.Image]::FromFile((Join-Path $root "app\AppIcon.icon\Assets\Image.png"))
 $sizes = 256, 64, 48, 40, 32, 24, 20, 16
 $frames = foreach ($size in $sizes) {

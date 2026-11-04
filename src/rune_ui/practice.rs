@@ -83,7 +83,8 @@ mod tests {
 
     #[test]
     fn practice_hears_dictations_logged_after_it_began() {
-        let path = std::env::temp_dir().join(format!("hex-practice-{}.ndjson", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("mumble-practice-{}.ndjson", std::process::id()));
         let dictation = |timestamp_ms, phase| {
             serde_json::to_string(&VoiceEvent::Dictation {
                 timestamp_ms,

@@ -1,9 +1,9 @@
 # Vocabulary
 
-One shared list of names Hex should know (people, projects, products), each
+One shared list of names Mumble should know (people, projects, products), each
 with optional "sounds like" spellings a transcript may show instead. An empty
 list (the default) changes nothing. The window edits the list on macOS,
-Linux, and Windows; the `hex vocabulary` commands are macOS only for now.
+Linux, and Windows; the `mumble vocabulary` commands are macOS only for now.
 
 ```ts
 General › Vocabulary   // vocabulary.settings; after Language
@@ -39,12 +39,12 @@ Recognition hints, folded in                // vocabulary.hints
     semicolons, and line breaks, become terms; names already listed (any case)
     are skipped, and the rewritten file drops the field
 
-hex vocabulary                           // vocabulary.cli
+mumble vocabulary                           // vocabulary.cli
 ├── list [--json]
 ├── add <term> [--sounds-like a,b] -> New term, or new spellings merged into it
 │   └── Already there, nothing new -> changed: false
 ├── remove <term> -> Any case
-└── Running Hex saves and reloads settings; an open window adopts the change
+└── Running Mumble saves and reloads settings; an open window adopts the change
 
 A mode's own vocabulary                  // vocabulary.modes; DictationMode::vocabulary
 ├── settings.json `dictation_processing.modes[].vocabulary`, same entries; no
@@ -58,7 +58,7 @@ OpenCode rewriting (Modes)               // vocabulary.prompt
     term (may be transcribed as a, b); …" before the foreground application
 
 Search                                   // vocabulary.search
-├── hex history --search
+├── mumble history --search
 ├── Query word = a one-word term, fuzzy on
 │   ├── Its "sounds like" spellings, or the term as two words -> 0.5 (like a prefix)
 │   └── A word that sounds like it (≥2 consonant sounds, ≤ half the letters changed,
@@ -67,11 +67,11 @@ Search                                   // vocabulary.search
 ```
 
 The list lives in `settings.json` as `vocabulary`, each entry a plain term
-(`"Rune"`) or `{term, sounds_like}`; both load, and Hex writes a term without
-spellings as a plain string. `hex vocabulary list --json` keeps the object form.
+(`"Rune"`) or `{term, sounds_like}`; both load, and Mumble writes a term without
+spellings as a plain string. `mumble vocabulary list --json` keeps the object form.
 It is written only when non-empty, so older files load unchanged and are not
 rewritten. Terms are unique ignoring case; at most 500 terms, 64 characters
-each, and 16 spellings per term. The read-only `hex history` reads the field
+each, and 16 spellings per term. The read-only `mumble history` reads the field
 straight from the file and never loads or migrates settings.
 
 Short names with few consonant sounds (Rune, Dax) would sound like too many

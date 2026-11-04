@@ -1,4 +1,4 @@
-//! Hex's real recording indicator (`Dot scope` phosphor HUD) inside onboarding:
+//! Mumble's real recording indicator (`Dot scope` phosphor HUD) inside onboarding:
 //!
 //! Steps [`crate::dictation::indicator::IndicatorModel`] with the real listener
 //! events (`Started`, `Meter`, `Submitted` + `Transcribing`, `JobCompleted`),
@@ -59,7 +59,7 @@ fn idle_time(idle: f64) -> f32 {
     t as f32
 }
 
-/// Hex's real [`DotFrame`] for a resting plate that showed `idle` seconds
+/// Mumble's real [`DotFrame`] for a resting plate that showed `idle` seconds
 /// before the shortcut went down (or before now, while it still waits), then
 /// `take` recording `elapsed` seconds after the press, on one model: the plate
 /// unfolds when it mounts and keeps running through the press instead of
@@ -128,7 +128,7 @@ pub(crate) fn voice_frame_at(
     model.active().then_some(drawn)
 }
 
-/// Computes Hex's real [`DotFrame`] at `elapsed` seconds after shortcut press
+/// Computes Mumble's real [`DotFrame`] at `elapsed` seconds after shortcut press
 /// for `take`, returning `None` before press or once the Done collapse finishes.
 #[cfg(test)]
 pub(crate) fn frame_at(take: &Take, elapsed: f64, reduce: bool) -> Option<DotFrame> {
@@ -274,7 +274,7 @@ pub(crate) fn frame_slot(key: &str, centre: [f32; 2], scale: f32, frame: &DotFra
     slot_el(key, centre, scale)
 }
 
-/// Mounts the real `Dot scope` phosphor HUD for `"With Hex"` or `"Your turn"`,
+/// Mounts the real `Dot scope` phosphor HUD for `"With Mumble"` or `"Your turn"`,
 /// returning `(hud_element, hud_heat, voice_energy)`. The plate rests while
 /// `waiting`, then records `take` from `take_from`, on one model that started
 /// when the plate first showed (`Onboard::hud_from`).

@@ -119,7 +119,7 @@ pub enum DictationPhase {
     /// The paste shortcut was sent. No platform confirms that the focused
     /// application accepted it, so this does not prove the text landed.
     Pasted,
-    /// `hex dictation stop --print` received the text instead of a paste.
+    /// `mumble dictation stop --print` received the text instead of a paste.
     Printed,
     Edited,
     VoiceAction,
@@ -657,7 +657,7 @@ mod tests {
     #[test]
     fn reopening_log_preserves_existing_events() {
         let path = std::env::temp_dir().join(format!(
-            "hex-events-{}-{}.ndjson",
+            "mumble-events-{}-{}.ndjson",
             std::process::id(),
             now_ms()
         ));
@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn reader_tails_complete_records_and_resets_at_session_boundaries() {
         let path = std::env::temp_dir().join(format!(
-            "hex-event-reader-{}-{}.ndjson",
+            "mumble-event-reader-{}-{}.ndjson",
             std::process::id(),
             now_ms()
         ));
@@ -716,7 +716,7 @@ mod tests {
     #[test]
     fn a_bounded_flush_writes_every_queued_event() {
         let path = std::env::temp_dir().join(format!(
-            "hex-bounded-flush-{}-{}.ndjson",
+            "mumble-bounded-flush-{}-{}.ndjson",
             std::process::id(),
             now_ms()
         ));
@@ -733,7 +733,7 @@ mod tests {
     #[test]
     fn reader_streams_large_logs_and_keeps_context_outside_the_retained_rows() {
         let path = std::env::temp_dir().join(format!(
-            "hex-large-event-reader-{}-{}.ndjson",
+            "mumble-large-event-reader-{}-{}.ndjson",
             std::process::id(),
             now_ms()
         ));
@@ -768,7 +768,7 @@ mod tests {
     #[test]
     fn reader_skips_oversized_records_through_their_newline_and_recovers() {
         let path = std::env::temp_dir().join(format!(
-            "hex-oversized-event-reader-{}-{}.ndjson",
+            "mumble-oversized-event-reader-{}-{}.ndjson",
             std::process::id(),
             now_ms()
         ));
@@ -802,7 +802,7 @@ mod tests {
     #[cfg_attr(windows, ignore = "replacement detection uses Unix file identity")]
     fn reader_resets_partial_record_state_on_truncation_and_replacement() {
         let path = std::env::temp_dir().join(format!(
-            "hex-replaced-event-reader-{}-{}.ndjson",
+            "mumble-replaced-event-reader-{}-{}.ndjson",
             std::process::id(),
             now_ms()
         ));

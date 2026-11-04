@@ -1,9 +1,9 @@
-//! The single-instance socket: one Hex process per user and data root.
+//! The single-instance socket: one Mumble process per user and data root.
 //!
 //! The running process binds `service.sock` next to its `service.lock`. A
-//! later `hex` forwards `Activate` (with the launcher's activation token) and
+//! later `mumble` forwards `Activate` (with the launcher's activation token) and
 //! exits; `Status` rides the same socket.
-//! The `hex` control commands (`crate::control`) reach Hex through its local
+//! The `mumble` control commands (`crate::control`) reach Mumble through its local
 //! API instead, answered by `linux_app`'s control host; dictation commands go
 //! from there straight to the listener's command queue, never through the
 //! window's thread. This module also owns the
@@ -34,7 +34,7 @@ const VERSION: u32 = 2;
 const MAX_FRAME: usize = 128 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const CLIENTS: usize = 8;
-const UNIT: &str = "hex.service";
+const UNIT: &str = "mumble.service";
 /// How long a launch waits for a started unit's socket. `Type=notify`
 /// units are ready when `systemctl start` returns; units an older installer
 /// wrote are `Type=simple` and need the wait.
@@ -67,7 +67,7 @@ impl Activation {
     pub(crate) fn take_from_environment() -> Self {
         let take = |key: &str| {
             let value = std::env::var(key).ok().filter(|value| !value.is_empty());
-            // Called on the main thread before Hex starts any other thread.
+            // Called on the main thread before Mumble starts any other thread.
             unsafe { std::env::remove_var(key) };
             value
         };
@@ -91,7 +91,7 @@ pub(crate) fn refresh_x_authority() {
         return;
     }
     let live = manager_environment("XAUTHORITY").filter(|path| Path::new(path).exists());
-    // Called on the main thread before Hex starts any other thread.
+    // Called on the main thread before Mumble starts any other thread.
     unsafe {
         match live {
             Some(path) => std::env::set_var("XAUTHORITY", path),
@@ -106,7 +106,7 @@ pub(crate) fn refresh_x_authority() {
 /// (#756). Adopts the user manager's current `WAYLAND_DISPLAY`, else the
 /// newest Wayland socket of this user's in `XDG_RUNTIME_DIR` that accepts a
 /// connection. Returns the display it adopted. Called on the main thread
-/// before Hex starts any other thread.
+/// before Mumble starts any other thread.
 pub(crate) fn adopt_wayland_display() -> Option<String> {
     if custom_root() || graphical_session() {
         return None;
@@ -178,7 +178,7 @@ fn environment_value(environment: &str, key: &str) -> Option<String> {
     })
 }
 
-/// What `hex status` prints and every reply carries.
+/// What `mumble status` prints and every reply carries.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Status {
     pub(crate) desktop: DesktopSnapshot,
@@ -216,7 +216,7 @@ impl Session {
     }
 }
 
-/// Where the socket hands a `hex` shortcut command: the running listener's
+/// Where the socket hands a `mumble` shortcut command: the running listener's
 /// queue, once it reports its session.
 #[derive(Clone)]
 pub(crate) struct ShortcutRoute {
@@ -228,12 +228,13 @@ pub(crate) fn route_shortcut(
     route: Option<&ShortcutRoute>,
     command: ShortcutCommand,
 ) -> Result<()> {
-    let route = route
-        .ok_or_else(|| eyre!("Hex is not listening; enable it in Settings or run `hex start`"))?;
+    let route = route.ok_or_else(|| {
+        eyre!("Mumble is not listening; enable it in Settings or run `mumble start`")
+    })?;
     route
         .commands
         .try_send(command.into())
-        .map_err(|_| eyre!("Hex is busy; try again"))
+        .map_err(|_| eyre!("Mumble is busy; try again"))
 }
 
 /// What the socket reads without waiting on the host or the window: the
@@ -249,9 +250,9 @@ pub(crate) struct Published {
 #[derive(Debug)]
 pub(crate) enum Control {
     Activate(Activation),
-    /// `hex window show`: opens the window at a pane.
+    /// `mumble window show`: opens the window at a pane.
     Show(Option<crate::control::Pane>),
-    /// `hex window hide`.
+    /// `mumble window hide`.
     Hide,
     /// Replays the first run in the window, answering whether it opened.
     OnboardingReset(SyncSender<std::result::Result<(), String>>),
@@ -280,7 +281,7 @@ fn private_directory(path: &Path) -> Result<()> {
     fs::create_dir_all(path)?;
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir() || metadata.uid() != unsafe { libc::geteuid() } {
-        bail!("Hex requires a user-owned, non-symlink data directory");
+        bail!("Mumble requires a user-owned, non-symlink data directory");
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     Ok(())
@@ -299,7 +300,7 @@ fn check_peer(stream: &UnixStream) -> Result<()> {
         )
     };
     if result != 0 || credentials.uid != unsafe { libc::geteuid() } {
-        bail!("Hex only accepts local IPC from the same user");
+        bail!("Mumble only accepts local IPC from the same user");
     }
     Ok(())
 }
@@ -308,11 +309,11 @@ fn read_exact(stream: &mut UnixStream, mut bytes: &mut [u8], deadline: Instant) 
     while !bytes.is_empty() {
         let remaining = deadline
             .checked_duration_since(Instant::now())
-            .ok_or_else(|| eyre!("Hex read timed out"))?;
+            .ok_or_else(|| eyre!("Mumble read timed out"))?;
         stream.set_read_timeout(Some(remaining))?;
         let count = stream.read(bytes)?;
         if count == 0 {
-            bail!("Hex disconnected");
+            bail!("Mumble disconnected");
         }
         bytes = &mut bytes[count..];
     }
@@ -325,7 +326,7 @@ fn read_frame<T: DeserializeOwned>(stream: &mut UnixStream) -> Result<T> {
     read_exact(stream, &mut header, deadline)?;
     let length = u32::from_be_bytes(header) as usize;
     if length == 0 || length > MAX_FRAME {
-        bail!("Invalid Hex frame size");
+        bail!("Invalid Mumble frame size");
     }
     let mut body = vec![0; length];
     read_exact(stream, &mut body, deadline)?;
@@ -335,7 +336,7 @@ fn read_frame<T: DeserializeOwned>(stream: &mut UnixStream) -> Result<T> {
 fn write_frame<T: Serialize>(stream: &mut UnixStream, message: &T) -> Result<()> {
     let body = serde_json::to_vec(message)?;
     if body.len() > MAX_FRAME {
-        bail!("Hex message exceeds the size limit");
+        bail!("Mumble message exceeds the size limit");
     }
     let deadline = Instant::now() + IO_TIMEOUT;
     write_all(stream, &(body.len() as u32).to_be_bytes(), deadline)?;
@@ -346,11 +347,11 @@ fn write_all(stream: &mut UnixStream, mut bytes: &[u8], deadline: Instant) -> Re
     while !bytes.is_empty() {
         let remaining = deadline
             .checked_duration_since(Instant::now())
-            .ok_or_else(|| eyre!("Hex write timed out"))?;
+            .ok_or_else(|| eyre!("Mumble write timed out"))?;
         stream.set_write_timeout(Some(remaining))?;
         let count = stream.write(bytes)?;
         if count == 0 {
-            bail!("Hex disconnected");
+            bail!("Mumble disconnected");
         }
         bytes = &bytes[count..];
     }
@@ -362,7 +363,7 @@ fn write_all(stream: &mut UnixStream, mut bytes: &[u8], deadline: Instant) -> Re
 pub(crate) enum RequestError {
     /// Nothing listens on the socket.
     NotRunning,
-    /// An older Hex (the service/Settings protocol) owns the socket.
+    /// An older Mumble (the service/Settings protocol) owns the socket.
     Outdated,
     Failed(color_eyre::Report),
 }
@@ -370,10 +371,10 @@ pub(crate) enum RequestError {
 impl std::fmt::Display for RequestError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotRunning => write!(f, "Hex is not running; run `hex start`"),
+            Self::NotRunning => write!(f, "Mumble is not running; run `mumble start`"),
             Self::Outdated => write!(
                 f,
-                "An older Hex is running; quit it or run `hex restart`, then try again"
+                "An older Mumble is running; quit it or run `mumble restart`, then try again"
             ),
             Self::Failed(error) => write!(f, "{error:#}"),
         }
@@ -392,7 +393,7 @@ fn connect() -> std::result::Result<UnixStream, RequestError> {
         || metadata.mode() & 0o077 != 0
     {
         return Err(RequestError::Failed(eyre!(
-            "Refusing an insecure Hex socket"
+            "Refusing an insecure Mumble socket"
         )));
     }
     // A crashed instance leaves its socket behind.
@@ -401,8 +402,8 @@ fn connect() -> std::result::Result<UnixStream, RequestError> {
     Ok(stream)
 }
 
-/// Before `hex restart`: the unit restarts into this desktop's session
-/// (without a desktop, over SSH, the one Hex last ran in).
+/// Before `mumble restart`: the unit restarts into this desktop's session
+/// (without a desktop, over SSH, the one Mumble last ran in).
 pub(crate) fn prepare_restart() -> Result<()> {
     if supervised() && (graphical_session() || !session_environment_path()?.exists()) {
         write_session_environment()?;
@@ -410,8 +411,8 @@ pub(crate) fn prepare_restart() -> Result<()> {
     Ok(())
 }
 
-/// Whether a Hex instance answers on the single-instance socket, whatever
-/// its protocol. A current Hex serves the socket only after its local API
+/// Whether a Mumble instance answers on the single-instance socket, whatever
+/// its protocol. A current Mumble serves the socket only after its local API
 /// is up, so one that answers here while the local API doesn't is an older
 /// build an update left running (#915).
 pub(crate) fn instance_answers() -> bool {
@@ -446,7 +447,7 @@ pub(crate) fn request(request: Request) -> std::result::Result<Status, RequestEr
     }
     reply
         .status
-        .ok_or_else(|| RequestError::Failed(eyre!("Invalid Hex reply")))
+        .ok_or_else(|| RequestError::Failed(eyre!("Invalid Mumble reply")))
 }
 
 pub(crate) struct Server {
@@ -463,14 +464,14 @@ impl Server {
     /// Claims the data root. Fails when another instance holds it.
     pub(crate) fn bind() -> Result<Self> {
         if unsafe { libc::geteuid() } == 0 {
-            bail!("Run Hex as a desktop user, never root");
+            bail!("Run Mumble as a desktop user, never root");
         }
         let path = socket_path()?;
         private_directory(path.parent().unwrap())?;
         let lock = crate::desktop::instance::acquire("service")?;
         if let Ok(metadata) = fs::symlink_metadata(&path) {
             if !metadata.file_type().is_socket() || metadata.uid() != unsafe { libc::geteuid() } {
-                bail!("Refusing to replace an unmanaged Hex socket path");
+                bail!("Refusing to replace an unmanaged Mumble socket path");
             }
             fs::remove_file(&path)?;
         }
@@ -557,7 +558,7 @@ fn serve_client(
                 &Reply {
                     version: VERSION,
                     status: None,
-                    error: Some("Unsupported Hex request; restart Hex".into()),
+                    error: Some("Unsupported Mumble request; restart Mumble".into()),
                 },
             );
             break;
@@ -572,7 +573,7 @@ fn serve_client(
                 if show && caller == *session {
                     control
                         .try_send(Control::Activate(activation))
-                        .map_err(|_| eyre!("Hex is busy; try again"))
+                        .map_err(|_| eyre!("Mumble is busy; try again"))
                 } else {
                     Ok(())
                 }
@@ -582,7 +583,7 @@ fn serve_client(
         let status = published.status.lock().unwrap().clone();
         let error = match (&result, &status) {
             (Err(error), _) => Some(format!("{error:#}")),
-            (Ok(()), None) => Some("Hex is starting; try again".into()),
+            (Ok(()), None) => Some("Mumble is starting; try again".into()),
             (Ok(()), Some(_)) => None,
         };
         if write_frame(
@@ -641,13 +642,13 @@ pub(crate) fn notify(state: &str) {
 }
 
 fn unit() -> String {
-    std::env::var("HEX_SYSTEMD_UNIT")
+    std::env::var("MUMBLE_SYSTEMD_UNIT")
         .ok()
         .filter(|unit| !unit.is_empty())
         .unwrap_or_else(|| UNIT.into())
 }
 
-/// Whether launches start Hex through its systemd user unit: the unit is
+/// Whether launches start Mumble through its systemd user unit: the unit is
 /// installed (by the installer or Home Manager) and this process uses the
 /// default data root, or explicitly names an isolated test unit.
 pub(crate) fn supervised() -> bool {
@@ -665,18 +666,18 @@ pub(crate) fn supervised() -> bool {
 }
 
 /// A custom data root uses only its supplied desktop environment, not the
-/// user's manager or discovered display sockets. `HEX_SYSTEMD_UNIT` opts an
+/// user's manager or discovered display sockets. `MUMBLE_SYSTEMD_UNIT` opts an
 /// isolated test into a managed unit explicitly. A root that names the
 /// default folder (Home Manager's unit sets it, #1140) is not custom.
 fn custom_root() -> bool {
-    std::env::var_os("HEX_SYSTEMD_UNIT").is_none()
-        && std::env::var_os("HEX_APPLICATION_SUPPORT_DIR")
+    std::env::var_os("MUMBLE_SYSTEMD_UNIT").is_none()
+        && std::env::var_os("MUMBLE_APPLICATION_SUPPORT_DIR")
             .is_some_and(|root| !default_root(Path::new(&root), dirs::data_dir().as_deref()))
 }
 
 /// Whether `root` is the default data root under the user's data directory.
 fn default_root(root: &Path, data: Option<&Path>) -> bool {
-    data.is_some_and(|data| root == data.join("hex"))
+    data.is_some_and(|data| root == data.join("mumble"))
 }
 
 fn systemctl(arguments: &[&str]) -> Result<()> {
@@ -721,7 +722,7 @@ fn wait_ready() -> Result<Status> {
             Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
             Err(error) => {
                 return Err(eyre!(
-                    "Hex did not become ready ({error}); inspect `journalctl --user -u {}`",
+                    "Mumble did not become ready ({error}); inspect `journalctl --user -u {}`",
                     unit()
                 ));
             }
@@ -733,7 +734,7 @@ fn wait_ready() -> Result<Status> {
 pub(crate) enum Launch {
     /// The running instance took the request.
     Forwarded,
-    /// Nothing runs and no unit supervises Hex: this process becomes it.
+    /// Nothing runs and no unit supervises Mumble: this process becomes it.
     BecomeInstance,
 }
 
@@ -754,7 +755,7 @@ pub(crate) fn another_instance_answers() -> bool {
     false
 }
 
-/// `hex`, `hex app`, and `hex start`: forward to the running instance, start
+/// `mumble`, `mumble app`, and `mumble start`: forward to the running instance, start
 /// the systemd unit, or tell the caller to become the instance.
 pub(crate) fn launch(activation: &Activation, show: bool) -> Result<Launch> {
     let activate = || Request::Activate {
@@ -769,7 +770,9 @@ pub(crate) fn launch(activation: &Activation, show: bool) -> Result<Launch> {
             restart()?;
         }
         Ok(_) => {
-            bail!("Hex is running in another desktop session; run `hex quit`, then launch it again")
+            bail!(
+                "Mumble is running in another desktop session; run `mumble quit`, then launch it again"
+            )
         }
         Err(RequestError::Outdated) if supervised() => restart()?,
         Err(RequestError::NotRunning) if supervised() => {
@@ -792,9 +795,11 @@ pub(crate) fn launch(activation: &Activation, show: bool) -> Result<Launch> {
 
 pub(crate) fn restart() -> Result<()> {
     if !supervised() {
-        bail!("Only Hex started by its systemd unit restarts; run `hex quit`, then launch it");
+        bail!(
+            "Only Mumble started by its systemd unit restarts; run `mumble quit`, then launch it"
+        );
     }
-    // Without a desktop (over SSH), keep the one Hex last ran in.
+    // Without a desktop (over SSH), keep the one Mumble last ran in.
     if graphical_session() || !session_environment_path()?.exists() {
         write_session_environment()?;
     }
@@ -870,7 +875,7 @@ fn session_environment_path() -> Result<PathBuf> {
 
 fn write_session_environment() -> Result<()> {
     if !graphical_session() {
-        bail!("Start Hex from your graphical login session");
+        bail!("Start Mumble from your graphical login session");
     }
     let directory = crate::app_paths::support_dir()?;
     private_directory(&directory)?;
@@ -950,7 +955,7 @@ mod tests {
     #[test]
     fn version_one_replies_parse_as_outdated() {
         let reply: Reply = serde_json::from_str(
-            r#"{"version":1,"state":null,"error":"Hex service version mismatch; restart the service"}"#,
+            r#"{"version":1,"state":null,"error":"Mumble service version mismatch; restart the service"}"#,
         )
         .unwrap();
         assert_eq!(reply.version, 1);
@@ -998,15 +1003,18 @@ mod tests {
     fn the_default_folder_named_explicitly_is_not_a_custom_root() {
         let data = Path::new("/home/kit/.local/share");
         assert!(default_root(
-            Path::new("/home/kit/.local/share/hex"),
+            Path::new("/home/kit/.local/share/mumble"),
             Some(data)
         ));
         assert!(default_root(
-            Path::new("/home/kit/.local/share/hex/"),
+            Path::new("/home/kit/.local/share/mumble/"),
             Some(data)
         ));
-        assert!(!default_root(Path::new("/tmp/hex-test"), Some(data)));
-        assert!(!default_root(Path::new("/home/kit/.local/share/hex"), None));
+        assert!(!default_root(Path::new("/tmp/mumble-test"), Some(data)));
+        assert!(!default_root(
+            Path::new("/home/kit/.local/share/mumble"),
+            None
+        ));
     }
 
     #[test]

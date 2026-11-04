@@ -576,14 +576,14 @@ mod tests {
 
     #[test]
     fn the_request_carries_claude_codes_identity() {
-        let request = request("tok", "en", &["Hex".into()]).unwrap();
+        let request = request("tok", "en", &["Mumble".into()]).unwrap();
         let uri = request.uri().to_string();
         assert!(uri.starts_with("wss://api.anthropic.com/api/ws/speech_to_text/voice_stream?"));
         assert!(uri.contains("encoding=linear16") && uri.contains("language=en"));
         let headers = request.headers();
         assert_eq!(headers["authorization"], "Bearer tok");
         assert_eq!(headers["x-app"], "cli");
-        assert_eq!(headers["x-config-keyterms"], "Hex");
+        assert_eq!(headers["x-config-keyterms"], "Mumble");
         assert!(
             headers["user-agent"]
                 .to_str()

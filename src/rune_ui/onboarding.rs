@@ -119,7 +119,7 @@ pub(super) fn input(ui: &mut Ui, input: Input) {
 }
 
 /// Saves a new step so a run quit part-way resumes there. The story sounds
-/// the success chime itself, on Hex is ready.
+/// the success chime itself, on Mumble is ready.
 fn remember_step(ui: &Ui, before: Step) {
     if let Some(tour) = &ui.tour
         && tour.flow.step() != before

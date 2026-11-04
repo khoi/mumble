@@ -25,7 +25,7 @@ case "$CHANNEL" in
     tag="v$version"
     for existing in "$tag" "app-v$version"; do
       if gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$existing" --jq '.[].ref' | grep -qx "refs/tags/$existing"; then
-        die "Hex $version is already tagged $existing; raise the version in Cargo.toml on production first."
+        die "Mumble $version is already tagged $existing; raise the version in Cargo.toml on production first."
       fi
     done
     [ -f "docs/releases/$version.md" ] || die "Add release notes at docs/releases/$version.md first."
@@ -45,7 +45,7 @@ case "$CHANNEL" in
     number=$((GITHUB_RUN_NUMBER + 100))
     release_channel=dev release_version="0.0.0-dev-$number" tag=""
     # The dev changelog lists what each build changed (dev-notes jobs).
-    notes="https://anoma.ly/hex/dev#$release_version"
+    notes="https://anoma.ly/mumble/dev#$release_version"
     if [ "$CHANNEL" = check ]; then
       tag="v0.0.0-test-$number"
       notes="https://github.com/$GITHUB_REPOSITORY/commit/$SHA"

@@ -13,6 +13,6 @@ __pycache__/
 *.rmeta
 /ios/*DerivedData
 /ios/build
-/ios/HEXMobile.xcodeproj
+/ios/MumbleMobile.xcodeproj
 /result
 /result-*

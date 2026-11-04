@@ -2,14 +2,14 @@
 //! and the requests they make of it.
 //!
 //! The panes never call macOS or Windows APIs. Permissions, the login item,
-//! and the Hex Microphone driver reach them as plain data
+//! and the Mumble Microphone driver reach them as plain data
 //! in [`PlatformState`], and every action they take goes out as a
 //! [`PlatformRequest`] through [`PlatformHost`]. Linux scenes and tests feed
 //! preview data and record the requests, so macOS and Windows surfaces render
 //! and are tested on Linux; a native host fills the same data on its own OS.
 
-use crate::audio::hex_microphone::{
-    DemoPlaybackTrack, DemoSnapshot, DemoSourceKind, HexMicrophoneStatus, TunedFilterConfig,
+use crate::audio::mumble_microphone::{
+    DemoPlaybackTrack, DemoSnapshot, DemoSourceKind, MumbleMicrophoneStatus, TunedFilterConfig,
 };
 use crate::desktop::login_item::{LoginItemResult, LoginItemStatus};
 use crate::desktop::onboarding::{
@@ -38,14 +38,14 @@ pub(super) struct Capabilities {
     pub(super) terminal_paste: bool,
     /// The dictation shortcut can pass through to other apps (Windows).
     pub(super) share_shortcut: bool,
-    /// Hex Microphone is a driver to install (macOS). Elsewhere with the
-    /// Voice Filter, Hex creates it while the filter is on (a PipeWire
+    /// Mumble Microphone is a driver to install (macOS). Elsewhere with the
+    /// Voice Filter, Mumble creates it while the filter is on (a PipeWire
     /// virtual source on Linux).
-    pub(super) hex_microphone: bool,
+    pub(super) mumble_microphone: bool,
     /// The window sees dictation events, so the tour can end with a
     /// practice dictation into its own field.
     pub(super) practice_dictation: bool,
-    /// The Voice Filter pane: Hex Microphone, its tuning, and the try-it
+    /// The Voice Filter pane: Mumble Microphone, its tuning, and the try-it
     /// demo (macOS and Linux, in Labs).
     pub(super) fun: bool,
     /// Modifier-only shortcuts can require the left or right key (macOS,
@@ -62,7 +62,7 @@ impl Capabilities {
         listener_control: true,
         terminal_paste: true,
         share_shortcut: false,
-        hex_microphone: false,
+        mumble_microphone: false,
         practice_dictation: true,
         fun: true,
         modifier_sides: false,
@@ -76,7 +76,7 @@ impl Capabilities {
         listener_control: false,
         terminal_paste: false,
         share_shortcut: false,
-        hex_microphone: true,
+        mumble_microphone: true,
         practice_dictation: true,
         fun: true,
         modifier_sides: true,
@@ -90,7 +90,7 @@ impl Capabilities {
         listener_control: true,
         terminal_paste: false,
         share_shortcut: true,
-        hex_microphone: false,
+        mumble_microphone: false,
         practice_dictation: true,
         fun: false,
         modifier_sides: true,
@@ -125,7 +125,7 @@ pub(super) struct PlatformState {
     /// so their row offers `"Still grey? Fix it"`.
     pub(super) permissions_stale: Vec<PermissionKind>,
     /// Untrusted permissions whose row is visible right now, so the native
-    /// host clears retired Hex bundle IDs' stale TCC rows once in the
+    /// host clears retired Mumble bundle IDs' stale TCC rows once in the
     /// background.
     pub(super) permissions_shown: Vec<PermissionKind>,
     /// Screen & System Audio Recording, for Labs › Also pause the browser.
@@ -138,10 +138,10 @@ pub(super) struct PlatformState {
     /// the login item, so the switch moves at once. Memory only: macOS's
     /// answer replaces it.
     pub(super) login_item_requested: Option<bool>,
-    pub(super) hex_microphone: Option<HexMicrophoneStatus>,
-    /// The tour's relaunch failed; the person must reopen Hex.
+    pub(super) mumble_microphone: Option<MumbleMicrophoneStatus>,
+    /// The tour's relaunch failed; the person must reopen Mumble.
     pub(super) relaunch_failed: bool,
-    /// The desktop's paste permission where Hex pastes through the
+    /// The desktop's paste permission where Mumble pastes through the
     /// RemoteDesktop portal (GNOME and KDE on Wayland); `None` elsewhere.
     pub(super) paste: Option<super::paste_access::PasteAccess>,
     /// A Wayland desktop without data-control (GNOME): a paste can't put
@@ -153,10 +153,10 @@ pub(super) struct PlatformState {
     /// macOS 27 lists Accessibility as "Device Control and Data Access"
     /// (`permission_guide::list_name`); the permission rows use that name.
     pub(super) accessibility_renamed: bool,
-    /// The Hex Microphone's live filter tuning
-    /// (`hex_microphone::current_tuned_config`).
+    /// The Mumble Microphone's live filter tuning
+    /// (`mumble_microphone::current_tuned_config`).
     pub(super) tuning: TunedFilterConfig,
-    /// The Voice Filter pane's try-it demo (`hex_microphone::demo_snapshot`); `None`
+    /// The Voice Filter pane's try-it demo (`mumble_microphone::demo_snapshot`); `None`
     /// until the host has one. Refresh it every frame while it records or
     /// plays (`DemoSnapshot::is_recording`, `playing`).
     pub(super) demo: Option<DemoSnapshot>,
@@ -185,7 +185,7 @@ pub(super) struct HudLab {
     pub(super) demo: HudDemo,
 }
 
-/// The Voice Filter pane's demo controls (`hex_microphone`'s demo functions).
+/// The Voice Filter pane's demo controls (`mumble_microphone`'s demo functions).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum DemoRequest {
     /// `start_demo_recording` (five seconds of the microphone).
@@ -209,7 +209,7 @@ impl PlatformState {
             login_item_checking: false,
             login_item_error: None,
             login_item_requested: None,
-            hex_microphone: None,
+            mumble_microphone: None,
             relaunch_failed: false,
             paste: None,
             clipboard_unrestorable: false,
@@ -348,8 +348,8 @@ impl PlatformState {
         if caps.fun {
             // Fixed, so the scenes' goldens don't change with the crate version.
             let version = "0.0.0".to_string();
-            let driver = caps.hex_microphone;
-            state.hex_microphone = Some(HexMicrophoneStatus {
+            let driver = caps.mumble_microphone;
+            state.mumble_microphone = Some(MumbleMicrophoneStatus {
                 driver_bundle_installed: driver,
                 driver_loaded: true,
                 installed_version: driver.then(|| version.clone()),
@@ -361,7 +361,7 @@ impl PlatformState {
                 } else {
                     Vec::new()
                 },
-                action_state: crate::audio::hex_microphone::DriverActionState::Idle,
+                action_state: crate::audio::mumble_microphone::DriverActionState::Idle,
             });
             state.demo = Some(super::fun::preview_demo(false, None));
         }
@@ -377,15 +377,15 @@ pub(super) enum PlatformRequest {
     SystemAudio,
     SetLaunchAtLogin(bool),
     OpenLoginItemSettings,
-    InstallHexMicrophone,
-    UninstallHexMicrophone,
-    /// Quit and reopen Hex so macOS applies new permissions.
+    InstallMumbleMicrophone,
+    UninstallMumbleMicrophone,
+    /// Quit and reopen Mumble so macOS applies new permissions.
     Relaunch,
-    /// Apply this tuning to the live Hex Microphone filter
-    /// (`hex_microphone::update_tuned_config`). The pane has already saved
+    /// Apply this tuning to the live Mumble Microphone filter
+    /// (`mumble_microphone::update_tuned_config`). The pane has already saved
     /// the mode, comfort noise, and strength in `settings.json`.
     SetTuning(TunedFilterConfig),
-    HexMicrophoneDemo(DemoRequest),
+    MumbleMicrophoneDemo(DemoRequest),
     /// Show this on the dictation indicator: `DictationIndicatorEvent::
     /// ConfigureDotScope` with the tuning, then `Reset` and the
     /// demonstrated state.
@@ -400,15 +400,15 @@ pub(super) enum PlatformRequest {
     SaveDotScope(crate::rune_hud::dot_scope::Tuning),
 }
 
-/// Performs a Voice Filter request on the Hex Microphone in this process.
+/// Performs a Voice Filter request on the Mumble Microphone in this process.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(super) fn voice_filter_request(request: PlatformRequest) {
-    use crate::audio::hex_microphone as mic;
+    use crate::audio::mumble_microphone as mic;
     match request {
-        PlatformRequest::InstallHexMicrophone => mic::install_driver_async(),
-        PlatformRequest::UninstallHexMicrophone => mic::uninstall_driver_async(),
+        PlatformRequest::InstallMumbleMicrophone => mic::install_driver_async(),
+        PlatformRequest::UninstallMumbleMicrophone => mic::uninstall_driver_async(),
         PlatformRequest::SetTuning(tuning) => mic::update_tuned_config(|current| *current = tuning),
-        PlatformRequest::HexMicrophoneDemo(request) => match request {
+        PlatformRequest::MumbleMicrophoneDemo(request) => match request {
             DemoRequest::Record => mic::start_demo_recording(),
             DemoRequest::StopRecording => mic::stop_demo_recording(),
             DemoRequest::SelectSource(source) => mic::select_demo_source(source),
@@ -419,15 +419,15 @@ pub(super) fn voice_filter_request(request: PlatformRequest) {
     }
 }
 
-/// The Voice Filter pane's state from the Hex Microphone in this process:
+/// The Voice Filter pane's state from the Mumble Microphone in this process:
 /// the demo every frame while it records or plays, and, when `refresh`, the
-/// tuning and Hex Microphone's status. Nothing decodes or renders while the
+/// tuning and Mumble Microphone's status. Nothing decodes or renders while the
 /// Voice Filter is off.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(super) fn poll_voice_filter(state: &mut PlatformState, refresh: bool) -> bool {
-    use crate::audio::hex_microphone as mic;
+    use crate::audio::mumble_microphone as mic;
     let mut changed = false;
-    let on = crate::app_settings::hex_microphone_enabled();
+    let on = crate::app_settings::mumble_microphone_enabled();
     if on
         && (state.demo.is_none()
             || mic::demo_is_busy()
@@ -447,8 +447,8 @@ pub(super) fn poll_voice_filter(state: &mut PlatformState, refresh: bool) -> boo
             changed = true;
         }
         let status = on.then(mic::status);
-        if state.hex_microphone != status {
-            state.hex_microphone = status;
+        if state.mumble_microphone != status {
+            state.mumble_microphone = status;
             changed = true;
         }
     }
@@ -516,7 +516,7 @@ impl PlatformHost {
     pub(super) fn poll(&mut self, state: &mut PlatformState) -> bool {
         match self {
             Self::Native(host) => host.poll(state),
-            // Hex Microphone's status is a few atomics on Linux, so it
+            // Mumble Microphone's status is a few atomics on Linux, so it
             // refreshes every frame.
             #[cfg(target_os = "linux")]
             Self::Local(_) => poll_voice_filter(state, true),
@@ -584,7 +584,7 @@ const DIFFERENCES: &[(&str, Difference)] = &[
         Difference::Pending("a macOS event tap could pass the shortcut through too"),
     ),
     (
-        "hex_microphone",
+        "mumble_microphone",
         Difference::OsPattern(
             "only macOS installs a driver; Linux creates a PipeWire source while the filter is on",
         ),
@@ -611,7 +611,7 @@ impl Capabilities {
             listener_control,
             terminal_paste,
             share_shortcut,
-            hex_microphone,
+            mumble_microphone,
             practice_dictation,
             fun,
             modifier_sides,
@@ -623,7 +623,7 @@ impl Capabilities {
             ("listener_control", listener_control),
             ("terminal_paste", terminal_paste),
             ("share_shortcut", share_shortcut),
-            ("hex_microphone", hex_microphone),
+            ("mumble_microphone", mumble_microphone),
             ("practice_dictation", practice_dictation),
             ("fun", fun),
             ("modifier_sides", modifier_sides),

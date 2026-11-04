@@ -1,6 +1,6 @@
-/// The version Hex reports: the release version, or `0.0.0-dev-local-<commit>`
+/// The version Mumble reports: the release version, or `0.0.0-dev-local-<commit>`
 /// for a build outside the Release workflow (build.rs).
-const VERSION: &str = env!("HEX_BUILD_VERSION");
+const VERSION: &str = env!("MUMBLE_BUILD_VERSION");
 
 #[cfg(target_os = "macos")]
 mod accessibility;
@@ -63,15 +63,15 @@ use color_eyre::eyre::eyre;
 #[cfg(target_os = "macos")]
 #[derive(Parser)]
 #[command(
-    name = "hex",
+    name = "mumble",
     version = crate::VERSION,
     about = "Local, observable voice control",
     long_about = "Local, observable voice control.\n\n\
         Control commands (status, dictation, settings, model, window, …) drive \
-        the one running Hex over its owner-only local API and never launch it, except `start` \
+        the one running Mumble over its owner-only local API and never launch it, except `start` \
         and `restart`. Every one takes --json for a versioned reply (docs/cli.md). Exit codes: \
-        0 done or nothing to change, 1 refused or failed, 2 usage, 3 Hex isn't running.",
-    after_help = "Run `hex <command> --help` for details, or `hex settings list` for every setting."
+        0 done or nothing to change, 1 refused or failed, 2 usage, 3 Mumble isn't running.",
+    after_help = "Run `mumble <command> --help` for details, or `mumble settings list` for every setting."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -135,7 +135,7 @@ enum DevCommand {
         #[arg(value_enum)]
         pane: control::developer_control::DeveloperPane,
     },
-    /// Render offline audio through the Hex Microphone voice filter.
+    /// Render offline audio through the Mumble Microphone voice filter.
     VoiceFilter {
         #[command(subcommand)]
         command: VoiceFilterCommand,
@@ -181,7 +181,7 @@ fn main() -> Result<()> {
     if opens_app(cli.command.as_ref(), bundled_watcher) {
         rune::prewarm_gpu();
     }
-    // Control and read commands (status, settings, history, labs, …) talk to the running Hex or read files: no data folder, log,
+    // Control and read commands (status, settings, history, labs, …) talk to the running Mumble or read files: no data folder, log,
     // lock, GUI, or permission setup of their own, so an agent may run them
     // over SSH while the app is running.
     let cli = match cli.command {
@@ -212,8 +212,8 @@ fn main() -> Result<()> {
             output,
         );
     }
-    // A headless render (`hex app -- --snap …`) draws fixtures: no data
-    // folder, log, lock, or settings, so it never touches the user's Hex.
+    // A headless render (`mumble app -- --snap …`) draws fixtures: no data
+    // folder, log, lock, or settings, so it never touches the user's Mumble.
     if let Some(Command::App { rune_args, .. }) = &cli.command
         && !rune_args.is_empty()
     {
@@ -239,7 +239,7 @@ fn main() -> Result<()> {
             let _instance = desktop::instance::acquire("listener")?;
             labs::log_launch();
             let settings = app_settings::AppSettings::load()?;
-            audio::hex_microphone::host_service();
+            audio::mumble_microphone::host_service();
             let events = desktop::events::EventLog::create(&event_path)?;
             let history = match history::History::open_default(settings.history_retention) {
                 Ok(history) => Some(history),
@@ -285,16 +285,16 @@ fn main() -> Result<()> {
 fn open_app(event_path: PathBuf, device: Option<String>) -> Result<()> {
     let _instance = desktop::instance::acquire("listener")?;
     labs::log_launch();
-    audio::hex_microphone::host_service();
+    audio::mumble_microphone::host_service();
     macos_rune::run(&SHUTDOWN, macos_rune::ListenerConfig { event_path, device })
 }
 
 #[cfg(target_os = "macos")]
 fn is_bundled_app_executable(name: Option<&std::ffi::OsStr>) -> bool {
-    name.is_some_and(|name| name == "hex")
+    name.is_some_and(|name| name == "mumble")
 }
 
-/// Whether this launch runs the app: `hex app` without Rune's own (headless)
+/// Whether this launch runs the app: `mumble app` without Rune's own (headless)
 /// flags, or the bundled executable with no command. A hidden or login launch
 /// counts too, though it opens no window and Rune drops the prewarmed GPU:
 /// whether the window opens depends on settings, which may load only after
@@ -324,7 +324,7 @@ mod tests {
             ("hud-lab", DeveloperPane::HudLab),
             ("history", DeveloperPane::History),
         ] {
-            let cli = Cli::try_parse_from(["hex", "dev", "show", pane]).unwrap();
+            let cli = Cli::try_parse_from(["mumble", "dev", "show", pane]).unwrap();
             let Some(Command::Dev {
                 command: DevCommand::Show { pane },
             }) = cli.command
@@ -333,8 +333,8 @@ mod tests {
             };
             assert_eq!(pane, expected);
         }
-        assert!(Cli::try_parse_from(["hex", "dev", "show", "hudlab"]).is_err());
-        assert!(Cli::try_parse_from(["hex", "dev", "hud", "recording"]).is_ok());
+        assert!(Cli::try_parse_from(["mumble", "dev", "show", "hudlab"]).is_err());
+        assert!(Cli::try_parse_from(["mumble", "dev", "hud", "recording"]).is_ok());
     }
 
     #[test]
@@ -346,16 +346,16 @@ mod tests {
         Cli::command().debug_assert();
         let parse = |arguments: &[&str]| Cli::try_parse_from(arguments).map(|cli| cli.command);
         assert!(matches!(
-            parse(&["hex", "status", "--json"]),
+            parse(&["mumble", "status", "--json"]),
             Ok(Some(Command::Control(ControlCli::Status { output }))) if output.json
         ));
         assert!(matches!(
-            parse(&["hex", "dictation", "toggle"]),
+            parse(&["mumble", "dictation", "toggle"]),
             Ok(Some(Command::Control(ControlCli::Dictation { .. })))
         ));
         assert!(matches!(
             parse(&[
-                "hex",
+                "mumble",
                 "settings",
                 "set",
                 "release_microphone_while_idle",
@@ -364,17 +364,17 @@ mod tests {
             Ok(Some(Command::Control(ControlCli::Settings { .. })))
         ));
         assert!(matches!(
-            parse(&["hex", "window", "show", "history"]),
+            parse(&["mumble", "window", "show", "history"]),
             Ok(Some(Command::Control(ControlCli::Window { .. })))
         ));
         for verb in ["reset", "restart"] {
             assert!(matches!(
-                parse(&["hex", "onboarding", verb]),
+                parse(&["mumble", "onboarding", verb]),
                 Ok(Some(Command::Control(ControlCli::Onboarding { .. })))
             ));
         }
         assert!(matches!(
-            parse(&["hex", "history", "clear", "--yes"]),
+            parse(&["mumble", "history", "clear", "--yes"]),
             Ok(Some(Command::Control(ControlCli::History(
                 transcript_cli::HistoryArgs {
                     action: Some(transcript_cli::HistoryAction::Clear { yes: true, .. }),
@@ -383,21 +383,21 @@ mod tests {
             ))))
         ));
         assert!(matches!(
-            parse(&["hex", "history", "--json"]),
+            parse(&["mumble", "history", "--json"]),
             Ok(Some(Command::Control(ControlCli::History(
                 transcript_cli::HistoryArgs { action: None, .. }
             ))))
         ));
-        assert!(parse(&["hex", "history", "--limit", "5", "clear", "--yes"]).is_err());
+        assert!(parse(&["mumble", "history", "--limit", "5", "clear", "--yes"]).is_err());
         assert!(matches!(
-            parse(&["hex", "commands", "check"]),
+            parse(&["mumble", "commands", "check"]),
             Ok(Some(Command::Control(ControlCli::Commands {
                 command: CommandsCommand::Check
             })))
         ));
         assert!(matches!(
             parse(&[
-                "hex",
+                "mumble",
                 "vocabulary",
                 "add",
                 "cappuccino",
@@ -412,12 +412,12 @@ mod tests {
             })))
         ));
         assert!(matches!(
-            parse(&["hex", "vocabulary", "list", "--json"]),
+            parse(&["mumble", "vocabulary", "list", "--json"]),
             Ok(Some(Command::Control(ControlCli::Vocabulary {
                 command: crate::control::cli::VocabularyCommand::List { output }
             }))) if output.json
         ));
-        assert!(parse(&["hex", "vocabulary", "remove"]).is_err());
+        assert!(parse(&["mumble", "vocabulary", "remove"]).is_err());
     }
 
     #[test]
@@ -425,25 +425,25 @@ mod tests {
         use super::labs::LabsCommand;
 
         assert!(matches!(
-            Cli::try_parse_from(["hex", "labs", "on", "live-text"]).map(|cli| cli.command),
+            Cli::try_parse_from(["mumble", "labs", "on", "live-text"]).map(|cli| cli.command),
             Ok(Some(Command::Control(ControlCli::Labs {
                 command: Some(LabsCommand::On { feature })
             }))) if feature == "live-text"
         ));
         assert!(matches!(
-            Cli::try_parse_from(["hex", "labs"]).map(|cli| cli.command),
+            Cli::try_parse_from(["mumble", "labs"]).map(|cli| cli.command),
             Ok(Some(Command::Control(ControlCli::Labs { command: None })))
         ));
-        assert!(Cli::try_parse_from(["hex", "labs", "off"]).is_err());
+        assert!(Cli::try_parse_from(["mumble", "labs", "off"]).is_err());
         #[cfg(target_os = "macos")]
         assert!(matches!(
-            Cli::try_parse_from(["hex", "labs", "link", "live-text"]).map(|cli| cli.command),
+            Cli::try_parse_from(["mumble", "labs", "link", "live-text"]).map(|cli| cli.command),
             Ok(Some(Command::Control(ControlCli::Labs {
                 command: Some(LabsCommand::Link { feature })
             }))) if feature == "live-text"
         ));
         assert!(matches!(
-            Cli::try_parse_from(["hex", "experiments", "enable", "live-text"])
+            Cli::try_parse_from(["mumble", "experiments", "enable", "live-text"])
                 .map(|cli| cli.command),
             Ok(Some(Command::Control(ControlCli::Experiments { .. })))
         ));
@@ -451,8 +451,8 @@ mod tests {
 
     #[test]
     fn the_packaged_executable_launches_the_app() {
-        assert!(is_bundled_app_executable(Some("hex".as_ref())));
-        assert!(!is_bundled_app_executable(Some("hex-watch".as_ref())));
+        assert!(is_bundled_app_executable(Some("mumble".as_ref())));
+        assert!(!is_bundled_app_executable(Some("mumble-watch".as_ref())));
     }
 
     #[test]
@@ -461,12 +461,17 @@ mod tests {
             let bundled = is_bundled_app_executable(std::path::Path::new(arguments[0]).file_stem());
             opens_app(Cli::parse_from(arguments).command.as_ref(), bundled)
         };
-        assert!(opens(&["hex"]));
-        assert!(opens(&["/Applications/Hex.app/Contents/MacOS/hex"]));
-        assert!(opens(&["hex", "app"]));
-        assert!(opens(&["hex", "app", "--device", "MacBook Pro Microphone"]));
-        assert!(!opens(&["hex", "app", "--", "--snap", "/tmp/a.png"]));
-        assert!(!opens(&["hex-watch"]));
+        assert!(opens(&["mumble"]));
+        assert!(opens(&["/Applications/Mumble.app/Contents/MacOS/mumble"]));
+        assert!(opens(&["mumble", "app"]));
+        assert!(opens(&[
+            "mumble",
+            "app",
+            "--device",
+            "MacBook Pro Microphone"
+        ]));
+        assert!(!opens(&["mumble", "app", "--", "--snap", "/tmp/a.png"]));
+        assert!(!opens(&["mumble-watch"]));
         for command in [
             &["status"][..],
             &["quit"],
@@ -475,7 +480,7 @@ mod tests {
             &["settings", "list"],
             &["dev", "dashboard"],
         ] {
-            let arguments = [&["hex"][..], command].concat();
+            let arguments = [&["mumble"][..], command].concat();
             assert!(!opens(&arguments), "{command:?}");
         }
     }

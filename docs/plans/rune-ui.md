@@ -1,6 +1,6 @@
-# Port Hex's Desktop UI From GPUI To Rune
+# Port Mumble's Desktop UI From GPUI To Rune
 
-**Status:** Done and merged into `main`: Rune is Hex's only UI toolkit and GPUI is
+**Status:** Done and merged into `main`: Rune is Mumble's only UI toolkit and GPUI is
 deleted. Every surface runs on Rune: the Linux single-process window and HUD,
 the Windows tray app and HUD, the macOS menu-bar app with its meeting capsules,
 every pane (General, Modes, Voice Action, History, Commands, Meetings, Voice
@@ -53,7 +53,7 @@ src/rune_ui/onboarding.rs        First-run setup tour across all platforms
 src/rune_ui/commands.rs          Commands pane (macOS)
 src/rune_ui/meetings.rs          Meetings pane (macOS)
 src/rune_ui/meeting_capsules.rs  Offer, call-ended, recording, and ready capsules (macOS)
-src/rune_ui/fun.rs               Voice Filter pane: Hex Microphone (macOS, experiment)
+src/rune_ui/fun.rs               Voice Filter pane: Mumble Microphone (macOS, experiment)
 src/rune_ui/hud_lab.rs           Developer HUD Lab pane (macOS debug)
 src/rune_ui/activity.rs          Developer Activity pane (debug)
 src/rune_ui/linux_host.rs        In-process Linux host bridge
@@ -67,7 +67,7 @@ src/rune_ui/tests/panes.rs       macOS and Windows surface tests and goldens
 
 | Surface | Status | Goldens (`tests/golden/rune-*.png`) |
 | --- | --- | --- |
-| Shell & General (Linux) | Sidebar navigation, status card, desktop shortcuts (X11 / portal / commands), dictation, behavior, application rows, Quit Hex, Update button when ready | `rune-portal-{light,dark}`, `rune-commands-dark`, `rune-disabled-light`, `rune-capturing-dark`, `rune-chinese-dark`, `rune-menus-light` |
+| Shell & General (Linux) | Sidebar navigation, status card, desktop shortcuts (X11 / portal / commands), dictation, behavior, application rows, Quit Mumble, Update button when ready | `rune-portal-{light,dark}`, `rune-commands-dark`, `rune-disabled-light`, `rune-capturing-dark`, `rune-chinese-dark`, `rune-menus-light` |
 | Voice Action | Opt-in with shortcut conflict check, recorder, searchable OpenCode model and thinking pickers, missing/unavailable OpenCode notice | `rune-voice-action-{light,dark}`, `rune-voice-action-off-light`, `rune-voice-action-unavailable-{light,dark}`, `rune-voice-action-models-dark` |
 | History | Search, retention select, two-step Clear all, detail with Copy and Delete, latency and processing facts | `rune-history-{light,dark}`, `rune-history-empty-light` |
 | Modes | Global + custom modes, searchable application picker, native file dialog ("Choose a file…": FileChooser portal, `NSOpenPanel`, `IFileOpenDialog`), website rules, corrections, OpenCode rewriting, drag-reordered transformations, two-step delete | `rune-modes-{light,dark}`, `rune-modes-global-light`, `rune-modes-picker-{light,dark}` |
@@ -83,33 +83,33 @@ Run headlessly on any OS:
 
 ```sh
 cargo run -- app -- --list-scenes
-cargo run -- app -- --snap /tmp/hex-modes.png --scene modes --theme light
+cargo run -- app -- --snap /tmp/mumble-modes.png --scene modes --theme light
 cargo test rune_ui
 ```
 
-`HEX_UPDATE_GOLDENS=1` rewrites the 53 goldens in `tests/golden/`. On a host
+`MUMBLE_UPDATE_GOLDENS=1` rewrites the 53 goldens in `tests/golden/`. On a host
 without a GPU, render on lavapipe with
 `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`.
 
 ## Observed Verification
 
 - **Linux (apollo, niri Wayland, 2026-10-22):**
-  - Real window in Dax's session (`app_id: hex`, no CSD under niri's
+  - Real window in Dax's session (`app_id: mumble`, no CSD under niri's
     `prefer-no-csd`, crisp at scale 2 and fractional scale 1.5
-    ([1.5](rune-ui/hex-rune-real-niri-fractional.png)), responsive row wrapping
-    down to 640 px ([after](rune-ui/hex-rune-real-niri-narrow.png))).
-  - Single-process lifecycle: launching `hex` opens the window in the running
+    ([1.5](rune-ui/mumble-rune-real-niri-fractional.png)), responsive row wrapping
+    down to 640 px ([after](rune-ui/mumble-rune-real-niri-narrow.png))).
+  - Single-process lifecycle: launching `mumble` opens the window in the running
     instance, closing the window leaves the same PID answering, relaunching
-    reopens the window, and `hex quit` exits cleanly.
+    reopens the window, and `mumble quit` exits cleanly.
   - Headless Sway (`scripts/test-wayland-paste.sh` and `linux_rune_hud`):
-    `hex dictation start` shows the top-edge recording pill and `stop` hides it
+    `mumble dictation start` shows the top-edge recording pill and `stop` hides it
     after transcription; virtual-pointer clicks pass through the overlay.
   - CJK fallback (`Noto Sans SC`/`JP`) renders Chinese UI without tofu
-    ([Chinese](rune-ui/hex-rune-shell-chinese-dark.png)).
+    ([Chinese](rune-ui/mumble-rune-shell-chinese-dark.png)).
 - **macOS (hailmary, Command Line Tools stub, 2026-10-22):**
   - Compiles with `cargo clippy --all-targets -- -D warnings`, passes the macOS
-    unit tests and Metal golden renders, and a debug `hex app` with an isolated
-    data root started, created its 980×760 window, answered `hex dev
+    unit tests and Metal golden renders, and a debug `mumble app` with an isolated
+    data root started, created its 980×760 window, answered `mumble dev
     status|show|hud`, and exited cleanly on Ctrl-C.
 - **Windows (apollo cross-check, 2026-10-22):**
   - `cargo xwin clippy --all-targets -- -D warnings` passes for both
@@ -139,7 +139,7 @@ Before cutting the first release with the Rune front end:
 
 ## Remaining Rune And Parity Gaps
 
-- **Rune rough edges still worked around in Hex:** `Pixels::set` doesn't wake
+- **Rune rough edges still worked around in Mumble:** `Pixels::set` doesn't wake
   its overlay (the Windows HUD sends an empty update), no rounded child clip
   (the picker hand-rounds its left column), no modifier-only key events (the
   macOS host keeps an NSEvent monitor), and the event loop panics without a
@@ -148,7 +148,7 @@ Before cutting the first release with the Rune front end:
 - **Keyboard navigation (landed Oct 23):** Rune's focus model now covers Tab
   in visual order with keyboard-only rings, macOS Full Keyboard Access,
   menu and select arrows with type-select, modal focus traps that return focus
-  to the opener, and focus that scrolls into view. Hex's sidebar and list
+  to the opener, and focus that scrolls into view. Mumble's sidebar and list
   panes are source lists (Up/Down select, typing jumps to a row), Command-1…9
   open the shown panes, toggle rows and shortcut recorders take focus, and the
   transcription picker traps focus. List arrows stop at the ends, and focus

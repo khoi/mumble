@@ -1,4 +1,4 @@
-//! The Linux and Windows host of `hex` control commands. Each OS supplies a
+//! The Linux and Windows host of `mumble` control commands. Each OS supplies a
 //! [`Host`], its thin adapter to the running process (the listener's
 //! queue, the window, model preparation, the updater); [`answer`] carries
 //! out every command the same way on both, with the rules the window and
@@ -13,7 +13,7 @@ use super::{
 use crate::app_settings::AppSettings;
 use crate::desktop::host::{DesktopListenerSnapshot, DesktopUpdateStatus};
 
-/// What the running Hex published last.
+/// What the running Mumble published last.
 pub(crate) struct HostState {
     pub(crate) settings: AppSettings,
     pub(crate) listener: DesktopListenerSnapshot,
@@ -48,7 +48,7 @@ pub(crate) trait Host {
     /// Launch at login, after setting it when `enabled` is given; `None`
     /// when this OS has no login item.
     fn launch_at_login(&self, enabled: Option<bool>) -> Option<Result<bool, String>>;
-    /// Quits Hex (and, for `restart`, reopens it) once this reply is out.
+    /// Quits Mumble (and, for `restart`, reopens it) once this reply is out.
     fn quit(&self, restart: bool) -> Result<(), ControlError>;
     fn shortcut_rules(&self) -> settings::ShortcutRules;
 }
@@ -64,12 +64,12 @@ pub(crate) fn serve(
     host: std::sync::Arc<dyn Host + Send + Sync>,
 ) {
     let spawned = std::thread::Builder::new()
-        .name("hex-control".into())
+        .name("mumble-control".into())
         .spawn(move || {
             for super::ControlCall { request, reply } in calls {
                 let host = host.clone();
                 let answered = std::thread::Builder::new()
-                    .name("hex-control-call".into())
+                    .name("mumble-control-call".into())
                     .spawn(move || {
                         let _ = reply.send(answer(host.as_ref(), request));
                     });
@@ -79,7 +79,7 @@ pub(crate) fn serve(
             }
         });
     if let Err(error) = spawned {
-        tracing::warn!(%error, "`hex` control commands will not reach this Hex");
+        tracing::warn!(%error, "`mumble` control commands will not reach this Mumble");
     }
 }
 
@@ -104,9 +104,9 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
                     .and_then(|()| host.quit(restart))
                     .map(|()| {
                         ControlReply::done(if restart {
-                            "Restarting Hex"
+                            "Restarting Mumble"
                         } else {
-                            "Quitting Hex"
+                            "Quitting Mumble"
                         })
                     }),
             )
@@ -156,8 +156,8 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
         }
         ControlCommand::OnboardingReset => host.onboarding_reset(),
         ControlCommand::HistoryClear => reply(clear_history(host)),
-        ControlCommand::CheckForUpdates => reply(host.state().and_then(|state| {
-            match state.update {
+        ControlCommand::CheckForUpdates => {
+            reply(host.state().and_then(|state| match state.update {
                 DesktopUpdateStatus::Managed => Err(ControlError::new(
                     "unsupported",
                     "updates are managed by your organization",
@@ -166,13 +166,13 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
                 | DesktopUpdateStatus::SourceBuild
                 | DesktopUpdateStatus::PackageManager => Err(ControlError::new(
                     "unavailable",
-                    "this Hex build doesn't update itself",
+                    "this Mumble build doesn't update itself",
                 )),
-                _ => host
-                    .check_for_updates()
-                    .map(|()| ControlReply::done("Checking for updates; Hex shows what it finds")),
-            }
-        })),
+                _ => host.check_for_updates().map(|()| {
+                    ControlReply::done("Checking for updates; Mumble shows what it finds")
+                }),
+            }))
+        }
         ControlCommand::LaunchAtLogin { enabled } => launch_at_login(host, enabled),
         ControlCommand::VocabularyList => reply(load().map(|settings| ControlReply::Vocabulary {
             entries: settings.vocabulary,

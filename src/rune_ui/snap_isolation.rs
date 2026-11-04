@@ -1,4 +1,4 @@
-//! A headless render (`hex app -- --snap … --scene …`) draws fixtures and
+//! A headless render (`mumble app -- --snap … --scene …`) draws fixtures and
 //! never reads, migrates, or saves anything in the data folder.
 
 use std::fs;
@@ -31,7 +31,7 @@ fn snapshot(root: &Path) -> Vec<Entry> {
 
 #[test]
 fn every_scene_render_leaves_the_data_folder_untouched() {
-    let root = std::env::temp_dir().join(format!("hex-snap-isolation-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("mumble-snap-isolation-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     let support = root.join("support");
     let home = root.join("home");
@@ -49,7 +49,7 @@ fn every_scene_render_leaves_the_data_folder_untouched() {
     // SAFETY: nextest runs each test in its own process, so no other test
     // reads the environment meanwhile.
     unsafe {
-        std::env::set_var("HEX_APPLICATION_SUPPORT_DIR", &support);
+        std::env::set_var("MUMBLE_APPLICATION_SUPPORT_DIR", &support);
         std::env::set_var("HOME", &home);
         std::env::set_var("XDG_DATA_HOME", home.join(".local/share"));
         std::env::set_var("XDG_CONFIG_HOME", home.join(".config"));

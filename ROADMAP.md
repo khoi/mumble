@@ -1,6 +1,6 @@
 # Roadmap
 
-Hex ships the macOS product loop: configurable hold-to-talk local dictation,
+Mumble ships the macOS product loop: configurable hold-to-talk local dictation,
 optional context-aware OpenCode post-processing, a Metal HUD, bounded paste
 workers, settings, and a signed app bundle. Windows (x64 and ARM64) and
 x86_64 Linux (i3/X11 and compatible wlroots Wayland compositors) betas provide
@@ -35,7 +35,7 @@ owns Microphone, Accessibility, and Automation permissions.
 ## Finish Settings And First-Run Health
 
 Later, split features from settings into two windows (Kit, 2026-10-24; deferred
-in favour of the one-window feature-owned panes): the Hex window keeps what you
+in favour of the one-window feature-owned panes): the Mumble window keeps what you
 use, such as History, and a separate Settings window (⌘, and the menu bar's
 Settings…) holds General, Modes, and Experiments.
 
@@ -55,8 +55,8 @@ Keep Swift and Rust separate. Prefer the old app's existing Sparkle update windo
 with a website-only informational item to install the new app manually, with no
 data import or automatic replacement.
 Follow [`docs/plans/swift-app-handoff.md`](docs/plans/swift-app-handoff.md).
-The new app uses identity `com.kitlangton.hex2`, display name `Hex`, and filename
-`Hex.app`, with data in `hex`. Use Kit's approved
+The new app uses identity `com.kitlangton.hex2`, display name `Mumble`, and filename
+`Mumble.app`, with data in `mumble`. Use Kit's approved
 Developer ID signing team and validate the new identity before release. The legacy
 S3 feed must never install a Rust payload. Publish
 the updated Rust artifact first, then the separately validated legacy feed notice.
@@ -74,9 +74,9 @@ without stopping accepted work. Linux no longer uses a tray.
 Keep app-managed updates limited to the user-local direct-install layout. A
 future Arch package must leave updates to the package manager. Nix owns its
 packaged installation and optional Home Manager service. Validate the Wayland
-beta on a compatible compositor with physical portal shortcuts, the `hex`
+beta on a compatible compositor with physical portal shortcuts, the `mumble`
 commands bound in a desktop without the portal, microphone, foreground paste,
-click-through HUD, and window close leaving the process running while `hex quit`
+click-through HUD, and window close leaving the process running while `mumble quit`
 drains and exits. See [`docs/plans/linux.md`](docs/plans/linux.md). Add
 context or broader Wayland support only as explicit later capability slices.
 
@@ -132,7 +132,7 @@ with cold-microphone capture, before calling #77 done.
 Track the remaining shortcut requests explicitly:
 
 - [#82](https://github.com/anomalyco/hex/issues/82): menu-bar Pause/Resume must
-  remain deferred for now; quitting Hex is sufficient for the current scope.
+  remain deferred for now; quitting Mumble is sufficient for the current scope.
   If revisited, it must
   suspend capture shortcuts and command activation, cancel only active capture,
   retain accepted output, and require key release before resuming. Test event-tap
@@ -173,7 +173,7 @@ pressure, and action failures. Recommendations may propose command-taxonomy
 changes but must not mutate compiled configuration automatically.
 
 Authenticated developer control now rides the existing loopback API through the
-debug-only `hex dev` subcommand: it inspects app state, drives semantic HUD
+debug-only `mumble dev` subcommand: it inspects app state, drives semantic HUD
 scenarios, opens/focuses panes, and toggles command mode.
 Extend the same bounded typed channel with fixture-audio capture, microphone
 recovery, model switching, permission snapshots, deterministic screenshots,
@@ -214,7 +214,7 @@ hint never switches or downloads anything itself.
 
 ## Deliberate Deferrals
 
-Do not generalize the `~/.config/hex` TypeScript transformation config into a
+Do not generalize the `~/.config/mumble` TypeScript transformation config into a
 plugin framework.
 
 Do not generalize the concrete macOS and Linux X11 adapters into a platform

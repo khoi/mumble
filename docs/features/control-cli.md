@@ -4,18 +4,18 @@
 Agent or terminal                                  // control.cli; every OS
 ├── One tree and protocol over the local API's POST /control on every OS;
 │   OS can't do it -> unsupported at runtime, exit 1
-├── hex status [--json] -> Listener, capture, transcription, features,
+├── mumble status [--json] -> Listener, capture, transcription, features,
 │   permissions, window, update, version, pid, memory
-│   └── Hex not running -> exit 3, "Hex is not running; run `hex start`"
-├── hex start -> Already running: nothing | else open Hex.app (Linux and
-│   Windows: a detached `hex app --hidden`), wait ≤ 20 s
-│   └── The caller's HEX_* variables -> open --env (values never logged)
-├── hex quit | restart [--force]
+│   └── Mumble not running -> exit 3, "Mumble is not running; run `mumble start`"
+├── mumble start -> Already running: nothing | else open Mumble.app (Linux and
+│   Windows: a detached `mumble app --hidden`), wait ≤ 20 s
+│   └── The caller's MUMBLE_* variables -> open --env (values never logged)
+├── mumble quit | restart [--force]
 │   ├── Dictation recording or transcribing, no --force -> busy, exit 1
 │   ├── Listener didn't answer, no --force -> busy (it might be recording)
-│   └── restart -> reopens with the running Hex's HEX_* variables (macOS);
+│   └── restart -> reopens with the running Mumble's MUMBLE_* variables (macOS);
 │       Linux unit -> systemctl restart; else waits for the drain, then start
-├── hex dictation start|stop|toggle|cancel
+├── mumble dictation start|stop|toggle|cancel
 │   ├── Same shortcut state machine as the hotkey; start locks the capture
 │   ├── start -> intentional at once: tone once the mic is open, recording
 │   │   behavior, live stream
@@ -33,32 +33,32 @@ Agent or terminal                                  // control.cli; every OS
 │   └── dictation start|toggle --raw -> the dictation it starts pastes the
 │       transcript as heard (Dictate without processing); History keeps it as Raw;
 │       --raw with stop -> usage error, exit 2
-├── hex paste-last -> pastes the last dictation
+├── mumble paste-last -> pastes the last dictation
 │   ├── Setup gates the listener -> not-ready
 │   └── Recording or shortcut gesture in progress -> busy (menu bar: nothing)
-├── hex settings list | get <key|prefix> | set <key> <value>
+├── mumble settings list | get <key|prefix> | set <key> <value>
 │   ├── The window's save, then ReloadSettings -> live, no restart
 │   ├── Unknown key, bad value, read-only key -> refused, nothing written
 │   ├── Shortcut conflict -> refused, as the window's recorder would
 │   └── apply <file|-> -> a JSON object of key: value, all or none
 │       ├── Undeclared settings keep their values; dependent keys in any order
 │       ├── transcription.provider / .language -> the cloud service and language
-│       ├── Hex running -> SettingsApply: saved and adopted live, like set
-│       └── Hex stopped -> written to settings.json under the service lock
-│           (Linux); a Hex holding it is waited for (≤ 35 s) instead
-├── hex window show [pane] | hide
+│       ├── Mumble running -> SettingsApply: saved and adopted live, like set
+│       └── Mumble stopped -> written to settings.json under the service lock
+│           (Linux); a Mumble holding it is waited for (≤ 35 s) instead
+├── mumble window show [pane] | hide
 │   ├── settings -> the General pane (status window.pane stays "settings")
 │   └── story <story> [--variant V] [--play] -> a playground story, as a
-│       hex://story link opens (labs.md); playground off -> feature-off
-├── hex history clear --yes -> without --yes refused before Hex is asked
-├── hex check-for-updates -> The updater checks now
-├── hex launch-at-login [on|off] -> SMAppService (changes need Hex.app);
+│       mumble://story link opens (labs.md); playground off -> feature-off
+├── mumble history clear --yes -> without --yes refused before Mumble is asked
+├── mumble check-for-updates -> The updater checks now
+├── mumble launch-at-login [on|off] -> SMAppService (changes need Mumble.app);
 │   Windows Run key; Linux XDG autostart entry
-└── hex logs [--process] [-n N] [-f] -> local tail; works with Hex stopped
+└── mumble logs [--process] [-n N] [-f] -> local tail; works with Mumble stopped
 ```
 
 Every command except `start`, `restart`, `logs`, `settings apply`, and the
-read commands talks only to the running Hex; none of them launch Hex. Every OS reaches it through
+read commands talks only to the running Mumble; none of them launch Mumble. Every OS reaches it through
 the local API's owner-only discovery file and the bearer-authenticated
 `POST /control` route. Commands dispatch before logging and the instance lock on every OS,
 so they never compete with the running app for its files. Opt-ins stay
@@ -71,7 +71,7 @@ hotkey loop, as a toggle press would), settings save and reload as the
 window's do, and `settings set` refuses a key whose capability the OS lacks
 (`settings list` marks it "not on this OS"); `window story` answers
 `unsupported`.
-`hex history` reads files on every OS.
+`mumble history` reads files on every OS.
 
 Sources: [control.rs](../../src/control.rs) (protocol, status, quit rules),
 [control/host.rs](../../src/control/host.rs) (the Linux and Windows host),
@@ -88,8 +88,8 @@ Checks: `control::tests` round-trip every command and reply (including
 protocol versions, and cover the quit rules (an unanswered listener refuses); `control::settings::tests` include
 `every_persisted_setting_has_a_cli_key`, value parsing, shortcut conflicts,
 and zero volume; `control::cli::tests` pin
-exit codes, output, and `hex start`'s `open`
-arguments; `desktop::onboarding::tests::relaunch_forwards_only_the_hex_environment`
+exit codes, output, and `mumble start`'s `open`
+arguments; `desktop::onboarding::tests::relaunch_forwards_only_the_mumble_environment`
 pins restart's;
 `dictation::audio::tests::marked_captures_are_intentional_without_a_hold`
 covers the immediate stream and `ReadyIntentional`; `recognition::tests`
@@ -104,7 +104,7 @@ the quit refusal, printing stops, and runtime `unsupported` replies;
 without a recorded reason; `settings_name_real_capabilities_and_keys` checks
 the settings-to-capability table.
 
-Observed (Oct 30, apollo, an isolated data root and `hex service` without a
+Observed (Oct 30, apollo, an isolated data root and `mumble service` without a
 display): status, settings get/set (and refusing `show_dock_icon`), vocabulary
 add/list/remove, history clear, window hide,
 check-for-updates, commands check, quit, start, and restart all answered as

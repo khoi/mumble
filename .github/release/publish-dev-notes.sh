@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # publish-dev-notes.sh <dev-notes.json> <version> <commit>: checks the dev
 # channel's notes, written without secrets by scripts/release-dev-notes.sh,
-# and uploads them as dev-notes.json to HEX_RELEASE_BUCKET
-# (https://anoma.ly/hex/files/dev-notes.json) with .github/release/r2-put.sh.
+# and uploads them as dev-notes.json to MUMBLE_RELEASE_BUCKET
+# (https://anoma.ly/mumble/files/dev-notes.json) with .github/release/r2-put.sh.
 #
-# The file is untrusted data: https://anoma.ly/hex/dev renders it and the
+# The file is untrusted data: https://anoma.ly/mumble/dev renders it and the
 # app shows it, so it must be the expected shape, put this build first, and
 # link only to this repository's pull requests and commits.
 . "$(dirname "$0")/lib.sh"
@@ -35,8 +35,8 @@ jq -e --arg version "$version" --arg commit "$commit" '
       (keys == ["title", "url"])
       and (.title | text(200))
       and (.url | type == "string"
-        and test("^https://github\\.com/anomalyco/hex/(pull/[0-9]{1,7}|commit/[0-9a-f]{40})$"))))
+        and test("^https://github\\.com/khoi/mumble/(pull/[0-9]{1,7}|commit/[0-9a-f]{40})$"))))
 ' "$canonical" > /dev/null || die "The dev notes are not the expected shape for $version ($commit)."
 sh "$(dirname "$0")/r2-put.sh" \
   dev-notes.json "$canonical" "application/json; charset=utf-8" "public, max-age=60"
-echo "Published the notes for $version: https://anoma.ly/hex/dev#$version"
+echo "Published the notes for $version: https://anoma.ly/mumble/dev#$version"

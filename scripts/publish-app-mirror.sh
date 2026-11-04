@@ -9,19 +9,19 @@ version=${1:?Usage: publish-app-mirror.sh VERSION DMG NOTES COMMIT}
 artifact_path=${2:?Pass the prepared signed DMG}
 notes=${3:?Pass release notes}
 commit=${4:?Pass the full release commit}
-repo=anomalyco/hex
+repo=khoi/mumble
 tag="app-v$version"
-artifact="HEX-$version-arm64.dmg"
+artifact="Mumble-$version-arm64.dmg"
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
 test "$(basename "$artifact_path")" = "$artifact"
 test -f "$artifact_path"
 test -f "$notes"
 
-temporary=$(mktemp -d "${TMPDIR:-/tmp}/hex-app-mirror.XXXXXX")
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/mumble-app-mirror.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 if ! gh release view "$tag" --repo "$repo" --json assets > "$temporary/release.json"; then
   gh release create "$tag" --repo "$repo" --target "$commit" \
-    --title "Hex $version" --notes-file "$notes" --draft --latest=false
+    --title "Mumble $version" --notes-file "$notes" --draft --latest=false
   gh release view "$tag" --repo "$repo" --json assets > "$temporary/release.json"
 fi
 if ! jq -e --arg name "$artifact" '.assets | any(.name == $name)' "$temporary/release.json" >/dev/null; then

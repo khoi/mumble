@@ -1,19 +1,19 @@
 { self, pkgs }:
 let
   inherit (pkgs) lib;
-  hex = self.packages.${pkgs.stdenv.hostPlatform.system}.hex;
+  mumble = self.packages.${pkgs.stdenv.hostPlatform.system}.mumble;
   shell = self.devShells.${pkgs.stdenv.hostPlatform.system}.default;
   home =
     settings:
     (self.inputs.home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
       modules = [
-        self.homeManagerModules.hex
+        self.homeManagerModules.mumble
         {
-          home.username = "hex-test";
-          home.homeDirectory = "/home/hex-test";
+          home.username = "mumble-test";
+          home.homeDirectory = "/home/mumble-test";
           home.stateVersion = "26.05";
-          programs.hex = settings;
+          programs.mumble = settings;
         }
       ];
     }).config;
@@ -33,7 +33,7 @@ let
       "transcription.language" = "de";
     };
   };
-  declaredSettings = (pkgs.formats.json { }).generate "hex-settings.json" {
+  declaredSettings = (pkgs.formats.json { }).generate "mumble-settings.json" {
     dictation_hotkey = "control+option+space";
     "transcription.provider" = "codex";
     "transcription.language" = "de";
@@ -50,28 +50,28 @@ let
     (self.inputs.nixpkgs.lib.nixosSystem {
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
-        self.nixosModules.hex
+        self.nixosModules.mumble
         {
-          programs.hex.enable = true;
+          programs.mumble.enable = true;
           system.stateVersion = "26.05";
         }
       ];
     }).config;
 in
 {
-  package = pkgs.runCommand "hex-package-check" { } ''
+  package = pkgs.runCommand "mumble-package-check" { } ''
     export HOME="$TMPDIR/home"
     mkdir -p "$HOME"
-    ${lib.getExe hex} --version
+    ${lib.getExe mumble} --version
     touch "$out"
   '';
 
   shell-environment =
-    assert lib.all (name: shell.${name} == hex.${name}) [
+    assert lib.all (name: shell.${name} == mumble.${name}) [
       "OPENSSL_NO_VENDOR"
     ];
     # OpenBLAS ordering belongs to build.rs, not an injected Nix-only workaround.
-    assert !(hex ? RUSTFLAGS) && !(shell ? RUSTFLAGS);
+    assert !(mumble ? RUSTFLAGS) && !(shell ? RUSTFLAGS);
     assert lib.all
       (package: builtins.elem "${lib.getLib package}/lib" (lib.splitString ":" shell.LD_LIBRARY_PATH))
       [
@@ -84,47 +84,47 @@ in
       pkgs.wl-clipboard
       pkgs.wtype
     ];
-    pkgs.runCommand "hex-shell-environment-check" { } ''
+    pkgs.runCommand "mumble-shell-environment-check" { } ''
       test -d ${shell.ALSA_PLUGIN_DIR}
       touch "$out"
     '';
 
   modules =
-    assert builtins.elem hex system.environment.systemPackages;
-    assert builtins.elem hex enabled.home.packages;
-    assert !(builtins.elem hex disabled.home.packages);
-    assert manual.systemd.user.services.hex.Install.WantedBy == [ ];
-    assert !(disabled.systemd.user.services ? hex);
-    assert enabled.systemd.user.services.hex.Service.ExecStart == [ "${lib.getExe hex} service" ];
-    assert enabled.systemd.user.services.hex.Service.Restart == "on-failure";
-    assert enabled.systemd.user.services.hex.Service.Type == "notify";
-    assert enabled.systemd.user.services.hex.Service.NotifyAccess == "main";
-    assert builtins.elem "HEX_APPLICATION_SUPPORT_DIR=${enabled.xdg.dataHome}/hex"
-      enabled.systemd.user.services.hex.Service.Environment;
-    assert custom.systemd.user.services.hex.Service.ExecStart == [ "${lib.getExe pkgs.hello} service" ];
-    assert lib.all (name: custom.systemd.user.services.hex.Unit.${name} == [ "sway-session.target" ]) [
+    assert builtins.elem mumble system.environment.systemPackages;
+    assert builtins.elem mumble enabled.home.packages;
+    assert !(builtins.elem mumble disabled.home.packages);
+    assert manual.systemd.user.services.mumble.Install.WantedBy == [ ];
+    assert !(disabled.systemd.user.services ? mumble);
+    assert enabled.systemd.user.services.mumble.Service.ExecStart == [ "${lib.getExe mumble} service" ];
+    assert enabled.systemd.user.services.mumble.Service.Restart == "on-failure";
+    assert enabled.systemd.user.services.mumble.Service.Type == "notify";
+    assert enabled.systemd.user.services.mumble.Service.NotifyAccess == "main";
+    assert builtins.elem "MUMBLE_APPLICATION_SUPPORT_DIR=${enabled.xdg.dataHome}/mumble"
+      enabled.systemd.user.services.mumble.Service.Environment;
+    assert custom.systemd.user.services.mumble.Service.ExecStart == [ "${lib.getExe pkgs.hello} service" ];
+    assert lib.all (name: custom.systemd.user.services.mumble.Unit.${name} == [ "sway-session.target" ]) [
       "After"
       "PartOf"
     ];
-    assert custom.systemd.user.services.hex.Install.WantedBy == [ "sway-session.target" ];
-    assert !(enabled.home.activation ? hexSettings);
+    assert custom.systemd.user.services.mumble.Install.WantedBy == [ "sway-session.target" ];
+    assert !(enabled.home.activation ? mumbleSettings);
     assert lib.hasInfix (builtins.unsafeDiscardStringContext "settings apply ${declaredSettings}") (
-      builtins.unsafeDiscardStringContext declared.home.activation.hexSettings.data
+      builtins.unsafeDiscardStringContext declared.home.activation.mumbleSettings.data
     );
-    assert lib.elem "reloadSystemd" declared.home.activation.hexSettings.after;
-    pkgs.runCommand "hex-module-check" { } ''
-      bash -n ${enabled.systemd.user.services.hex.Service.ExecStartPre}
+    assert lib.elem "reloadSystemd" declared.home.activation.mumbleSettings.after;
+    pkgs.runCommand "mumble-module-check" { } ''
+      bash -n ${enabled.systemd.user.services.mumble.Service.ExecStartPre}
       touch "$out"
     '';
 
   session-readiness =
     let
       xprop = pkgs.writeShellScriptBin "xprop" ''
-        printf '%s\n' "''${HEX_TEST_XPROP:-}"
+        printf '%s\n' "''${MUMBLE_TEST_XPROP:-}"
       '';
       sleep = pkgs.writeShellScriptBin "sleep" "exit 0";
     in
-    pkgs.runCommand "hex-session-readiness-check" { } ''
+    pkgs.runCommand "mumble-session-readiness-check" { } ''
       run() {
         env -i PATH=${
           lib.makeBinPath [
@@ -137,9 +137,9 @@ in
       }
 
       if run; then exit 1; fi
-      if run DISPLAY=:1 HEX_TEST_XPROP='_NET_SUPPORTING_WM_CHECK: not found.'; then exit 1; fi
-      if run DISPLAY=:1 HEX_TEST_XPROP='_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x0'; then exit 1; fi
-      run DISPLAY=:1 HEX_TEST_XPROP='_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0xa00001'
+      if run DISPLAY=:1 MUMBLE_TEST_XPROP='_NET_SUPPORTING_WM_CHECK: not found.'; then exit 1; fi
+      if run DISPLAY=:1 MUMBLE_TEST_XPROP='_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x0'; then exit 1; fi
+      run DISPLAY=:1 MUMBLE_TEST_XPROP='_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0xa00001'
 
       if run WAYLAND_DISPLAY=wayland-test XDG_RUNTIME_DIR="$TMPDIR"; then exit 1; fi
       ${pkgs.python3}/bin/python -c \

@@ -3,10 +3,10 @@
 //! takes whatever its signed feed names, so that feed hands them a current
 //! build. Launched from there (as the app, or as the old systemd unit's
 //! `service`), the build moves itself into the layout our installers make
-//! (`<data>/hex`, receipted, with the Start Menu shortcut, Launch at login,
+//! (`<data>/mumble`, receipted, with the Start Menu shortcut, Launch at login,
 //! systemd unit, and desktop entries pointed at it), then relaunches from
 //! there so the release service updates it from then on. A failed move is
-//! logged and Hex runs in place; the next launch tries again.
+//! logged and Mumble runs in place; the next launch tries again.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ use color_eyre::eyre::{Result, WrapErr};
 const LEGACY_FOLDER: &str = "voice-control";
 
 /// Moves a legacy install into the managed layout and relaunches it from
-/// there. Returns whether the relaunched Hex took over, in which case the
+/// there. Returns whether the relaunched Mumble took over, in which case the
 /// caller exits; on Linux a successful relaunch replaces this process and
 /// never returns.
 pub fn take_over() -> bool {
@@ -43,7 +43,7 @@ fn legacy_install() -> Option<(PathBuf, PathBuf)> {
     let data = dirs::data_dir()?;
     let executable = std::env::current_exe().ok()?;
     let legacy = legacy_root(&executable, &data)?;
-    Some((legacy, data.join("hex")))
+    Some((legacy, data.join("mumble")))
 }
 
 fn legacy_root(executable: &Path, data: &Path) -> Option<PathBuf> {
@@ -84,11 +84,11 @@ mod linux {
     impl Legacy {
         pub(super) fn for_user(home: &Path, data: &Path, config: &Path) -> Self {
             Self {
-                unit: config.join("systemd/user/hex.service"),
-                binary: home.join(".local/bin/hex"),
+                unit: config.join("systemd/user/mumble.service"),
+                binary: home.join(".local/bin/mumble"),
                 entries: [
-                    data.join("applications/hex.desktop"),
-                    config.join("autostart/hex.desktop"),
+                    data.join("applications/mumble.desktop"),
+                    config.join("autostart/mumble.desktop"),
                 ],
             }
         }
@@ -98,13 +98,13 @@ mod linux {
         pub(super) fn retire(&self, legacy: &Path) -> Result<Vec<(PathBuf, PathBuf)>> {
             let mut moved = Vec::new();
             let result: Result<()> = (|| {
-                let unit = marked(&self.unit, "# X-HEX-Managed=true");
+                let unit = marked(&self.unit, "# X-MUMBLE-Managed=true");
                 let binary = fs::read_link(&self.binary)
-                    .is_ok_and(|target| target == legacy.join("current/hex"));
+                    .is_ok_and(|target| target == legacy.join("current/mumble"));
                 let entries = self
                     .entries
                     .iter()
-                    .filter(|entry| marked(entry, "X-HEX-Managed=true"));
+                    .filter(|entry| marked(entry, "X-MUMBLE-Managed=true"));
                 for path in [unit.then_some(&self.unit), binary.then_some(&self.binary)]
                     .into_iter()
                     .flatten()
@@ -148,7 +148,7 @@ mod linux {
         let data = dirs::data_dir().ok_or_else(|| color_eyre::eyre::eyre!("no data directory"))?;
         let config =
             dirs::config_dir().ok_or_else(|| color_eyre::eyre::eyre!("no config directory"))?;
-        let executable = std::env::current_exe().wrap_err("could not locate Hex")?;
+        let executable = std::env::current_exe().wrap_err("could not locate Mumble")?;
         adopt_with(
             legacy,
             root,
@@ -180,12 +180,12 @@ mod linux {
             .arg("-c")
             .arg(INSTALLER)
             .args(["install-linux.sh", "install"])
-            .env("HEX_INSTALL_ARTIFACT", executable)
-            .env("HEX_INSTALL_VERSION", crate::VERSION)
-            .env("HEX_INSTALL_CHANNEL", "stable")
-            .env("HEX_APPLICATION_SUPPORT_DIR", root)
-            .env_remove("HEX_INSTALL_DIR")
-            .env_remove("HEX_INSTALL_SOURCE")
+            .env("MUMBLE_INSTALL_ARTIFACT", executable)
+            .env("MUMBLE_INSTALL_VERSION", crate::VERSION)
+            .env("MUMBLE_INSTALL_CHANNEL", "stable")
+            .env("MUMBLE_APPLICATION_SUPPORT_DIR", root)
+            .env_remove("MUMBLE_INSTALL_DIR")
+            .env_remove("MUMBLE_INSTALL_SOURCE")
             .envs(environment.iter().copied())
             .stdin(Stdio::null());
         let output = installer.output().wrap_err("could not run the installer");
@@ -220,7 +220,7 @@ mod linux {
                 .and_then(|mut file| std::io::Write::write_all(&mut file, &body))
                 .wrap_err("could not copy the session environment")?;
         }
-        Ok(root.join("current/hex"))
+        Ok(root.join("current/mumble"))
     }
 
     /// Becomes the managed executable with the same arguments. Under the
@@ -229,12 +229,12 @@ mod linux {
     pub(super) fn relaunch(executable: &Path, legacy: &Path, root: &Path) -> Result<()> {
         let mut command = Command::new(executable);
         command.args(std::env::args_os().skip(1));
-        if std::env::var_os("HEX_APPLICATION_SUPPORT_DIR")
+        if std::env::var_os("MUMBLE_APPLICATION_SUPPORT_DIR")
             .is_some_and(|dir| Path::new(&dir) == legacy)
         {
-            command.env("HEX_APPLICATION_SUPPORT_DIR", root);
+            command.env("MUMBLE_APPLICATION_SUPPORT_DIR", root);
         }
-        Err(command.exec()).wrap_err("could not start the managed Hex")
+        Err(command.exec()).wrap_err("could not start the managed Mumble")
     }
 }
 
@@ -262,20 +262,20 @@ mod windows {
             .write(true)
             .open(updates.join("update.lock"))?;
         lock.try_lock_exclusive()
-            .wrap_err("a Hex install or update is already in progress")?;
-        let staging = updates.join("hex.exe.staging");
+            .wrap_err("a Mumble install or update is already in progress")?;
+        let staging = updates.join("mumble.exe.staging");
         let _ = fs::remove_file(&staging);
-        fs::copy(std::env::current_exe()?, &staging).wrap_err("could not copy Hex")?;
+        fs::copy(std::env::current_exe()?, &staging).wrap_err("could not copy Mumble")?;
         let executable = super::super::platform::activate(root, crate::VERSION, &staging)?;
         write_receipt(root)?;
         if super::super::receipt_channel(root).is_none() {
             bail!("the managed install's receipt does not verify");
         }
         if let Err(error) = replace_shortcut(&executable) {
-            tracing::warn!(%error, "could not point the Start Menu shortcut at the managed Hex");
+            tracing::warn!(%error, "could not point the Start Menu shortcut at the managed Mumble");
         }
         if let Err(error) = crate::windows::login_item::repoint(&executable) {
-            tracing::warn!(%error, "could not point Launch at login at the managed Hex");
+            tracing::warn!(%error, "could not point Launch at login at the managed Mumble");
         }
         match RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(LEGACY_UNINSTALL_KEY) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
@@ -301,8 +301,8 @@ mod windows {
         Ok(())
     }
 
-    /// Recreates `Hex.lnk` as the installer's managed shortcut (2.3.1 named
-    /// its file `HEX.lnk`), unless the user made their own.
+    /// Recreates `Mumble.lnk` as the installer's managed shortcut (2.3.1 named
+    /// its file `Mumble.lnk`), unless the user made their own.
     fn replace_shortcut(executable: &Path) -> Result<()> {
         let Some(appdata) = dirs::config_dir() else {
             return Ok(());
@@ -315,21 +315,21 @@ mod windows {
                 "Hidden",
                 "-Command",
                 "$shell = New-Object -ComObject WScript.Shell; \
-                 if (Test-Path -LiteralPath $env:HEX_SHORTCUT) { \
-                 if ($shell.CreateShortcut($env:HEX_SHORTCUT).Description -ne 'Hex managed install') { exit 0 }; \
-                 Remove-Item -LiteralPath $env:HEX_SHORTCUT -Force }; \
-                 $s = $shell.CreateShortcut($env:HEX_SHORTCUT); \
-                 $s.TargetPath = $env:HEX_EXECUTABLE; \
+                 if (Test-Path -LiteralPath $env:MUMBLE_SHORTCUT) { \
+                 if ($shell.CreateShortcut($env:MUMBLE_SHORTCUT).Description -ne 'Mumble managed install') { exit 0 }; \
+                 Remove-Item -LiteralPath $env:MUMBLE_SHORTCUT -Force }; \
+                 $s = $shell.CreateShortcut($env:MUMBLE_SHORTCUT); \
+                 $s.TargetPath = $env:MUMBLE_EXECUTABLE; \
                  $s.Arguments = 'app'; \
-                 $s.Description = 'Hex managed install'; \
-                 $s.WorkingDirectory = (Split-Path -Parent $env:HEX_EXECUTABLE); \
+                 $s.Description = 'Mumble managed install'; \
+                 $s.WorkingDirectory = (Split-Path -Parent $env:MUMBLE_EXECUTABLE); \
                  $s.Save()",
             ])
             .env(
-                "HEX_SHORTCUT",
-                appdata.join(r"Microsoft\Windows\Start Menu\Programs\Hex.lnk"),
+                "MUMBLE_SHORTCUT",
+                appdata.join(r"Microsoft\Windows\Start Menu\Programs\Mumble.lnk"),
             )
-            .env("HEX_EXECUTABLE", executable)
+            .env("MUMBLE_EXECUTABLE", executable)
             .env_remove("PSModulePath")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -351,7 +351,7 @@ mod windows {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .wrap_err("could not start the managed Hex")?;
+            .wrap_err("could not start the managed Mumble")?;
         Ok(())
     }
 }
@@ -361,7 +361,8 @@ mod tests {
     use super::*;
 
     fn temporary(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("hex-legacy-{name}-{}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("mumble-legacy-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         path.canonicalize().unwrap()
@@ -372,9 +373,9 @@ mod tests {
         let data = temporary("detect");
         let legacy = data.join("voice-control");
         fs::create_dir_all(legacy.join("versions/3.4.0")).unwrap();
-        fs::create_dir_all(data.join("hex/versions/3.4.0")).unwrap();
-        let old = legacy.join("versions/3.4.0/hex");
-        let new = data.join("hex/versions/3.4.0/hex");
+        fs::create_dir_all(data.join("mumble/versions/3.4.0")).unwrap();
+        let old = legacy.join("versions/3.4.0/mumble");
+        let new = data.join("mumble/versions/3.4.0/mumble");
         fs::write(&old, b"").unwrap();
         fs::write(&new, b"").unwrap();
         assert_eq!(legacy_root(&old, &data), Some(legacy));
@@ -391,13 +392,13 @@ mod tests {
         let data = home.join(".local/share");
         let config = home.join(".config");
         let legacy = data.join("voice-control");
-        let root = data.join("hex");
+        let root = data.join("mumble");
         let version = legacy.join("versions").join(crate::VERSION);
         fs::create_dir_all(&version).unwrap();
-        let executable = version.join("hex");
+        let executable = version.join("mumble");
         fs::write(
             &executable,
-            format!("#!/bin/sh\necho hex {}\n", crate::VERSION),
+            format!("#!/bin/sh\necho mumble {}\n", crate::VERSION),
         )
         .unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
@@ -416,19 +417,23 @@ mod tests {
             fs::create_dir_all(&directory).unwrap();
             fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
         }
-        symlink(legacy.join("current/hex"), home.join(".local/bin/hex")).unwrap();
-        fs::write(
-            config.join("systemd/user/hex.service"),
-            "# X-HEX-Managed=true\n[Service]\nExecStart=hex service\n",
+        symlink(
+            legacy.join("current/mumble"),
+            home.join(".local/bin/mumble"),
         )
         .unwrap();
         fs::write(
-            data.join("applications/hex.desktop"),
-            "[Desktop Entry]\nX-HEX-Managed=true\n",
+            config.join("systemd/user/mumble.service"),
+            "# X-MUMBLE-Managed=true\n[Service]\nExecStart=mumble service\n",
         )
         .unwrap();
         fs::write(
-            config.join("autostart/hex.desktop"),
+            data.join("applications/mumble.desktop"),
+            "[Desktop Entry]\nX-MUMBLE-Managed=true\n",
+        )
+        .unwrap();
+        fs::write(
+            config.join("autostart/mumble.desktop"),
             "[Desktop Entry]\nName=Mine\n",
         )
         .unwrap();
@@ -457,7 +462,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(installed, root.join("current/hex"));
+        assert_eq!(installed, root.join("current/mumble"));
         assert_eq!(
             fs::read(&installed).unwrap(),
             fs::read(&executable).unwrap()
@@ -467,18 +472,18 @@ mod tests {
             Some("stable")
         );
         assert_eq!(
-            fs::read_link(home.join(".local/bin/hex")).unwrap(),
-            root.join("current/hex")
+            fs::read_link(home.join(".local/bin/mumble")).unwrap(),
+            root.join("current/mumble")
         );
-        let unit = fs::read_to_string(config.join("systemd/user/hex.service")).unwrap();
+        let unit = fs::read_to_string(config.join("systemd/user/mumble.service")).unwrap();
         assert!(
-            unit.lines().any(|line| line == "# X-Hex-Managed=true"),
+            unit.lines().any(|line| line == "# X-Mumble-Managed=true"),
             "{unit}"
         );
-        assert!(data.join("applications/anomaly.hex.desktop").exists());
-        assert!(!data.join("applications/hex.desktop").exists());
+        assert!(data.join("applications/anomaly.mumble.desktop").exists());
+        assert!(!data.join("applications/mumble.desktop").exists());
         // An entry the user wrote stays.
-        assert!(config.join("autostart/hex.desktop").exists());
+        assert!(config.join("autostart/mumble.desktop").exists());
         assert_eq!(
             fs::read_to_string(root.join("session.env")).unwrap(),
             "DISPLAY=\":0\"\n"
@@ -507,17 +512,21 @@ mod tests {
         fs::create_dir_all(legacy.join("versions/1.0.0")).unwrap();
         fs::create_dir_all(home.join(".local/bin")).unwrap();
         fs::create_dir_all(config.join("systemd/user")).unwrap();
-        let unit = config.join("systemd/user/hex.service");
-        fs::write(&unit, "# X-HEX-Managed=true\n").unwrap();
-        symlink(legacy.join("current/hex"), home.join(".local/bin/hex")).unwrap();
+        let unit = config.join("systemd/user/mumble.service");
+        fs::write(&unit, "# X-MUMBLE-Managed=true\n").unwrap();
+        symlink(
+            legacy.join("current/mumble"),
+            home.join(".local/bin/mumble"),
+        )
+        .unwrap();
         // Reports the wrong version, so the installer refuses it.
-        let executable = legacy.join("versions/1.0.0/hex");
-        fs::write(&executable, "#!/bin/sh\necho hex 0.0.1\n").unwrap();
+        let executable = legacy.join("versions/1.0.0/mumble");
+        fs::write(&executable, "#!/bin/sh\necho mumble 0.0.1\n").unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
 
         let result = linux::adopt_with(
             &legacy,
-            &data.join("hex"),
+            &data.join("mumble"),
             &executable,
             &linux::Legacy::for_user(&home, &data, &config),
             &[
@@ -528,10 +537,13 @@ mod tests {
         );
 
         assert!(result.is_err());
-        assert_eq!(fs::read_to_string(&unit).unwrap(), "# X-HEX-Managed=true\n");
         assert_eq!(
-            fs::read_link(home.join(".local/bin/hex")).unwrap(),
-            legacy.join("current/hex")
+            fs::read_to_string(&unit).unwrap(),
+            "# X-MUMBLE-Managed=true\n"
+        );
+        assert_eq!(
+            fs::read_link(home.join(".local/bin/mumble")).unwrap(),
+            legacy.join("current/mumble")
         );
         let _ = fs::remove_dir_all(home);
     }

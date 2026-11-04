@@ -1,4 +1,4 @@
-//! Without Hex, then with it:
+//! Without Mumble, then with it:
 //!
 //! 1. The 14.5u Apple Magic Keyboard glides into place over `1.35 s` before the
 //!    first keystroke lands, with crisp 2D scissor keycaps and nested Inter
@@ -6,7 +6,7 @@
 //! 2. Jay (CEO) pings: `"The investors are in the room. Are we ready to ship?"`
 //!    Typing by hand fumbles `"Yse, we're dead"` and accidentally hits Return,
 //!    freezes in horror, then fires off `"oh god *reayd"` — another typo!
-//! 3. Switching to `"With Hex"` gently recedes the keyboard while opening Hex's
+//! 3. Switching to `"With Mumble"` gently recedes the keyboard while opening Mumble's
 //!    real `Dot scope` phosphor HUD (`rune_hud.wgsl`), lighting `⌥`, and
 //!    delivering `"Every test is green and prod is warm. Ship it right now."`
 //!    in **1.5 seconds**.
@@ -164,7 +164,7 @@ pub(super) fn heading(p: Paint, s: &Onboard) -> El {
     let (key, title, lead) = match s.step {
         Step::Parked if !typed_done(s) => (
             "without",
-            tr("Without Hex"),
+            tr("Without Mumble"),
             line(
                 "lead-usual",
                 tr("Answering under pressure, the usual way.").into(),
@@ -172,12 +172,12 @@ pub(super) fn heading(p: Paint, s: &Onboard) -> El {
         ),
         Step::Parked => (
             "without",
-            tr("Without Hex"),
+            tr("Without Mumble"),
             line("lead-sent", tr("Two panic typos later.").into()),
         ),
         Step::YourTurn | Step::Hearing => (
             "with",
-            tr("With Hex"),
+            tr("With Mumble"),
             row()
                 .key("hold")
                 .gap(8.0)
@@ -265,7 +265,7 @@ pub(super) fn stage(p: Paint, s: &Onboard) -> El {
         |id| key_glow(s, id, voice_u),
     );
 
-    // Real `Dot scope` phosphor HUD (`rune_hud.wgsl`) during `With Hex`: it
+    // Real `Dot scope` phosphor HUD (`rune_hud.wgsl`) during `With Mumble`: it
     // unfolds as it rises a little off the keyboard, where `⌥` lights.
     let rise = s.motion.roll(10.0);
     let hud_el = if voice_phase {
@@ -350,7 +350,7 @@ fn key_glow(s: &Onboard, id: &str, voice_u: f32) -> f32 {
     }
 }
 
-/// How many `"Without Hex"` bubbles Jay's card shows now.
+/// How many `"Without Mumble"` bubbles Jay's card shows now.
 pub(super) fn sent_count(s: &Onboard) -> usize {
     jay_reply(s).sent_bubbles.len()
 }
@@ -423,7 +423,7 @@ fn verdict(p: Paint, key: &str, label: &str, feeling: Option<&str>, tone: Color)
         )
 }
 
-/// `Typing … too long` against `Hex … fast`: how each answer felt, not a
+/// `Typing … too long` against `Mumble … fast`: how each answer felt, not a
 /// stopwatch.
 fn stopwatch_pill(p: Paint, s: &Onboard) -> El {
     let k = p.k;
@@ -466,7 +466,7 @@ fn stopwatch_pill(p: Paint, s: &Onboard) -> El {
             .child(verdict(
                 p,
                 "voice-stat",
-                "Hex",
+                "Mumble",
                 finished.then_some(tr("fast")),
                 if finished { p.success() } else { p.text() },
             ));

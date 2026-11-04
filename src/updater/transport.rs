@@ -1,7 +1,7 @@
 //! HTTPS through `net` (the system's proxy and trusted roots): the polled
 //! manifest with `If-None-Match`, and resumable downloads checked against
 //! the manifest's size and SHA-256 before any byte is used. Requests carry
-//! nothing about the install beyond `User-Agent: hex/<channel>/<version>`.
+//! nothing about the install beyond `User-Agent: mumble/<channel>/<version>`.
 
 use std::fs::{self, OpenOptions};
 use std::io::Read;
@@ -15,9 +15,9 @@ use super::protocol::Target;
 pub const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 
 /// What every request names itself to the release service: the app, the
-/// channel this build belongs to and its version, e.g. `hex/dev/0.0.0-dev-171`.
+/// channel this build belongs to and its version, e.g. `mumble/dev/0.0.0-dev-171`.
 pub fn user_agent(channel: &str, version: &str) -> String {
-    format!("hex/{channel}/{version}")
+    format!("mumble/{channel}/{version}")
 }
 
 /// The last manifest the service sent, revalidated with its ETag.
@@ -211,8 +211,11 @@ mod tests {
 
     #[test]
     fn requests_name_the_app_channel_and_version() {
-        assert_eq!(user_agent("dev", "0.0.0-dev-171"), "hex/dev/0.0.0-dev-171");
-        assert_eq!(user_agent("stable", "2.3.1"), "hex/stable/2.3.1");
+        assert_eq!(
+            user_agent("dev", "0.0.0-dev-171"),
+            "mumble/dev/0.0.0-dev-171"
+        );
+        assert_eq!(user_agent("stable", "2.3.1"), "mumble/stable/2.3.1");
     }
 
     #[test]
@@ -225,7 +228,7 @@ mod tests {
     #[test]
     fn downloads_are_checked_against_size_and_sha256() {
         let directory =
-            std::env::temp_dir().join(format!("hex-update-verify-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mumble-update-verify-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("file");
         fs::write(&path, b"new").unwrap();
@@ -246,23 +249,23 @@ mod tests {
     #[test]
     fn a_finished_download_is_reused_without_the_network() {
         let directory =
-            std::env::temp_dir().join(format!("hex-update-reuse-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mumble-update-reuse-{}", std::process::id()));
         let _ = fs::remove_dir_all(&directory);
         let source = directory.join("source");
         fs::create_dir_all(&directory).unwrap();
         fs::write(&source, b"bytes").unwrap();
         let sha256 = sha256_hex(&source).unwrap();
         let target = Target {
-            url: format!("files/{sha256}/Hex.zip"),
+            url: format!("files/{sha256}/Mumble.zip"),
             size: 5,
             sha256: sha256.clone(),
         };
         // A complete partial download needs no request.
         fs::create_dir_all(directory.join(&sha256)).unwrap();
-        fs::copy(&source, directory.join(&sha256).join("Hex.zip.partial")).unwrap();
+        fs::copy(&source, directory.join(&sha256).join("Mumble.zip.partial")).unwrap();
         let file = download(
-            "https://invalid.invalid/Hex.zip",
-            "hex/dev/0.0.0-dev-1",
+            "https://invalid.invalid/Mumble.zip",
+            "mumble/dev/0.0.0-dev-1",
             &target,
             &directory,
         )
@@ -270,8 +273,8 @@ mod tests {
         assert_eq!(fs::read(&file).unwrap(), b"bytes");
         assert_eq!(
             download(
-                "https://invalid.invalid/Hex.zip",
-                "hex/dev/0.0.0-dev-1",
+                "https://invalid.invalid/Mumble.zip",
+                "mumble/dev/0.0.0-dev-1",
                 &target,
                 &directory
             )
@@ -283,7 +286,7 @@ mod tests {
         assert!(
             !valid_file_name("../x")
                 && !valid_file_name(".hidden")
-                && valid_file_name("Hex-2.4.0-macos-arm64.zip")
+                && valid_file_name("Mumble-2.4.0-macos-arm64.zip")
         );
         let _ = fs::remove_dir_all(directory);
     }

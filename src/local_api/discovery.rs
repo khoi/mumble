@@ -59,14 +59,14 @@ pub fn call_developer(
     let (status, body) = post_json("/dev/control", &body, DEVELOPER_CONTROL_TIMEOUT, 64 * 1024)?;
     if status != 200 {
         bail!(
-            "Hex developer control failed: {}",
+            "Mumble developer control failed: {}",
             error_code(status, &body)
         );
     }
-    serde_json::from_slice(&body).wrap_err("Hex developer response is invalid")
+    serde_json::from_slice(&body).wrap_err("Mumble developer response is invalid")
 }
 
-/// Sends one `hex` control request to the running app.
+/// Sends one `mumble` control request to the running app.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn call_control(
     request: &crate::control::ControlRequest,
@@ -83,17 +83,17 @@ pub fn call_control(
         let code = error_code(status, &body);
         bail!(match code.as_str() {
             "control-unavailable" => {
-                "the running Hex doesn't accept control commands; update Hex".to_string()
+                "the running Mumble doesn't accept control commands; update Mumble".to_string()
             }
-            "control-busy" => "Hex is busy with other control commands; try again".into(),
-            "control-timeout" => "Hex didn't answer in time; check `hex status`".into(),
+            "control-busy" => "Mumble is busy with other control commands; try again".into(),
+            "control-timeout" => "Mumble didn't answer in time; check `mumble status`".into(),
             "invalid-control-command" => {
-                "the running Hex doesn't know this command; update Hex".into()
+                "the running Mumble doesn't know this command; update Mumble".into()
             }
-            _ => format!("Hex refused the request ({code})"),
+            _ => format!("Mumble refused the request ({code})"),
         });
     }
-    serde_json::from_slice(&body).wrap_err("Hex sent an invalid control reply")
+    serde_json::from_slice(&body).wrap_err("Mumble sent an invalid control reply")
 }
 
 /// The running app's process id, if its local API is live.
@@ -107,16 +107,16 @@ pub(super) fn live_discovery() -> Result<DiscoveryDocument> {
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            bail!("Hex is not running")
+            bail!("Mumble is not running")
         }
         Err(error) => {
             return Err(error).wrap_err_with(|| format!("could not read {}", path.display()));
         }
     };
     let document: DiscoveryDocument =
-        serde_json::from_slice(&bytes).wrap_err("Hex's local API discovery file is invalid")?;
+        serde_json::from_slice(&bytes).wrap_err("Mumble's local API discovery file is invalid")?;
     if !valid_discovery(&document) || !discovery_is_live(&document) {
-        bail!("Hex is not running");
+        bail!("Mumble is not running");
     }
     Ok(document)
 }
@@ -130,7 +130,7 @@ pub(super) fn post_json(
     let document = live_discovery()?;
     let address = SocketAddr::from(([127, 0, 0, 1], document.port));
     let mut stream = TcpStream::connect_timeout(&address, CONNECTION_TIMEOUT)
-        .wrap_err("could not connect to Hex's local API")?;
+        .wrap_err("could not connect to Mumble's local API")?;
     stream.set_read_timeout(Some(read_timeout))?;
     stream.set_write_timeout(Some(CONNECTION_TIMEOUT))?;
     write!(
@@ -146,12 +146,12 @@ pub(super) fn post_json(
     (&mut stream)
         .take(max_response as u64 + 1)
         .read_to_end(&mut response)
-        .wrap_err("Hex didn't answer")?;
+        .wrap_err("Mumble didn't answer")?;
     if response.len() > max_response {
-        bail!("Hex's response is too large");
+        bail!("Mumble's response is too large");
     }
     let Some(header_end) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
-        bail!("Hex's response is malformed");
+        bail!("Mumble's response is malformed");
     };
     let headers = std::str::from_utf8(&response[..header_end])?;
     let status = headers
@@ -159,7 +159,7 @@ pub(super) fn post_json(
         .next()
         .and_then(|line| line.split_ascii_whitespace().nth(1))
         .and_then(|status| status.parse::<u16>().ok())
-        .ok_or_else(|| eyre!("Hex's response has no HTTP status"))?;
+        .ok_or_else(|| eyre!("Mumble's response has no HTTP status"))?;
     Ok((status, response.split_off(header_end + 4)))
 }
 
@@ -170,11 +170,13 @@ pub(super) fn error_code(status: u16, body: &[u8]) -> String {
         .unwrap_or_else(|| format!("http-{status}"))
 }
 
+const TOKEN_PREFIX: &str = "mumble_";
+
 pub(super) fn generate_token() -> Result<String> {
     let mut random = [0_u8; 32];
     getrandom::fill(&mut random).map_err(|error| eyre!("could not generate API token: {error}"))?;
-    let mut token = String::with_capacity(68);
-    token.push_str("hex_");
+    let mut token = String::with_capacity(TOKEN_PREFIX.len() + 64);
+    token.push_str(TOKEN_PREFIX);
     for byte in random {
         use std::fmt::Write as _;
         write!(token, "{byte:02x}").expect("writing to a string cannot fail");
@@ -206,11 +208,12 @@ pub(super) fn valid_discovery(document: &DiscoveryDocument) -> bool {
 }
 
 pub(super) fn valid_token(token: &str) -> bool {
-    token.len() == 68
-        && token.starts_with("hex_")
-        && token[4..]
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    token.strip_prefix(TOKEN_PREFIX).is_some_and(|digits| {
+        digits.len() == 64
+            && digits
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
 }
 
 pub(super) fn discovery_is_live(document: &DiscoveryDocument) -> bool {
@@ -236,7 +239,7 @@ pub(super) fn write_discovery(path: &Path, document: &DiscoveryDocument) -> Resu
     }
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
-    // The token lets any reader drive Hex, so only the owner may read it. On
+    // The token lets any reader drive Mumble, so only the owner may read it. On
     // Windows the file inherits the per-user Application Support folder's
     // ACL (the user, SYSTEM and Administrators).
     #[cfg(unix)]
