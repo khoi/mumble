@@ -11,26 +11,10 @@ let
   settings =
     lib.filterAttrs (_: value: value != null) {
       dictation_hotkey = cfg.shortcut;
-      "transcription.model" = cfg.model;
+      "transcription.provider" = cfg.provider;
       "transcription.language" = cfg.language;
     }
     // cfg.settings;
-  # User managers have no network-online.target of their own, so this asks
-  # the system's, then tries anyway; failed downloads retry.
-  installModel = pkgs.writeShellApplication {
-    name = "hex-install-model";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.systemd
-    ];
-    text = ''
-      for _ in $(seq 60); do
-        systemctl --system is-active --quiet network-online.target && break
-        sleep 2
-      done
-      exec ${lib.getExe cfg.package} model install
-    '';
-  };
   waitForSession = pkgs.writeShellApplication {
     name = "hex-wait-for-session";
     runtimeInputs = [
@@ -43,7 +27,7 @@ let
 in
 {
   options.programs.hex = {
-    enable = lib.mkEnableOption "Hex local voice dictation";
+    enable = lib.mkEnableOption "Hex voice dictation";
     package = lib.mkOption {
       type = lib.types.package;
       description = "Hex package to install.";
@@ -82,25 +66,25 @@ in
       example = "control+option+space";
       description = "Dictation shortcut, the `dictation_hotkey` setting.";
     };
-    model = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
+    provider = lib.mkOption {
+      type = lib.types.nullOr (lib.types.enum [
+        "claude"
+        "codex"
+      ]);
       default = null;
-      example = "parakeet_v3";
+      example = "claude";
       description = ''
-        Transcription model id from `hex model list`. Declaring it only
-        selects it; set `installModel` to download it.
+        The cloud service that transcribes dictations, the
+        `transcription.provider` setting. Hex uses the sign-in the chosen
+        app (Claude Code or Codex) already holds.
       '';
     };
     language = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
       example = "de";
-      description = "Dictation language, a code the selected model supports.";
+      description = "Dictation language, a code the selected provider supports.";
     };
-    installModel = lib.mkEnableOption ''
-      downloading the selected model when it is missing, from a user service
-      that runs once the network is online. Activation itself never downloads
-    '';
   };
 
   config = lib.mkIf cfg.enable {
@@ -125,7 +109,7 @@ in
     );
     systemd.user.services.hex = {
       Unit = {
-        Description = "Hex local voice dictation";
+        Description = "Hex voice dictation";
         After = [ cfg.systemdTarget ];
         PartOf = [ cfg.systemdTarget ];
       };
@@ -143,19 +127,6 @@ in
         UMask = "0077";
       };
       Install.WantedBy = lib.optionals cfg.autostart [ cfg.systemdTarget ];
-    };
-    # Type=exec, so a switch never waits on the download.
-    systemd.user.services.hex-model = lib.mkIf cfg.installModel {
-      Unit.Description = "Download Hex's selected transcription model";
-      Service = {
-        Type = "exec";
-        ExecStart = lib.getExe installModel;
-        Environment = [ "HEX_APPLICATION_SUPPORT_DIR=${supportDir}" ];
-        Restart = "on-failure";
-        RestartSec = 60;
-        UMask = "0077";
-      };
-      Install.WantedBy = [ "default.target" ];
     };
   };
 }

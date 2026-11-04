@@ -2,13 +2,8 @@
   lib,
   rustPlatform,
   pkg-config,
-  cmake,
   python3,
-  shaderc,
-  vulkan-headers,
   vulkan-loader,
-  spirv-headers,
-  openblas,
   alsa-lib,
   alsa-plugins,
   pipewire,
@@ -38,12 +33,10 @@
 let
   buildEnv = {
     OPENSSL_NO_VENDOR = "1";
-    BLA_VENDOR = "OpenBLAS";
   };
   runtimeEnv = {
     LD_LIBRARY_PATH = lib.makeLibraryPath [
       vulkan-loader
-      openblas
       alsa-lib
       wayland
       libxkbcommon
@@ -89,25 +82,18 @@ rustPlatform.buildRustPackage (finalAttrs: {
   cargoLock = {
     lockFile = ../Cargo.lock;
     outputHashes = {
-      "transcribe-rs-0.3.11" = "sha256-MJJiug3LfbKsuHcL2+LJk95+j5kk/MWzb5ihdBlHLmE=";
       "rune-0.0.1" = "sha256-V4z8nWvZjj3p4dZZOaFTengYIYqwOQu8aktCJvtNxwA=";
-      "transcribe-cpp-sys-0.4.1" = "sha256-AP8+t4baAzjOVJo76vodPoWv8lrFLR2tsXvsrbMFeSk=";
     };
   };
 
   nativeBuildInputs = [
     pkg-config
-    cmake
     python3
-    shaderc
     makeWrapper
     autoAddDriverRunpath
   ];
   buildInputs = [
-    vulkan-headers
     vulkan-loader
-    spirv-headers
-    openblas
     alsa-lib
     openssl
     libxkbcommon
@@ -128,7 +114,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
     util-linux
   ];
 
-  dontUseCmakeConfigure = true;
   env = buildEnv;
   # Desktop and installed-model tests are #[ignore]; run the remaining suite.
   doCheck = true;

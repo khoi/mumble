@@ -16,7 +16,6 @@ From a checkout, with Nix flakes enabled:
 
 ```sh
 nix build
-nix run . -- model install
 nix run . -- app
 ```
 
@@ -44,9 +43,9 @@ system's, so both use the same glibc:
 }
 ```
 
-Models are downloaded into your user data directory, not the Nix store.
-Run `hex model install` once, then launch Hex as your normal desktop user.
-Do not run Hex as root.
+Dictation is transcribed by Claude or Codex through the sign-in their own
+apps hold; there is no local model to download. Launch Hex as your normal
+desktop user. Do not run Hex as root.
 
 The Nix store is not Hex's user-local managed installation layout. In-app
 updates do not replace a Nix installation. Update the flake input and
@@ -130,9 +129,8 @@ journalctl --user -u hex.service
   programs.hex = {
     enable = true;
     shortcut = "control+option+space"; # dictation_hotkey
-    model = "parakeet_v3";
+    provider = "claude"; # claude or codex
     language = "de";
-    installModel = true;
     settings = {
       shortcut_mode = "toggle";
       sound_effect_volume = 0.4;
@@ -146,8 +144,8 @@ journalctl --user -u hex.service
 `settings` takes the dotted keys `hex settings list` shows, with JSON values:
 booleans, numbers, text such as shortcuts and choices, `null` to clear an
 optional setting, and attribute sets or lists for its `json` settings. The
-`shortcut`, `model`, and `language` options are shorthands for
-`dictation_hotkey`, `transcription.model`, and `transcription.language`.
+`shortcut`, `provider`, and `language` options are shorthands for
+`dictation_hotkey`, `transcription.provider`, and `transcription.language`.
 
 Every activation merges them into Hex with `hex settings apply`, after
 systemd units reload. Declared keys overwrite Hex's values; anything you
@@ -157,12 +155,6 @@ older values back from memory; with Hex stopped they go straight into
 `settings.json`. `settings.json` stays an ordinary writable file. An unknown
 key or invalid value applies nothing and prints a warning, without failing
 the switch.
-
-Declaring a model only selects it; activation never downloads. With
-`installModel = true`, the `hex-model` user service runs `hex model install`
-for the selected model at login, once the system's `network-online.target`
-is reached (or after two minutes), and retries a failed download. A switch
-does not wait for it.
 
 ## Wayland Shortcuts
 
@@ -200,8 +192,8 @@ still require a real graphical/audio session and the permissions described above
 
 `nix flake check` evaluates the module and shell-environment regressions and
 builds the package with its normal display-free Rust tests. Tests explicitly
-marked ignored because they require a desktop or installed model remain
-ignored; the Nix build does not download models or exercise live input.
+marked ignored because they require a desktop remain ignored; the Nix build
+does not exercise live input or the cloud services.
 
 The initial packaging design builds on [PR #29](https://github.com/anomalyco/hex/pull/29).
 Declarative settings follow
