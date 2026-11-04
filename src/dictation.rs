@@ -64,7 +64,7 @@ const VOICE_HISTORY_FRAMES: usize = 150;
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 pub const BOTH_SIDES_WINDOW: Duration = Duration::from_millis(80);
 const INITIAL_RECORDING_CAPACITY: Duration = Duration::from_secs(10);
-const PARAKEET_SAMPLE_RATE: u32 = 16_000;
+const SAMPLE_RATE_HZ: u32 = 16_000;
 /// A capture whose loudest 30 ms window stays below this level is treated as
 /// empty rather than transcribed, because models hallucinate closing phrases
 /// such as "thank you" on silence. Deliberately conservative: whispered speech
@@ -322,7 +322,7 @@ pub struct DictationClip {
 
 impl DictationClip {
     pub fn duration_ms(&self) -> u64 {
-        self.samples.len() as u64 * 1_000 / u64::from(PARAKEET_SAMPLE_RATE)
+        self.samples.len() as u64 * 1_000 / u64::from(SAMPLE_RATE_HZ)
     }
 
     /// Takes the clip's live stream; finish it with the complete clip.
@@ -417,7 +417,7 @@ impl DictationClip {
             level_dbfs,
             threshold_dbfs = SILENCE_THRESHOLD_DBFS,
             audio_ms = self.duration_ms(),
-            pre_press_ms = self.press_samples as u64 * 1_000 / u64::from(PARAKEET_SAMPLE_RATE),
+            pre_press_ms = self.press_samples as u64 * 1_000 / u64::from(SAMPLE_RATE_HZ),
             pre_press_dbfs = evidence.pre_press_dbfs,
             post_press_dbfs = evidence.post_press_dbfs,
             zero_fraction = evidence.zero_fraction,
@@ -460,7 +460,7 @@ fn loudest_window_dbfs(samples: &[f32]) -> f32 {
 /// Resamples a whole clip to the 16 kHz the cloud service takes, reusing the
 /// capture's resampler. Only the Windows CLI's offline commands use it.
 #[cfg(target_os = "windows")]
-pub fn resample_for_parakeet(samples: &[f32], source_rate: u32) -> Vec<f32> {
+pub fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Vec<f32> {
     let mut recording = Recording::try_new(CaptureInstant::ZERO, source_rate)
         .expect("microphone sample rate must be resampleable");
     recording.push(samples);
@@ -532,11 +532,11 @@ impl Recording {
     }
 
     fn try_new(started_at: CaptureInstant, source_rate: u32) -> Result<Self, String> {
-        let resampler = (source_rate != PARAKEET_SAMPLE_RATE)
+        let resampler = (source_rate != SAMPLE_RATE_HZ)
             .then(|| {
                 Fft::new_custom(
                     source_rate as usize,
-                    PARAKEET_SAMPLE_RATE as usize,
+                    SAMPLE_RATE_HZ as usize,
                     Self::CHUNK_SIZE,
                     1,
                     1,
@@ -549,10 +549,7 @@ impl Recording {
         Ok(Self {
             started_at,
             intentional: false,
-            samples: Vec::with_capacity(samples_for(
-                INITIAL_RECORDING_CAPACITY,
-                PARAKEET_SAMPLE_RATE,
-            )),
+            samples: Vec::with_capacity(samples_for(INITIAL_RECORDING_CAPACITY, SAMPLE_RATE_HZ)),
             source_samples: 0,
             source_rate,
             recorded_through: None,
@@ -618,14 +615,13 @@ impl Recording {
     /// The 20 ms clip frame `at` falls in.
     fn frame_at(&self, at: CaptureInstant) -> usize {
         let from_start = self.pre_press + at.duration_since(self.started_at);
-        samples_for(from_start, PARAKEET_SAMPLE_RATE) / VoiceTrack::FRAME
+        samples_for(from_start, SAMPLE_RATE_HZ) / VoiceTrack::FRAME
     }
 
     /// How far past `ended_at` clip frame `frame` begins.
     fn after(&self, ended_at: CaptureInstant, frame: usize) -> Duration {
-        let offset = Duration::from_secs_f64(
-            (frame * VoiceTrack::FRAME) as f64 / f64::from(PARAKEET_SAMPLE_RATE),
-        );
+        let offset =
+            Duration::from_secs_f64((frame * VoiceTrack::FRAME) as f64 / f64::from(SAMPLE_RATE_HZ));
         offset.saturating_sub(self.pre_press + ended_at.duration_since(self.started_at))
     }
 
@@ -653,7 +649,7 @@ impl Recording {
         }
         if let Some(resampler) = &mut self.resampler {
             let expected_samples =
-                self.source_samples * PARAKEET_SAMPLE_RATE as usize / self.source_rate as usize;
+                self.source_samples * SAMPLE_RATE_HZ as usize / self.source_rate as usize;
             if !self.input_buffer.is_empty() {
                 self.samples
                     .extend(resample_chunk(resampler, &self.input_buffer, true));
@@ -1078,8 +1074,8 @@ impl DictationCapture {
         let capture = recording.capture.take();
         let samples = recording.finish(Some(ended_at + tail));
         Finish::Transcribe(DictationClip {
-            tail_samples: samples_for(kept_tail, PARAKEET_SAMPLE_RATE).min(samples.len()),
-            press_samples: samples_for(pre_press, PARAKEET_SAMPLE_RATE).min(samples.len()),
+            tail_samples: samples_for(kept_tail, SAMPLE_RATE_HZ).min(samples.len()),
+            press_samples: samples_for(pre_press, SAMPLE_RATE_HZ).min(samples.len()),
             timeline,
             source: None,
             samples,
@@ -1558,7 +1554,7 @@ mod tests {
             let mut recording = Recording::new(capture_time(), sample_rate);
             recording.push(&vec![0.5; input_len]);
             let samples = recording.finish(None);
-            let expected = input_len * PARAKEET_SAMPLE_RATE as usize / sample_rate as usize;
+            let expected = input_len * SAMPLE_RATE_HZ as usize / sample_rate as usize;
 
             assert_eq!(samples.len(), expected);
             assert!(samples.last().is_some_and(|sample| *sample > 0.25));

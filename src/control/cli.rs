@@ -571,7 +571,7 @@ fn restart_older_hex() -> ControlReply {
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    ControlReply::done("Restarted Hex; it isn't answering yet (it may be loading its model)")
+    ControlReply::done("Restarted Hex; it isn't answering yet (it may still be starting up)")
 }
 
 #[cfg(target_os = "macos")]
@@ -665,7 +665,7 @@ fn start_reply() -> ControlReply {
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    ControlReply::done("Started Hex; it isn't answering yet (it may be loading its model)")
+    ControlReply::done("Started Hex; it isn't answering yet (it may still be starting up)")
 }
 
 /// After a restart's quit on Linux and Windows: waits for the old Hex to

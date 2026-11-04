@@ -780,7 +780,7 @@ pub type ProcessingObservation = crate::desktop::events::DictationProcessing;
 
 impl Processed {
     /// `text` as heard, with no step run (Dictate without processing on the
-    /// Linux and Windows listeners; macOS skips processing in `parakeet`).
+    /// Linux and Windows listeners; macOS skips processing in `dictation_worker`).
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn unchanged(text: &str) -> Self {
         Self {

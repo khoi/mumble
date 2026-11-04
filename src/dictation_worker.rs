@@ -19,7 +19,7 @@ use crate::transcription::engine::{PendingTranscript, TranscriptionEngine};
 const MAX_PENDING_OUTPUTS: usize = 16;
 
 pub enum WorkerEvent {
-    ModelFailed(String),
+    TranscriptionFailed(String),
     Completed {
         job_id: DictationJobId,
         target: TranscriptionTarget,
@@ -240,7 +240,7 @@ impl DictationWorker {
         let engine = match TranscriptionEngine::start() {
             Ok(engine) => Some(Arc::new(engine)),
             Err(error) => {
-                let _ = event_sender.send(WorkerEvent::ModelFailed(error.to_string()));
+                let _ = event_sender.send(WorkerEvent::TranscriptionFailed(error.to_string()));
                 None
             }
         };
@@ -450,7 +450,7 @@ fn run_output_worker(
                 WorkerEvent::Pasted { .. } => {
                     state.pending_pastes = state.pending_pastes.saturating_sub(1);
                 }
-                WorkerEvent::ModelFailed(_) | WorkerEvent::Stage { .. } => {}
+                WorkerEvent::TranscriptionFailed(_) | WorkerEvent::Stage { .. } => {}
             }
             drop(state);
             if events.send(event).is_err() {

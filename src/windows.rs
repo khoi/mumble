@@ -270,7 +270,7 @@ fn capture(
     emit_state(&events, VoiceState::Transcribing, &device_name)?;
     events.dictation(DictationPhase::Transcribing, "")?;
     let started = Instant::now();
-    let samples = crate::dictation::resample_for_parakeet(&samples, sample_rate);
+    let samples = crate::dictation::resample_to_16khz(&samples, sample_rate);
     let text = match engine.finish(None, samples).and_then(|pending| {
         pending
             .wait()

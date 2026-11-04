@@ -1023,7 +1023,7 @@ impl LinuxDesktopHost {
     }
 
     /// Where `hex` shortcut commands go: the listener, once it reports its
-    /// session (a listener still loading its model would replay them late).
+    /// session (a listener still starting up would replay them late).
     fn shortcut_route(&self) -> Option<ShortcutRoute> {
         self.listener
             .as_ref()
@@ -1376,7 +1376,7 @@ mod tests {
             commands,
             updates: mpsc::channel().0,
         });
-        // A listener still loading its model would replay the command late.
+        // A listener still starting up would replay the command late.
         assert!(host.shortcut_route().is_none());
         host.listener.as_mut().unwrap().startup = ListenerStartup::Observed;
         let route = host.shortcut_route().unwrap();

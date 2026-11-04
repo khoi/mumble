@@ -468,7 +468,7 @@ impl WindowsDesktopHost {
     }
 
     /// Where `hex` dictation commands go: the running listener, once its
-    /// session started (a listener still loading its model would replay
+    /// session started (a listener still starting up would replay
     /// them late).
     pub(crate) fn listener_commands(
         &self,

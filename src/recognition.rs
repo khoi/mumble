@@ -19,10 +19,10 @@ use crate::dictation::service::{
     lease_expired, level_for, remember_completion,
 };
 use crate::dictation::{DictationClip, Finish, POST_RELEASE_TAIL};
-use crate::feedback::{self, Tone};
-use crate::parakeet::{
+use crate::dictation_worker::{
     DictationJobId, DictationJobStage, DictationWorker, TranscriptionTarget, WorkerEvent,
 };
+use crate::feedback::{self, Tone};
 use crate::suppression::{DictationHotkey, DiscardCause, HotkeyAction, InputEvent, InputMonitor};
 
 enum FinishResult {
@@ -349,7 +349,7 @@ pub fn listen(
     let mut programmatic = None::<ProgrammaticDictation>;
     let mut programmatic_lost = None::<LostProgrammaticDictation>;
     let mut programmatic_results =
-        BTreeMap::<crate::parakeet::DictationJobId, FinishingProgrammaticDictation>::new();
+        BTreeMap::<crate::dictation_worker::DictationJobId, FinishingProgrammaticDictation>::new();
     let mut programmatic_completions = VecDeque::<Completion>::new();
 
     events.emit(&VoiceEvent::SessionStarted {
@@ -1682,7 +1682,7 @@ fn handle_dictation_event(
             }
         }
         WorkerEvent::Cancelled { .. } => {}
-        WorkerEvent::ModelFailed(error) => {
+        WorkerEvent::TranscriptionFailed(error) => {
             tracing::error!(%error, "dictation failed");
             feedback::play(Tone::Error);
             events.dictation(DictationPhase::Failed(error), "")?;

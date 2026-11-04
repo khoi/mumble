@@ -10,8 +10,8 @@ use serde::Deserialize;
 use tungstenite::Message;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::HeaderValue;
-use tungstenite::protocol::frame::coding::CloseCode;
 use tungstenite::protocol::CloseFrame;
+use tungstenite::protocol::frame::coding::CloseCode;
 
 use super::CloudError;
 use super::socket::{self, Event};
@@ -180,7 +180,11 @@ impl Transcript {
                 let text = frame.data.unwrap_or_default();
                 let changed = text != self.pending;
                 self.pending = text;
-                Ok(if changed { Update::Changed } else { Update::Nothing })
+                Ok(if changed {
+                    Update::Changed
+                } else {
+                    Update::Nothing
+                })
             }
             "TranscriptEndpoint" if !self.pending.is_empty() => {
                 self.committed.push(std::mem::take(&mut self.pending));
@@ -199,7 +203,12 @@ impl Transcript {
 
     /// Every committed segment and the one in progress.
     fn all(&self) -> String {
-        joined(self.committed.iter().chain([&self.pending]).map(String::as_str))
+        joined(
+            self.committed
+                .iter()
+                .chain([&self.pending])
+                .map(String::as_str),
+        )
     }
 
     /// The text once the service closed the socket first with `code`.
@@ -443,10 +452,31 @@ mod tests {
             Update::Changed => "changed",
             Update::Nothing => "nothing",
         };
-        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptText","data":"so the"}"#), "changed");
-        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptText","data":"so the"}"#), "nothing");
-        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptEndpoint"}"#), "endpoint");
-        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptText","data":"plan is"}"#), "changed");
+        assert_eq!(
+            kind(
+                &mut transcript,
+                r#"{"type":"TranscriptText","data":"so the"}"#
+            ),
+            "changed"
+        );
+        assert_eq!(
+            kind(
+                &mut transcript,
+                r#"{"type":"TranscriptText","data":"so the"}"#
+            ),
+            "nothing"
+        );
+        assert_eq!(
+            kind(&mut transcript, r#"{"type":"TranscriptEndpoint"}"#),
+            "endpoint"
+        );
+        assert_eq!(
+            kind(
+                &mut transcript,
+                r#"{"type":"TranscriptText","data":"plan is"}"#
+            ),
+            "changed"
+        );
         assert_eq!(transcript.committed(), "so the");
         assert_eq!(transcript.pending, "plan is");
         assert_eq!(kind(&mut transcript, r#"{"type":"Metadata"}"#), "nothing");

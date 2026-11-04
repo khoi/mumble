@@ -16,6 +16,8 @@ mod desktop;
 mod dev_build;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 mod dictation;
+#[cfg(target_os = "macos")]
+mod dictation_worker;
 mod durable;
 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
 mod feedback;
@@ -31,8 +33,6 @@ mod macos_rune;
 #[cfg(target_os = "macos")]
 mod microphone_activity;
 mod net;
-#[cfg(target_os = "macos")]
-mod parakeet;
 #[cfg(target_os = "macos")]
 mod paste;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
