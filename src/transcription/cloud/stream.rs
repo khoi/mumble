@@ -75,11 +75,10 @@ impl Audio {
                 }
             }
         };
-        let _ = self
-            .queued
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
-                Some(queued.saturating_sub(taken.audio.len()))
-            });
+        // Only `feed` adds to `queued`, so it never drops below what this
+        // take removes; clamp anyway so a race can't wrap it.
+        let taken_len = taken.audio.len().min(self.queued.load(Ordering::Acquire));
+        self.queued.fetch_sub(taken_len, Ordering::AcqRel);
         result.map(|()| taken)
     }
 }
