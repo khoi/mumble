@@ -68,10 +68,11 @@ pub(super) fn stream(
     socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
     let mut keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
     let mut transcript = Transcript::default();
-    // `Some(last_frame)` once CloseStream has been sent.
-    let mut ending: Option<Instant> = None;
+    // When CloseStream was sent, and when the last frame arrived after it.
+    let mut closed_at: Option<Instant> = None;
+    let mut last_frame = Instant::now();
     loop {
-        if ending.is_none() {
+        if closed_at.is_none() {
             let taken = audio.take()?;
             let pcm: Vec<u8> = super::pcm16(&taken.audio)
                 .flat_map(i16::to_le_bytes)
@@ -81,46 +82,43 @@ pub(super) fn stream(
             }
             if taken.ended {
                 socket::send(&mut socket, Message::text(CLOSE_STREAM))?;
-                let cap = Instant::now() + FINISH_CAP;
-                socket::limit(
-                    &mut socket,
-                    Some(deadline.map_or(cap, |deadline| deadline.min(cap))),
-                );
-                ending = Some(Instant::now());
+                // The engine's budget is the only hard transport deadline;
+                // the finalize caps below resolve with the text instead.
+                socket::limit(&mut socket, deadline);
+                let now = Instant::now();
+                closed_at = Some(now);
+                last_frame = now;
             }
         }
         match socket::next(&mut socket)? {
             Event::Text(frame) => {
-                let update = transcript.frame(&frame)?;
-                if matches!(update, Update::Changed | Update::Endpoint) {
+                if transcript.frame(&frame)? {
                     publish(partials, transcript.committed(), transcript.pending.clone());
                 }
-                if let Some(last_frame) = &mut ending {
-                    *last_frame = Instant::now();
-                    // Resolve at the first end of speech after CloseStream,
-                    // as Claude Code does, and close the socket ourselves.
-                    if matches!(update, Update::Endpoint) {
-                        return Ok(finish(&mut socket, &transcript));
-                    }
+                if closed_at.is_some() {
+                    last_frame = Instant::now();
                 }
             }
-            Event::Closed(code) if ending.is_some() => return transcript.closed(code),
+            Event::Closed(code) if closed_at.is_some() => return transcript.closed(code),
             Event::Closed(_) => {
                 return Err(CloudError::Failed(
                     "Claude closed the stream before the dictation ended".into(),
                 ));
             }
-            Event::Idle => match ending {
-                Some(last_frame) if last_frame.elapsed() >= FINISH_QUIET => {
-                    return Ok(finish(&mut socket, &transcript));
-                }
-                Some(_) => {}
-                None if Instant::now() >= keep_alive => {
-                    socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
-                    keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
-                }
-                None => {}
-            },
+            Event::Idle if closed_at.is_none() && Instant::now() >= keep_alive => {
+                socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
+                keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
+            }
+            Event::Idle => {}
+        }
+        // After CloseStream, every sentence sends its own endpoint, so wait
+        // for the service to go quiet (or the safety cap) and return all the
+        // text, then close the socket ourselves (code 1000) as Claude Code
+        // does. A read must never time out and discard accumulated text.
+        if let Some(closed_at) = closed_at
+            && (last_frame.elapsed() >= FINISH_QUIET || closed_at.elapsed() >= FINISH_CAP)
+        {
+            return Ok(finish(&mut socket, &transcript));
         }
     }
 }
@@ -146,26 +144,18 @@ fn spoken_language(language: &str) -> Result<&str, CloudError> {
 }
 
 /// The text so far: `TranscriptText` replaces the segment in progress and
-/// `TranscriptEndpoint` commits it. Claude Code stops at the first endpoint
-/// after CloseStream, which cuts a dictation short, so this waits for the
-/// service to close the socket.
+/// `TranscriptEndpoint` commits it. A clip with several sentences sends one
+/// endpoint each, so the finalize waits for the service to go quiet rather
+/// than stopping at the first endpoint (which would drop later sentences).
 #[derive(Default)]
 struct Transcript {
     committed: Vec<String>,
     pending: String,
 }
 
-/// What one frame did to the transcript.
-enum Update {
-    /// A segment was committed (`TranscriptEndpoint`).
-    Endpoint,
-    /// The segment in progress changed (`TranscriptText`).
-    Changed,
-    Nothing,
-}
-
 impl Transcript {
-    fn frame(&mut self, data: &str) -> Result<Update, CloudError> {
+    /// Takes one frame; true when the shown text changed.
+    fn frame(&mut self, data: &str) -> Result<bool, CloudError> {
         #[derive(Deserialize)]
         struct Frame {
             #[serde(rename = "type")]
@@ -173,27 +163,22 @@ impl Transcript {
             data: Option<String>,
         }
         let Ok(frame) = serde_json::from_str::<Frame>(data) else {
-            return Ok(Update::Nothing);
+            return Ok(false);
         };
         match frame.kind.as_str() {
             "TranscriptText" => {
-                let text = frame.data.unwrap_or_default();
-                let changed = text != self.pending;
-                self.pending = text;
-                Ok(if changed {
-                    Update::Changed
-                } else {
-                    Update::Nothing
-                })
+                let changed = frame.data.as_deref() != Some(self.pending.as_str());
+                self.pending = frame.data.unwrap_or_default();
+                Ok(changed)
             }
             "TranscriptEndpoint" if !self.pending.is_empty() => {
                 self.committed.push(std::mem::take(&mut self.pending));
-                Ok(Update::Endpoint)
+                Ok(true)
             }
             "TranscriptError" | "error" => Err(CloudError::Failed(
                 "Claude reported a transcription error".into(),
             )),
-            _ => Ok(Update::Nothing),
+            _ => Ok(false),
         }
     }
 
@@ -447,39 +432,39 @@ mod tests {
     #[test]
     fn live_text_shows_committed_words_then_the_segment_in_progress() {
         let mut transcript = Transcript::default();
-        let kind = |t: &mut Transcript, f: &str| match t.frame(f).unwrap() {
-            Update::Endpoint => "endpoint",
-            Update::Changed => "changed",
-            Update::Nothing => "nothing",
-        };
-        assert_eq!(
-            kind(
-                &mut transcript,
-                r#"{"type":"TranscriptText","data":"so the"}"#
-            ),
-            "changed"
-        );
-        assert_eq!(
-            kind(
-                &mut transcript,
-                r#"{"type":"TranscriptText","data":"so the"}"#
-            ),
-            "nothing"
-        );
-        assert_eq!(
-            kind(&mut transcript, r#"{"type":"TranscriptEndpoint"}"#),
-            "endpoint"
-        );
-        assert_eq!(
-            kind(
-                &mut transcript,
-                r#"{"type":"TranscriptText","data":"plan is"}"#
-            ),
-            "changed"
-        );
+        let changed = |t: &mut Transcript, f: &str| t.frame(f).unwrap();
+        assert!(changed(
+            &mut transcript,
+            r#"{"type":"TranscriptText","data":"so the"}"#
+        ));
+        assert!(!changed(
+            &mut transcript,
+            r#"{"type":"TranscriptText","data":"so the"}"#
+        ));
+        assert!(changed(&mut transcript, r#"{"type":"TranscriptEndpoint"}"#));
+        assert!(changed(
+            &mut transcript,
+            r#"{"type":"TranscriptText","data":"plan is"}"#
+        ));
         assert_eq!(transcript.committed(), "so the");
         assert_eq!(transcript.pending, "plan is");
-        assert_eq!(kind(&mut transcript, r#"{"type":"Metadata"}"#), "nothing");
+        assert!(!changed(&mut transcript, r#"{"type":"Metadata"}"#));
+    }
+
+    #[test]
+    fn several_sentences_after_closestream_all_commit() {
+        // A whole clip sends every sentence's endpoint after CloseStream;
+        // the finalize must keep them all, not stop at the first.
+        let mut transcript = Transcript::default();
+        for frame in [
+            r#"{"type":"TranscriptText","data":"First sentence."}"#,
+            r#"{"type":"TranscriptEndpoint"}"#,
+            r#"{"type":"TranscriptText","data":"Second sentence."}"#,
+            r#"{"type":"TranscriptEndpoint"}"#,
+        ] {
+            transcript.frame(frame).unwrap();
+        }
+        assert_eq!(transcript.all(), "First sentence. Second sentence.");
     }
 
     #[test]
