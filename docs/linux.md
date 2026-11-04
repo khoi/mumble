@@ -64,7 +64,7 @@ background and waits until Hex answers, and `hex stop` is the same as
 `hex quit`; older desktop and autostart entries keep working after an update
 replaces only the executable. `hex quit` and `hex restart` refuse while a
 dictation records or transcribes unless `--force`. Linux runs the same
-control commands as macOS ([docs/cli.md](cli.md)): `settings`, `model`,
+control commands as macOS ([docs/cli.md](cli.md)): `settings`,
 `window`, `vocabulary`, `history clear`, `check-for-updates`, `onboarding
 reset`, `launch-at-login` (the XDG autostart entry), `logs`, `commands
 init|check`, and `history`.
@@ -151,7 +151,8 @@ curl -fsSL https://anoma.ly/hex/files/install-linux.sh | sh
 
 If a runtime library is missing, the installer names the packages to install
 (with Arch names). Then open Hex from your application launcher, or run
-`~/.local/bin/hex`; its first run downloads a speech model.
+`~/.local/bin/hex`. Hex transcribes with the chosen cloud service (Claude or
+Codex), so sign in to that app for dictation to work.
 
 To install the dependencies up front, or to inspect the installer before
 running it:
@@ -164,7 +165,6 @@ curl --proto '=https' --tlsv1.2 -fsSLO \
   https://anoma.ly/hex/files/install-linux.sh
 less install-linux.sh
 sh install-linux.sh
-~/.local/bin/hex model install
 ~/.local/bin/hex
 ```
 
@@ -204,8 +204,8 @@ commands bound in your desktop (see [Shortcuts](#shortcuts)). Don't grant input
 access; install the new build instead.
 
 The new build is a separate install in `~/.local/share/hex` and imports
-nothing from 2.3.1's `~/.local/share/voice-control`, so set up the model and
-settings again. The installer refuses to replace 2.3.1's files, so remove them
+nothing from 2.3.1's `~/.local/share/voice-control`, so set up your settings
+again. The installer refuses to replace 2.3.1's files, so remove them
 first (the paths below assume the default XDG directories):
 
 ```sh
@@ -215,7 +215,6 @@ rm -f ~/.config/systemd/user/hex.service ~/.local/bin/hex \
 systemctl --user daemon-reload
 rm -rf ~/.local/share/voice-control   # optional: 2.3.1's settings, logs, and models
 curl -fsSL https://anoma.ly/hex/files/install-linux.sh | sh
-~/.local/bin/hex model install
 ~/.local/bin/hex
 ```
 
@@ -274,7 +273,6 @@ Build and install Hex as your desktop user:
 git clone https://github.com/anomalyco/hex.git
 cd hex
 ./scripts/install-linux.sh
-~/.local/bin/hex model install
 ~/.local/bin/hex
 ```
 

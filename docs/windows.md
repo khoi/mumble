@@ -44,7 +44,8 @@ updating itself from the Dev channel; afterwards, the stable release.
 [anoma.ly/hex](https://anoma.ly/hex/) picks the right one. The
 installer needs no administrator rights: it installs for the current user,
 adds Hex to the Start menu and to **Settings › Apps** for uninstalling, and
-opens Hex, whose first run downloads a speech model. Releases built once
+opens Hex. Hex transcribes with the chosen cloud service (Claude or Codex), so
+sign in to that app for dictation to work. Releases built once
 Anomaly's Azure Artifact Signing is configured are Authenticode-signed
 ([windows-signing.md](windows-signing.md)). Until then, and while a new
 publisher builds SmartScreen reputation, SmartScreen may say it protected your
@@ -120,31 +121,23 @@ dependencies, and runs `cargo check --all-targets`.
 
 ## Smoke Test
 
-List WASAPI inputs and the compute backends visible to `transcribe.cpp`:
+List the WASAPI input devices:
 
 ```powershell
 cargo run -- devices
-cargo run -- model devices
 ```
 
-Install the selected model (with Hex stopped, `model install` downloads in
-this process), load it, and transcribe a WAV file:
+`record` captures one dictation and transcribes it with the cloud service your
+settings choose, optionally copying the transcript to the clipboard. Sign in to
+Claude Code or Codex first:
 
 ```powershell
-cargo run -- model install
-cargo run -- model check
-cargo run -- model transcribe .\sample.wav
+cargo run -- record --copy
 ```
 
-For Polish, name the multilingual Parakeet model:
-
-```powershell
-cargo run -- model install parakeet_v3 --language pl
-cargo run -- model check parakeet_v3 --language pl
-cargo run -- record --model parakeet_v3 --language pl --copy
-```
-
-Open the desktop application after the model is installed:
+The provider (`transcription.provider`, `claude` or `codex`) and language
+(`transcription.language`) come from your saved settings; set them in the app's
+General pane. Then open the desktop application:
 
 ```powershell
 cargo run -- app
@@ -155,19 +148,19 @@ app and **Disabled** when it does nothing; its button and the tray's
 **Enable / Disable Hex** switch between them. Hex enables itself on launch by
 default (**Enable on launch**). The microphone records only while you dictate.
 Changing the
-transcription model, microphone, dictation shortcut, double-tap behavior, or
-Paste Last setting automatically restarts the listener; you do not need to
-stop it first. Text replacements and feedback volume apply without a model
-reload. Mode rules, OpenCode profiles, and ordered transformations are
+transcription provider or language, microphone, dictation shortcut, double-tap
+behavior, or Paste Last setting automatically restarts the listener; you do not
+need to stop it first. Text replacements and feedback volume apply without
+restarting the listener. Mode rules, OpenCode profiles, and ordered transformations are
 snapshotted by the output worker and apply to the next completed dictation
 without restarting capture. The command-line listener uses the settings saved
 by the app:
 
 ```powershell
-cargo run -- listen --model parakeet_v3 --language pl
+cargo run -- listen
 ```
 
-`record` prewarms the selected model and opens the microphone before prompting.
+`record` opens the microphone before prompting.
 Press Enter once to start, then again to stop. Captures shorter than 300 ms are
 discarded. `--device` accepts a case-insensitive fragment from `devices`.
 
@@ -185,7 +178,7 @@ by default.
 The `hex` control commands ([docs/cli.md](cli.md)) drive the running tray app
 as they do on macOS: `status`, `start`, `quit`, `restart`, `dictation
 start|stop|cancel|toggle` (with `stop --print`), `paste-last`, `settings`,
-`model`, `window`, `vocabulary`, `history clear`, `check-for-updates`,
+`window`, `vocabulary`, `history clear`, `check-for-updates`,
 `launch-at-login` (the Run key), `onboarding reset`, `logs`, `commands
 init|check`, and `history`. They reach it through its local API (`local-api.json` in
 `%APPDATA%\hex` and the bearer-authenticated `POST /control`). Dictation commands go

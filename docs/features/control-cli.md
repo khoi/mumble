@@ -4,7 +4,7 @@
 Agent or terminal                                  // control.cli; every OS
 ├── One tree and protocol over the local API's POST /control on every OS;
 │   OS can't do it -> unsupported at runtime, exit 1
-├── hex status [--json] -> Listener, capture, model, features,
+├── hex status [--json] -> Listener, capture, transcription, features,
 │   permissions, window, update, version, pid, memory
 │   └── Hex not running -> exit 3, "Hex is not running; run `hex start`"
 ├── hex start -> Already running: nothing | else open Hex.app (Linux and
@@ -42,15 +42,10 @@ Agent or terminal                                  // control.cli; every OS
 │   ├── Shortcut conflict -> refused, as the window's recorder would
 │   └── apply <file|-> -> a JSON object of key: value, all or none
 │       ├── Undeclared settings keep their values; dependent keys in any order
-│       ├── transcription.model / .language -> selected, never downloaded
+│       ├── transcription.provider / .language -> the cloud service and language
 │       ├── Hex running -> SettingsApply: saved and adopted live, like set
 │       └── Hex stopped -> written to settings.json under the service lock
 │           (Linux); a Hex holding it is waited for (≤ 35 s) instead
-├── hex model list | use <id> | install [id] | cancel
-│   ├── use -> installed models only; never downloads or repairs; keeps the
-│   │   model's remembered language and hints (--language overrides)
-│   └── Linux/Windows: install with Hex stopped downloads here; status,
-│       devices, check, transcribe run here (macOS: unsupported)
 ├── hex window show [pane] | hide
 │   ├── settings -> the General pane (status window.pane stays "settings")
 │   └── story <story> [--variant V] [--play] -> a playground story, as a
@@ -90,14 +85,12 @@ dispatch in [main.rs](../../src/main.rs).
 
 Checks: `control::tests` round-trip every command and reply (including
 `a_printing_stop_answers_through_its_reply_channel`), refuse other
-protocol versions, and cover the quit rules (an unanswered listener refuses)
-and `model_selection` (remembered hints, wildcard-language validation); `control::settings::tests` include
+protocol versions, and cover the quit rules (an unanswered listener refuses); `control::settings::tests` include
 `every_persisted_setting_has_a_cli_key`, value parsing, shortcut conflicts,
 and zero volume; `control::cli::tests` pin
 exit codes, output, and `hex start`'s `open`
 arguments; `desktop::onboarding::tests::relaunch_forwards_only_the_hex_environment`
-pins restart's; `macos_rune::control::tests` check that `model use` prepares
-its exact selection installed-only;
+pins restart's;
 `dictation::audio::tests::marked_captures_are_intentional_without_a_hold`
 covers the immediate stream and `ReadyIntentional`; `recognition::tests`
 cover the stop replies and the paste-last refusal; `control::tests::cancel_parses_and_takes_no_flags`
@@ -113,7 +106,7 @@ the settings-to-capability table.
 
 Observed (Oct 30, apollo, an isolated data root and `hex service` without a
 display): status, settings get/set (and refusing `show_dock_icon`), vocabulary
-add/list/remove, model list/use/status, history clear, window hide,
+add/list/remove, history clear, window hide,
 check-for-updates, commands check, quit, start, and restart all answered as
 documented. Windows compiled with `cargo xwin clippy` (x64 only; the ARM64
 cross-build fails in rquickjs-sys's build script, unrelated); it has not run

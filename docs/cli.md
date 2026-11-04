@@ -1,7 +1,7 @@
 # `hex` control CLI
 
 The control commands drive the one running Hex: start or stop a dictation,
-change any setting, switch models, open the window, quit, or read its
+change any setting, open the window, quit, or read its
 status. They are meant for agents and scripts as much as people, so every
 command takes `--json`, is idempotent, and exits with a stable code.
 
@@ -15,8 +15,7 @@ commands through each OS's thin adapter (`linux/app`, `windows/rune`); macOS's
 host is `macos_rune::control`. A command the running Hex can't do on its OS
 answers `unsupported` at runtime (exit 1) instead of being missing from the
 CLI; `hex status --json` lists the OS's `capabilities`. Today that is
-playground stories (`window story`) outside macOS and the local `model`
-tools on macOS.
+playground stories (`window story`) outside macOS.
 
 The read-only `hex history` command reads files rather than the running Hex;
 see `docs/transcript-cli.md`.
@@ -37,16 +36,6 @@ hex
 │   ├── list                       every setting: key, value, kind, choices, writable, about
 │   ├── get <key|prefix>           one setting, or every key under a prefix (`labs`)
 │   └── set <key> <value>
-├── model
-│   ├── list                       every model, its languages and size, installed or not
-│   ├── use <id> [--language L]    installed models only; never downloads or repairs
-│   ├── install [id] [--language L] download, then switch to it (default: the selected model)
-│   ├── cancel                     stop a download or load in progress
-│   ├── import <path> [--name N]   Labs: check and copy in a GGUF; prints its custom-… id
-│   ├── rename <id> <name>         Labs: an import's picker name
-│   ├── repair <id>                Labs: rehash Hex's copy; ready again if it still matches
-│   ├── remove <id>                Labs: Hex's copy of an import (not the selected model)
-│   └── status|devices|check|transcribe <wav>  Linux and Windows, run in this process
 ├── commands
 │   ├── init                       create ~/.config/hex (local, no running Hex needed)
 │   └── check                      validate ~/.config/hex/hex.config.ts transformations
