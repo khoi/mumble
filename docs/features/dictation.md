@@ -1,8 +1,9 @@
 # Dictation
 
-Hold the configured shortcut, speak, and release. Hex transcribes locally and
-inserts the result at the current focus. New captures do not cancel accepted
-work. Only Toggle mode has a cancel: its cancel shortcut, Escape by default,
+Hold the configured shortcut, speak, and release. Hex transcribes the audio with
+the chosen cloud service (Claude or Codex) and inserts the result at the current
+focus; there is no local model, so a dictation the service can't transcribe
+fails with the reason. New captures do not cancel accepted work. Only Toggle mode has a cancel: its cancel shortcut, Escape by default,
 discards the recording (#786, #1022); every other intentional dictation
 finishes and pastes.
 
@@ -19,8 +20,9 @@ write fails, capture remains active with an error; retry or cancel it explicitly
 The GPUI regression that injected this failure went with GPUI; no Rune test
 injects a failed shortcut save yet.
 
-**Shortcut:** Option by default, after macOS permissions and the selected local
-model are ready. Commands and OpenCode are not required. General > Dictation >
+**Shortcut:** Option by default, after macOS permissions are ready; transcription
+also needs the chosen provider's app (Claude or Codex) signed in. Commands and
+OpenCode are not required. General > Dictation >
 Shortcut accepts modifier-only, modifier-plus-key, standalone Fn/Globe, and
 standalone function-key bindings. On Windows and Linux/X11 it also accepts mouse buttons, and on
 macOS with Labs › Mouse shortcuts on (off by default; issue 209; see labs.md),

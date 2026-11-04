@@ -27,7 +27,9 @@ Cloud keyterms                           // vocabulary.keyterms; transcription::
 ├── The transcriber (Claude) sends the list as keyterms with every dictation,
 │   stream and whole clip, read at the start of each one; it always applies,
 │   with no toggle
-├── First 64 terms (the service's cap), in list order; an empty list sends none
+├── Terms in list order up to 1,024 characters total (the service's cap);
+│   printable ASCII only, commas become spaces, deduplicated case-sensitively,
+│   with no term-count cap; an empty list sends none
 ├── Codex takes no keyterms; the list still shapes rewriting and search
 └── "Sounds like" spellings are not sent as keyterms; rewriting and search use them
 

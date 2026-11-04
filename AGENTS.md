@@ -129,8 +129,9 @@ substitute for source inspection or a second roadmap.
   through `security`, or `.credentials.json`; its `voice_stream` WebSocket) or
   Codex (its `auth.json`; ChatGPT's dictation WebSocket, a new session before
   each 300 s one ends). A dictation without a usable stream sends its whole clip
-  (Claude's or Codex's transcribe endpoint); a stream the service refuses sends
-  the whole clip too. Any other failure fails the dictation with its reason. The
+  (Claude's or Codex's transcribe endpoint); a stream the service refuses, or one
+  that heard past the clip (overfed), sends the whole clip too. Any other failure
+  fails the dictation with its reason. The
   provider (`CloudProvider`: Claude or Codex) and language come from the saved
   transcription selection; Claude also receives the vocabulary as keyterms. Hex
   never refreshes or writes either app's sign-in.
@@ -592,10 +593,11 @@ CoreAudio formats, AppleScript details, or event serialization.
   press finishes. A modifier pressed alone never ends a key-chord capture. Double-tap settings apply to Hold only.
 - Streaming dictation is speculative on every OS: a hotkey capture streams its
   16 kHz audio to the cloud service while it records, and the finish always
-  carries the complete clip. A stream the service refuses falls back to sending
-  the whole clip to the same service; any other failure (empty, overfed, late,
-  interrupted, or signed out) fails the dictation with its reason, with no local
-  fallback. Nothing pastes or reaches the focused app before the final text.
+  carries the complete clip. A stream the service refuses, or one that heard
+  past the clip (overfed), falls back to sending the whole clip to the same
+  service; any other failure (empty, late, interrupted, or signed out) fails the
+  dictation with its reason, with no local fallback. Nothing pastes or reaches
+  the focused app before the final text.
   With Labs › Live text on, the stream publishes its provisional text for Hex's
   own HUD only; it is never pasted, copied, or kept in History or Paste Last.
   Streams need no GPU. Dictation is never cut at pauses.
