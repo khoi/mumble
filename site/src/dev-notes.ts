@@ -83,7 +83,7 @@ export function renderDevNotes(notes: DevNotes, downloadPath: string, sinceVersi
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mumble dev builds</title>
 <meta name="description" content="What changed in each dev build of Mumble.">
-<link rel="icon" href="/mumble/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/mumble/favicon.png" type="image/png">
 <style>
 body { margin: 0; background: #070707; color: #e8e8e8; font: 15px/1.55 Inter, ui-sans-serif, system-ui, sans-serif; }
 main { max-width: 680px; margin: 0 auto; padding: 48px 20px 80px; }

@@ -1311,7 +1311,7 @@ mod tests {
         let clipboard = NSPasteboard::pasteboardWithUniqueName();
         let item = NSPasteboardItem::new();
         assert!(item.setData_forType(
-            &NSData::with_bytes(include_bytes!("../app/AppIcon.icon/Assets/Image.png")),
+            &NSData::with_bytes(include_bytes!("../app/AppIcon.icon/Assets/02-Screen.png")),
             &NSString::from_str("public.png")
         ));
         clipboard.clearContents();
