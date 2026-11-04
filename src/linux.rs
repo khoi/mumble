@@ -142,7 +142,6 @@ pub(crate) fn run(shutdown: &'static AtomicBool) -> Result<()> {
                     &settings,
                     crate::history::History::open_default(settings.history_retention).ok(),
                 ),
-                None,
                 Default::default(),
                 // Only shortcuts drive a foreground listener.
                 std::sync::mpsc::channel().1.into(),

@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
 
-# Local transcription models download lazily on first setup; no external
-# native speech runtime or Python environment is required.
+# Transcription is cloud-only (Claude or Codex through their own sign-ins), so
+# there is no speech model to download and no native speech runtime to install.
 exit 0

@@ -68,8 +68,6 @@ pub enum OnboardingTone {
     PanelEscape,
     /// A permission row ticking to `Allowed`.
     PermissionTick,
-    /// `"Almost ready"` appearing while finishing a slow model download.
-    AlmostReady,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -681,7 +679,6 @@ struct OnboardingSounds {
     hexagon: SamplesBuffer,
     panel_escape: SamplesBuffer,
     permission_tick: SamplesBuffer,
-    almost_ready: SamplesBuffer,
 }
 
 impl OnboardingSounds {
@@ -720,7 +717,6 @@ impl OnboardingSounds {
             hexagon: decode_wav(bundled_sound!("onboarding", "hexagon"))?,
             panel_escape: decode_wav(bundled_sound!("onboarding", "panel_escape"))?,
             permission_tick: decode_wav(bundled_sound!("onboarding", "permission_tick"))?,
-            almost_ready: decode_wav(bundled_sound!("onboarding", "almost_ready"))?,
         })
     }
 
@@ -749,7 +745,6 @@ impl OnboardingSounds {
             OnboardingTone::Hexagon => &self.hexagon,
             OnboardingTone::PanelEscape => &self.panel_escape,
             OnboardingTone::PermissionTick => &self.permission_tick,
-            OnboardingTone::AlmostReady => &self.almost_ready,
         })
     }
 }
@@ -1273,7 +1268,6 @@ mod tests {
             OnboardingTone::Hexagon,
             OnboardingTone::PanelEscape,
             OnboardingTone::PermissionTick,
-            OnboardingTone::AlmostReady,
         ] {
             let buf = sounds
                 .get(SoundSet::Signature, Tone::Onboarding(cue))

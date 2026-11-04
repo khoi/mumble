@@ -1,12 +1,12 @@
-//! Labs › Cloud transcription: a dictation transcribed by Claude or Codex
-//! through the sign-in their own apps already hold, streamed while it
-//! records (`stream`) or sent whole, before the engine touches its model,
-//! which transcribes the clip whenever the service can't answer.
+//! The transcriber: a dictation transcribed by Claude or Codex through the
+//! sign-in their own apps already hold, streamed while it records (`stream`)
+//! or sent whole on release. There is no local model, so a dictation the
+//! service can't transcribe fails with the reason.
 //!
 //! Hex never refreshes or writes either sign-in: Claude Code and Codex own
 //! their tokens, so an expired one reads as signed out until its app renews
-//! it. Nothing here runs unless the feature is on, read as each capture's
-//! stream opens and as each whole clip's run starts.
+//! it. The provider and language come from the saved transcription selection,
+//! read as each capture's stream opens and as each whole clip's run starts.
 
 mod claude;
 mod codex;
@@ -14,15 +14,14 @@ mod socket;
 mod stream;
 
 use stream::Fallback;
-#[cfg(test)]
-pub(crate) use stream::fake;
 pub(crate) use stream::{CloudAnswer, CloudStream};
 
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use transcribe_cpp::CancelToken;
+
+use crate::transcription::CancelToken;
 
 /// How often the engine looks at its job while the service works.
 const WAIT_POLL: Duration = Duration::from_millis(50);
@@ -89,16 +88,17 @@ impl CloudError {
     }
 }
 
-/// A finished dictation's text from Labs › Cloud transcription's service:
-/// its stream's answer, else the whole clip sent to it (while the feature is
-/// on), or `None` when the engine's model should transcribe the clip.
+/// A finished dictation's text: its stream's answer, else the whole clip
+/// sent to the service. The dictation fails with the reason when the service
+/// can't transcribe it; there is no local fallback.
 pub(crate) fn dictation(
     clip: &[f32],
     cancel: &CancelToken,
     streamed: Option<CloudAnswer>,
-) -> Option<String> {
+) -> Result<String, String> {
+    let provider = crate::app_settings::transcription_selection().1.provider;
     dictation_with(
-        crate::labs::cloud_transcription(),
+        provider,
         clip,
         cancel,
         streamed,
@@ -110,20 +110,19 @@ pub(crate) fn dictation(
 }
 
 fn dictation_with(
-    provider: Option<CloudProvider>,
+    provider: CloudProvider,
     clip: &[f32],
     cancel: &CancelToken,
     streamed: Option<CloudAnswer>,
     attempt: impl FnOnce(CloudProvider, Vec<f32>, Instant) -> Result<String, CloudError>
     + Send
     + 'static,
-) -> Option<String> {
+) -> Result<String, String> {
     match streamed.map(|answer| answer.wait(cancel)) {
-        Some(Ok(text)) => return Some(text),
-        Some(Err(Fallback::Model)) => return None,
+        Some(Ok(text)) => return Ok(text),
+        Some(Err(Fallback::Failed(reason))) => return Err(reason),
         Some(Err(Fallback::WholeClip)) | None => {}
     }
-    let provider = provider?;
     let started = Instant::now();
     let deadline = started + budget(clip.len());
     let clip = clip.to_vec();
@@ -136,16 +135,17 @@ fn dictation_with(
                 elapsed_ms,
                 "cloud transcription"
             );
-            Some(text)
+            Ok(text)
         }
         Err(error) => {
+            let reason = error.reason(provider);
             tracing::warn!(
                 provider = provider.name(),
                 elapsed_ms,
-                reason = %error.reason(provider),
-                "cloud transcription failed; transcribing on this computer"
+                %reason,
+                "cloud transcription failed"
             );
-            None
+            Err(reason)
         }
     }
 }
@@ -231,29 +231,11 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[test]
-    fn nothing_leaves_the_computer_while_the_feature_is_off() {
-        let called = Arc::new(Mutex::new(false));
-        let seen = called.clone();
-        let text = dictation_with(
-            None,
-            &[0.1; 4],
-            &CancelToken::new(),
-            None,
-            move |_, _, _| {
-                *seen.lock().unwrap() = true;
-                Ok("sent".into())
-            },
-        );
-        assert_eq!(text, None);
-        assert!(!*called.lock().unwrap());
-    }
-
-    #[test]
     fn the_chosen_service_hears_the_whole_clip_and_its_text_is_used() {
         let heard = Arc::new(Mutex::new(None));
         let seen = heard.clone();
         let text = dictation_with(
-            Some(CloudProvider::Codex),
+            CloudProvider::Codex,
             &[0.1, 0.2, 0.3],
             &CancelToken::new(),
             None,
@@ -262,7 +244,7 @@ mod tests {
                 Ok("hello there".into())
             },
         );
-        assert_eq!(text.as_deref(), Some("hello there"));
+        assert_eq!(text.as_deref(), Ok("hello there"));
         assert_eq!(
             heard.lock().unwrap().take(),
             Some((CloudProvider::Codex, vec![0.1, 0.2, 0.3]))
@@ -270,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_attempt_leaves_the_clip_to_the_model() {
+    fn a_failed_attempt_fails_the_dictation_with_its_reason() {
         for error in [
             CloudError::SignedOut,
             CloudError::Language("vi".into()),
@@ -279,14 +261,15 @@ mod tests {
             CloudError::NoSpeech,
             CloudError::Failed("Couldn't reach chatgpt.com".into()),
         ] {
+            let expected = error.reason(CloudProvider::Claude);
             let text = dictation_with(
-                Some(CloudProvider::Claude),
+                CloudProvider::Claude,
                 &[0.1; 4],
                 &CancelToken::new(),
                 None,
                 move |_, _, _| Err(error),
             );
-            assert_eq!(text, None);
+            assert_eq!(text, Err(expected));
         }
     }
 
@@ -296,7 +279,7 @@ mod tests {
         cancel.cancel();
         let started = Instant::now();
         let text = dictation_with(
-            Some(CloudProvider::Claude),
+            CloudProvider::Claude,
             &[0.1; 4],
             &cancel,
             None,
@@ -305,14 +288,14 @@ mod tests {
                 Ok("late".into())
             },
         );
-        assert_eq!(text, None);
+        assert!(text.is_err());
         assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
     fn a_streamed_answer_is_used_without_sending_the_clip() {
         let text = dictation_with(
-            Some(CloudProvider::Claude),
+            CloudProvider::Claude,
             &[0.1; 4],
             &CancelToken::new(),
             Some(stream::answered(
@@ -321,13 +304,13 @@ mod tests {
             )),
             |_, _, _| panic!("the clip must not be sent again"),
         );
-        assert_eq!(text.as_deref(), Some("streamed"));
+        assert_eq!(text.as_deref(), Ok("streamed"));
     }
 
     #[test]
-    fn a_stream_that_failed_leaves_the_clip_to_the_model() {
+    fn a_stream_that_failed_fails_the_dictation() {
         let text = dictation_with(
-            Some(CloudProvider::Claude),
+            CloudProvider::Claude,
             &[0.1; 4],
             &CancelToken::new(),
             Some(stream::answered(
@@ -336,7 +319,7 @@ mod tests {
             )),
             |_, _, _| panic!("a failed stream doesn't retry the service"),
         );
-        assert_eq!(text, None);
+        assert!(text.is_err());
     }
 
     #[test]
@@ -344,7 +327,7 @@ mod tests {
         let sent = Arc::new(Mutex::new(None));
         let seen = sent.clone();
         let text = dictation_with(
-            Some(CloudProvider::Codex),
+            CloudProvider::Codex,
             &[0.1, 0.2],
             &CancelToken::new(),
             Some(stream::answered(
@@ -356,7 +339,7 @@ mod tests {
                 Ok("whole".into())
             },
         );
-        assert_eq!(text.as_deref(), Some("whole"));
+        assert_eq!(text.as_deref(), Ok("whole"));
         assert_eq!(
             sent.lock().unwrap().take(),
             Some((CloudProvider::Codex, vec![0.1, 0.2]))

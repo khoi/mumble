@@ -89,12 +89,6 @@ pub enum ControlCli {
         #[command(subcommand)]
         command: SettingsCommand,
     },
-    /// List, switch, install, and import transcription models.
-    #[command(visible_alias = "models")]
-    Model {
-        #[command(subcommand)]
-        command: ModelCommand,
-    },
     /// Open the Hex window at a pane, or close it.
     Window {
         #[command(subcommand)]
@@ -192,88 +186,14 @@ pub enum SettingsCommand {
     /// Set several settings at once from a JSON object of `key: value`,
     /// all or none; other settings keep their values.
     ///
-    /// Values are JSON (`true`, `0.4`, `"option+space"`, `null` for none);
-    /// `transcription.model` and `transcription.language` select a model
-    /// without downloading it. With Hex stopped, writes settings.json
-    /// directly.
+    /// Values are JSON (`true`, `0.4`, `"option+space"`, `null` for none).
+    /// With Hex stopped, writes settings.json directly.
     Apply {
         /// A JSON file, or `-` for standard input.
         file: std::path::PathBuf,
         #[command(flatten)]
         output: Output,
     },
-}
-
-#[derive(Subcommand, Debug)]
-pub enum ModelCommand {
-    /// Every model with its languages, size, and whether it's installed.
-    List {
-        #[command(flatten)]
-        output: Output,
-    },
-    /// Switch to an installed model. Never downloads.
-    Use {
-        /// A model id from `hex model list`.
-        model: String,
-        /// A language the model supports (default: its best match for the
-        /// current language).
-        #[arg(long)]
-        language: Option<String>,
-        #[command(flatten)]
-        output: Output,
-    },
-    /// Download a model, then switch to it. Without a model, the selected
-    /// one. On Linux and Windows it downloads here when Hex isn't running.
-    Install {
-        model: Option<String>,
-        #[arg(long)]
-        language: Option<String>,
-        #[command(flatten)]
-        output: Output,
-    },
-    /// Stop a download or load in progress.
-    Cancel {
-        #[command(flatten)]
-        output: Output,
-    },
-    /// Whether a model (the selected one unless given) is installed and
-    /// checksum-verified. Runs here; Linux and Windows.
-    Status {
-        model: Option<String>,
-        #[arg(long)]
-        language: Option<String>,
-    },
-    /// The transcribe.cpp compute devices Hex can use. Linux and Windows.
-    Devices,
-    /// Load and prewarm an installed model here. Linux and Windows.
-    Check {
-        model: Option<String>,
-        #[arg(long)]
-        language: Option<String>,
-    },
-    /// Transcribe a WAV file with an installed model here. Linux and Windows.
-    Transcribe {
-        wav: std::path::PathBuf,
-        #[arg(long)]
-        model: Option<String>,
-        #[arg(long)]
-        language: Option<String>,
-    },
-    /// Copy a GGUF speech model into Hex after checking its header,
-    /// and print its id. The original is left as it is.
-    Import {
-        path: std::path::PathBuf,
-        /// The name the picker shows (default: the file's general.name).
-        #[arg(long)]
-        name: Option<String>,
-    },
-    /// Rename an imported or found model.
-    Rename { model: String, name: String },
-    /// Check Hex's copy of an import (or a found file) again; a copy whose contents
-    /// still match is ready again.
-    Repair { model: String },
-    /// Remove Hex's copy of an imported model, or forget a found one (its file stays).
-    Remove { model: String },
 }
 
 #[derive(Subcommand, Debug)]
@@ -398,49 +318,6 @@ pub fn run(command: ControlCli) -> u8 {
         }
         ControlCli::PasteLast { output } => send(ControlCommand::PasteLast, output),
         ControlCli::Settings { command } => settings(command),
-        ControlCli::Model { command } => match command {
-            ModelCommand::List { output } => send(ControlCommand::ModelList, output),
-            ModelCommand::Use {
-                model,
-                language,
-                output,
-            } => send(ControlCommand::ModelUse { model, language }, output),
-            ModelCommand::Install {
-                model,
-                language,
-                output,
-            } => install_model(model, language, output),
-            ModelCommand::Cancel { output } => send(ControlCommand::ModelCancel, output),
-            ModelCommand::Import { path, name } => report(import_model(&path, name.as_deref())),
-            ModelCommand::Rename { model, name } => report(imported(&model).and_then(|id| {
-                crate::transcription::custom_models::rename(id, &name)?;
-                println!("renamed\t{}", id.as_str());
-                Ok(())
-            })),
-            ModelCommand::Repair { model } => report(imported(&model).and_then(|id| {
-                crate::transcription::custom_models::repair(
-                    id,
-                    &std::sync::atomic::AtomicBool::new(false),
-                )?;
-                println!("ready\t{}", id.as_str());
-                Ok(())
-            })),
-            ModelCommand::Remove { model } => report(imported(&model).and_then(|id| {
-                let settings = crate::app_settings::AppSettings::load().unwrap_or_default();
-                if settings.transcription.model
-                    == crate::transcription::models::TranscriptionModelId::Custom(id)
-                {
-                    color_eyre::eyre::bail!(
-                        "{} is the selected model; choose another with `hex model use` first",
-                        id.as_str()
-                    );
-                }
-                crate::transcription::custom_models::remove(id)?;
-                println!("removed\t{}", id.as_str());
-                Ok(())
-            })),
-            command => offline_model(command),
-        },
         ControlCli::Window { command } => match command {
             WindowCommand::Show { pane, output } => {
                 send(ControlCommand::WindowShow { pane }, output)
@@ -507,126 +384,6 @@ pub fn run(command: ControlCli) -> u8 {
         ControlCli::Labs { command } => report(crate::labs::run(command.as_ref())),
         ControlCli::Experiments { .. } => report(crate::labs::run_retired_experiments()),
     }
-}
-
-/// `hex model install`: the running Hex downloads in the background;
-/// without one, Linux and Windows download here.
-fn install_model(model: Option<String>, language: Option<String>, output: Output) -> u8 {
-    let model = match model {
-        Some(model) => model,
-        None => match crate::app_settings::AppSettings::read() {
-            Ok(settings) => settings.transcription.model.as_str().to_owned(),
-            Err(error) => return fail(&format!("couldn't read settings: {error:#}")),
-        },
-    };
-    #[cfg(not(target_os = "macos"))]
-    if !running() {
-        return report(selection(Some(model), language).and_then(|selection| {
-            crate::transcription::local_transcriber::install(
-                &selection,
-                &std::sync::atomic::AtomicBool::new(false),
-            )
-        }));
-    }
-    send(ControlCommand::ModelInstall { model, language }, output)
-}
-
-/// `hex model import`: checks, copies, and records the file here, in this
-/// process; a running Hex lists it at once.
-fn import_model(path: &std::path::Path, name: Option<&str>) -> color_eyre::Result<()> {
-    use crate::transcription::custom_models;
-    let id = custom_models::import(path, name, &std::sync::atomic::AtomicBool::new(false))?;
-    let definition = custom_models::definition(id);
-    println!("imported\t{}\t{}", id.as_str(), definition.name);
-    Ok(())
-}
-
-/// The import or found model in use that `model` names.
-fn imported(model: &str) -> color_eyre::Result<crate::transcription::models::CustomModelId> {
-    use crate::transcription::custom_models;
-    crate::transcription::models::CustomModelId::parse(model)
-        .filter(|id| custom_models::is_registered(*id))
-        .ok_or_else(|| {
-            color_eyre::eyre::eyre!("no imported model is {model}; run `hex model list`")
-        })
-}
-
-/// The selection a local model command names: `model` with its remembered
-/// language unless `language` is given, or the selected model.
-#[cfg(not(target_os = "macos"))]
-fn selection(
-    model: Option<String>,
-    language: Option<String>,
-) -> color_eyre::Result<crate::transcription::models::TranscriptionSelection> {
-    let settings = crate::app_settings::AppSettings::read().unwrap_or_default();
-    let model = model.unwrap_or_else(|| settings.transcription.model.as_str().to_owned());
-    super::model_selection(&settings, &model, language.as_deref())
-        .map_err(|error| color_eyre::eyre::eyre!(error.message))
-}
-
-/// `hex model status|devices|check|transcribe`, run in this process.
-#[cfg(not(target_os = "macos"))]
-fn offline_model(command: ModelCommand) -> u8 {
-    use crate::transcription::models::{definition, is_installed, is_verified, model_path};
-    report((|| match command {
-        ModelCommand::Status { model, language } => {
-            let selection = selection(model, language)?;
-            let model = definition(selection.model);
-            let installed = is_installed(model, &selection.language);
-            println!(
-                "{}\t{}\t{}\t{}",
-                if installed { "installed" } else { "missing" },
-                if installed && is_verified(model) {
-                    "verified"
-                } else {
-                    "unverified"
-                },
-                model.name,
-                model_path(model)?.display()
-            );
-            Ok(())
-        }
-        ModelCommand::Devices => {
-            for device in crate::transcription::local_transcriber::devices()? {
-                println!("{device}");
-            }
-            Ok(())
-        }
-        ModelCommand::Check { model, language } => {
-            let transcriber = crate::transcription::local_transcriber::LocalTranscriber::load(
-                &selection(model, language)?,
-            )?;
-            println!("ready\t{}", transcriber.device_label());
-            Ok(())
-        }
-        ModelCommand::Transcribe {
-            wav,
-            model,
-            language,
-        } => {
-            println!(
-                "{}",
-                crate::transcription::local_transcriber::transcribe_wav_with_selection(
-                    &wav,
-                    &selection(model, language)?
-                )?
-            );
-            Ok(())
-        }
-        _ => unreachable!("Hex carries out the other model commands"),
-    })())
-}
-
-/// macOS runs models only inside the app.
-#[cfg(target_os = "macos")]
-fn offline_model(_: ModelCommand) -> u8 {
-    print(
-        ControlReply::error(
-            "unsupported",
-            "this `hex model` command is for Linux and Windows; use `hex model list`",
-        ),
-        Output::default(),
-    )
 }
 
 /// The exit code of a command that runs here rather than in Hex.

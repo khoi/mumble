@@ -1,15 +1,14 @@
-//! A dictation streamed to Labs › Cloud transcription's service while it is
-//! recorded: its own thread owns the connection and sends the audio as it
-//! arrives, so on release only the last words are left to transcribe.
+//! A dictation streamed to the service while it is recorded: its own thread
+//! owns the connection and sends the audio as it arrives, so on release only
+//! the last words are left to transcribe.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use transcribe_cpp::CancelToken;
-
 use super::{CloudError, CloudProvider, WAIT_POLL};
+use crate::transcription::CancelToken;
 use crate::transcription::engine::{Partial, Partials};
 
 /// How long a provider whose service refused streaming goes straight to
@@ -105,11 +104,11 @@ pub(super) fn publish(partials: Option<&Partials>, stable: String, tentative: St
 /// What the engine does with a clip whose stream gave no text.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Fallback {
-    /// Send the whole clip to the service (it refused to stream, or the
-    /// stream heard past the clip), then the model.
+    /// Send the whole clip to the service: it refused to stream, or the
+    /// stream heard past the clip.
     WholeClip,
-    /// The model transcribes it.
-    Model,
+    /// The dictation fails with this reason; there is no local fallback.
+    Failed(String),
 }
 
 pub(crate) struct CloudStream {
@@ -209,7 +208,9 @@ impl CloudStream {
                     state: Answer::Waiting(self.answer),
                 }
             }
-            None => settled(Fallback::Model),
+            None => settled(Fallback::Failed(
+                "the cloud stream fell behind and was given up".into(),
+            )),
         }
     }
 }
@@ -267,16 +268,17 @@ impl CloudAnswer {
 }
 
 fn fall_back(provider: CloudProvider, error: &CloudError, finish_ms: u64) -> Fallback {
+    let reason = error.reason(provider);
     let fallback = if matches!(error, CloudError::Refused(_)) {
         refuse(provider);
         Fallback::WholeClip
     } else {
-        Fallback::Model
+        Fallback::Failed(reason.clone())
     };
     tracing::warn!(
         provider = provider.name(),
         finish_ms,
-        reason = %error.reason(provider),
+        %reason,
         ?fallback,
         "cloud stream gave no text"
     );
@@ -380,14 +382,17 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_or_empty_stream_leaves_the_clip_to_the_model() {
+    fn a_failed_or_empty_stream_fails_the_dictation() {
         for reply in [
             Ok("  ".into()),
             Err(CloudError::SignedOut),
             Err(CloudError::Failed("dropped".into())),
         ] {
             let answer = answered(CloudProvider::Codex, reply);
-            assert_eq!(answer.wait(&CancelToken::new()), Err(Fallback::Model));
+            assert!(matches!(
+                answer.wait(&CancelToken::new()),
+                Err(Fallback::Failed(_))
+            ));
         }
     }
 
@@ -409,7 +414,10 @@ mod tests {
             stream.feed(&[0.0; 16_000]);
         }
         let answer = stream.end(&[0.0; 10], false);
-        assert_eq!(answer.wait(&CancelToken::new()), Err(Fallback::Model));
+        assert!(matches!(
+            answer.wait(&CancelToken::new()),
+            Err(Fallback::Failed(_))
+        ));
     }
 
     #[test]
@@ -422,7 +430,7 @@ mod tests {
         let cancel = CancelToken::new();
         cancel.cancel();
         let started = Instant::now();
-        assert_eq!(pending.wait(&cancel), Err(Fallback::Model));
+        assert!(matches!(pending.wait(&cancel), Err(Fallback::Failed(_))));
         assert!(started.elapsed() < Duration::from_secs(2));
         drop(sender);
     }

@@ -73,16 +73,21 @@ fn unbound_optional_shortcuts_stay_unbound_after_saving() {
 }
 
 #[test]
-fn invalid_transcription_language_keeps_unrelated_settings() {
+fn invalid_transcription_provider_keeps_unrelated_settings() {
     let file = SettingsFile::new(
         &serde_json::to_vec(&json!({
-            "transcription": {"model": "parakeet_unified_en", "language": "not-a-language"},
+            "transcription": {"provider": "not-a-service", "language": "de"},
             "sound_effect_volume": 0.37
         }))
         .unwrap(),
     );
     let settings = AppSettings::load_from(&file.path).unwrap();
-    assert_eq!(settings.transcription, AppSettings::default().transcription);
+    // Only the unknown provider resets; the language and siblings survive.
+    assert_eq!(
+        settings.transcription.provider,
+        AppSettings::default().transcription.provider
+    );
+    assert_eq!(settings.transcription.language, "de");
     assert_eq!(settings.sound_effect_volume, 0.37);
     settings.write_to(&file.path).unwrap();
     assert_eq!(file.backups().len(), 1);
@@ -110,18 +115,12 @@ fn wrong_nested_type_and_multiple_bad_fields_keep_siblings() {
 #[test]
 fn bad_entries_do_not_discard_good_entries() {
     let (settings, repaired) = decode(
-        br#"{"keyboard_model_switching":{"mappings":{
-        "good":{"model":"parakeet_v3","language":"en"},
-        "bad":{"model":42,"language":"en"},
-        "partial":{"language":"de"}
-    }},"dictation_processing":{"modes":[
+        br#"{"dictation_processing":{"modes":[
         {"name":"Code","applications":["Xcode"]},
         {"name":"Mail","applications":"Mail"}
     ]}}"#,
     );
     assert!(repaired);
-    let mappings = &settings.keyboard_model_switching.mappings;
-    assert_eq!(mappings.keys().collect::<Vec<_>>(), ["good"]);
     let modes = &settings.dictation_processing.modes;
     assert_eq!(modes.len(), 2);
     assert_eq!(modes[0].applications, ["Xcode"]);

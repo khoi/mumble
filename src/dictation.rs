@@ -14,6 +14,7 @@ pub(crate) mod modes;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 pub(crate) mod processor;
 pub(crate) mod service;
+pub(crate) mod speech_frames;
 pub(crate) mod spoken_formatting;
 pub(crate) mod spoken_symbols;
 pub(crate) mod text_replacements;
@@ -62,7 +63,6 @@ const VOICE_HISTORY_FRAMES: usize = 150;
 /// room costs no false presses and saves missed ones.
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 pub const BOTH_SIDES_WINDOW: Duration = Duration::from_millis(80);
-const MINIMUM_PARAKEET_DURATION: Duration = Duration::from_millis(1500);
 const INITIAL_RECORDING_CAPACITY: Duration = Duration::from_secs(10);
 const PARAKEET_SAMPLE_RATE: u32 = 16_000;
 /// A capture whose loudest 30 ms window stays below this level is treated as
@@ -167,7 +167,7 @@ impl ReleaseWait {
 /// the pause detector's adaptive noise floor. Only recent frames are kept.
 #[derive(Default)]
 struct VoiceTrack {
-    speech: crate::transcription::pause_segmenter::SpeechFrames,
+    speech: crate::dictation::speech_frames::SpeechFrames,
     frame: Vec<f32>,
     /// Clip samples classified or waiting in `frame`.
     consumed: usize,
@@ -177,7 +177,7 @@ struct VoiceTrack {
 }
 
 impl VoiceTrack {
-    const FRAME: usize = crate::transcription::pause_segmenter::FRAME_SAMPLES;
+    const FRAME: usize = crate::dictation::speech_frames::FRAME_SAMPLES;
 
     fn extend(&mut self, mut samples: &[f32]) {
         self.consumed += samples.len();
@@ -401,76 +401,38 @@ impl DictationClip {
         !released.is_empty() && released.iter().all(|&sample| sample == 0.0)
     }
 
-    /// Whether the capture holds no speech worth transcribing: its level
-    /// stays below the silence threshold or, once the speech detector is
-    /// installed, the detector finds no speech in it (a key click, the start
-    /// tone, a noisy room, or a microphone turned down too far). Such a
-    /// capture is discarded quietly, with no tone or note; the log has the
-    /// measured level and peak against the thresholds.
+    /// Whether the capture's level stays below the silence threshold (a key
+    /// click, the start tone, a noisy room, or a microphone turned down too
+    /// far). Such a capture is discarded quietly, with no tone or note; the
+    /// log keeps the measured level and peak against the threshold.
     pub fn is_near_silent(&self) -> bool {
         let level_dbfs = self.loudest_window_dbfs();
-        let silent = level_dbfs < SILENCE_THRESHOLD_DBFS;
-        if silent {
-            let evidence = self.silence_evidence();
-            let source = self.source.as_deref();
-            let ms =
-                |duration: Option<Duration>| duration.map(|duration| duration.as_millis() as u64);
-            tracing::info!(
-                level_dbfs,
-                threshold_dbfs = SILENCE_THRESHOLD_DBFS,
-                audio_ms = self.duration_ms(),
-                pre_press_ms = self.press_samples as u64 * 1_000 / u64::from(PARAKEET_SAMPLE_RATE),
-                pre_press_dbfs = evidence.pre_press_dbfs,
-                post_press_dbfs = evidence.post_press_dbfs,
-                zero_fraction = evidence.zero_fraction,
-                peak = evidence.peak,
-                device = source.map(|source| source.device.as_str()),
-                sample_rate = self.timeline.source_rate,
-                press_lead_ms = self.timeline.press_lead_ms,
-                release_lead_ms = self.timeline.release_lead_ms,
-                max_chunk_gap_ms = self.timeline.max_chunk_gap.as_millis() as u64,
-                stream_age_ms = ms(source.and_then(|source| source.stream_age)),
-                since_discontinuity_ms = ms(source.and_then(|source| source.since_discontinuity)),
-                since_glitch_ms = ms(source.and_then(|source| source.since_glitch)),
-                "discarded near-silent dictation without transcribing it"
-            );
-            return true;
+        if level_dbfs >= SILENCE_THRESHOLD_DBFS {
+            return false;
         }
-        let released = self.samples.len().saturating_sub(self.tail_samples);
-        let started = std::time::Instant::now();
-        match crate::transcription::speech_detector::contains_speech(&self.samples[..released]) {
-            Some(false) => {
-                let peak = self.samples[..released]
-                    .iter()
-                    .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
-                tracing::info!(
-                    level_dbfs,
-                    silence_threshold_dbfs = SILENCE_THRESHOLD_DBFS,
-                    peak_dbfs = 20.0 * peak.max(f32::MIN_POSITIVE).log10(),
-                    speech_threshold = crate::transcription::speech_detector::THRESHOLD,
-                    audio_ms = self.duration_ms(),
-                    vad_ms = started.elapsed().as_millis() as u64,
-                    "discarded dictation without detected speech"
-                );
-                true
-            }
-            Some(true) => {
-                tracing::debug!(
-                    audio_ms = self.duration_ms(),
-                    vad_ms = started.elapsed().as_millis() as u64,
-                    "speech detected in dictation"
-                );
-                false
-            }
-            None => false,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn into_parakeet_samples(self) -> Vec<f32> {
-        let mut samples = self.samples;
-        pad_for_parakeet(&mut samples);
-        samples
+        let evidence = self.silence_evidence();
+        let source = self.source.as_deref();
+        let ms = |duration: Option<Duration>| duration.map(|duration| duration.as_millis() as u64);
+        tracing::info!(
+            level_dbfs,
+            threshold_dbfs = SILENCE_THRESHOLD_DBFS,
+            audio_ms = self.duration_ms(),
+            pre_press_ms = self.press_samples as u64 * 1_000 / u64::from(PARAKEET_SAMPLE_RATE),
+            pre_press_dbfs = evidence.pre_press_dbfs,
+            post_press_dbfs = evidence.post_press_dbfs,
+            zero_fraction = evidence.zero_fraction,
+            peak = evidence.peak,
+            device = source.map(|source| source.device.as_str()),
+            sample_rate = self.timeline.source_rate,
+            press_lead_ms = self.timeline.press_lead_ms,
+            release_lead_ms = self.timeline.release_lead_ms,
+            max_chunk_gap_ms = self.timeline.max_chunk_gap.as_millis() as u64,
+            stream_age_ms = ms(source.and_then(|source| source.stream_age)),
+            since_discontinuity_ms = ms(source.and_then(|source| source.since_discontinuity)),
+            since_glitch_ms = ms(source.and_then(|source| source.since_glitch)),
+            "discarded near-silent dictation without transcribing it"
+        );
+        true
     }
 
     pub fn into_transcription_samples(self) -> Vec<f32> {
@@ -495,24 +457,14 @@ fn loudest_window_dbfs(samples: &[f32]) -> f32 {
     (20.0 * loudest.max(1e-6).log10()) as f32
 }
 
-pub(crate) fn pad_for_parakeet(samples: &mut Vec<f32>) {
-    samples.resize(
-        samples
-            .len()
-            .max(samples_for(MINIMUM_PARAKEET_DURATION, PARAKEET_SAMPLE_RATE)),
-        0.0,
-    );
-}
-
+/// Resamples a whole clip to the 16 kHz the cloud service takes, reusing the
+/// capture's resampler. Only the Windows CLI's offline commands use it.
+#[cfg(target_os = "windows")]
 pub fn resample_for_parakeet(samples: &[f32], source_rate: u32) -> Vec<f32> {
-    try_resample_for_parakeet(samples, source_rate)
-        .expect("microphone sample rate must be resampleable")
-}
-
-pub fn try_resample_for_parakeet(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, String> {
-    let mut recording = Recording::try_new(CaptureInstant::ZERO, source_rate)?;
+    let mut recording = Recording::try_new(CaptureInstant::ZERO, source_rate)
+        .expect("microphone sample rate must be resampleable");
     recording.push(samples);
-    Ok(recording.finish(None))
+    recording.finish(None)
 }
 
 pub struct DictationCapture {
@@ -981,13 +933,6 @@ impl DictationCapture {
             .is_some_and(|recording| recording.intentional)
     }
 
-    #[cfg(test)]
-    pub fn is_streaming(&self) -> bool {
-        self.recording
-            .as_ref()
-            .is_some_and(|recording| recording.stream.is_some())
-    }
-
     /// The active recording's text so far when its live stream published a
     /// change since the last call: only with live text on, and only for
     /// display. The finished clip's transcript replaces it.
@@ -1204,20 +1149,6 @@ mod tests {
         assert!(!quiet_speech.is_near_silent());
         assert!((quiet_speech.loudest_window_dbfs() - -43.0).abs() < 0.5);
         assert!(!clip(tone(0.1, 16_000).collect()).is_near_silent());
-    }
-
-    #[test]
-    fn speech_detector_discards_loud_captures_without_speech() {
-        let clip = |samples: Vec<f32>| DictationClip::for_test(samples);
-        {
-            let _detector = crate::transcription::speech_detector::override_for_test(Some(false));
-            assert!(clip(tone(0.1, 16_000).collect()).is_near_silent());
-        }
-        let _detector = crate::transcription::speech_detector::override_for_test(Some(true));
-        assert!(!clip(tone(0.1, 16_000).collect()).is_near_silent());
-        // The level gate runs first: a silent capture never reaches the
-        // detector.
-        assert!(clip(vec![0.0; 16_000]).is_near_silent());
     }
 
     #[test]
@@ -1588,7 +1519,7 @@ mod tests {
     }
 
     #[test]
-    fn intentional_hold_includes_pre_roll_and_parakeet_padding() {
+    fn intentional_hold_includes_the_pre_roll() {
         let mut capture = DictationCapture::new(16_000);
         capture.keep_warm(&vec![0.25; 16_000]);
         let start = capture_time();
@@ -1598,10 +1529,9 @@ mod tests {
             panic!("expected transcription")
         };
         assert_eq!(clip.duration_ms(), 950);
-        let samples = clip.into_parakeet_samples();
-        assert_eq!(samples.len(), 24_000);
-        assert_eq!(samples[0], 0.25);
-        assert!(samples.contains(&0.5));
+        let samples = clip.into_transcription_samples();
+        assert_eq!(samples[0], 0.25, "the pre-roll leads the clip");
+        assert!(samples.contains(&0.5), "the held speech is kept");
     }
 
     #[test]
@@ -1633,232 +1563,5 @@ mod tests {
             assert_eq!(samples.len(), expected);
             assert!(samples.last().is_some_and(|sample| *sample > 0.25));
         }
-    }
-
-    /// Speech with pauses ending near 4.3 s and 9.3 s, at `sample_rate`.
-    fn paused_speech(sample_rate: u32) -> Vec<f32> {
-        let speech = crate::transcription::pause_segmenter::tests::utterance(
-            &[(4_000, 1_000), (4_000, 1_000), (2_000, 0)],
-            -70.0,
-        );
-        let ratio = f64::from(PARAKEET_SAMPLE_RATE) / f64::from(sample_rate);
-        let frames = speech.len() * sample_rate as usize / PARAKEET_SAMPLE_RATE as usize;
-        (0..frames)
-            .map(|frame| {
-                let position = frame as f64 * ratio;
-                let index = position as usize;
-                let next = speech.get(index + 1).copied().unwrap_or(speech[index]);
-                let fraction = (position - index as f64) as f32;
-                speech[index] * (1.0 - fraction) + next * fraction
-            })
-            .collect()
-    }
-
-    /// Audio handed to streams, in order, and the streams cancelled.
-    fn stream_traffic(
-        commands: &std::sync::mpsc::Receiver<crate::transcription::engine::Command>,
-    ) -> (Vec<f32>, usize, usize) {
-        use crate::transcription::engine::Command;
-        let (mut fed, mut begun, mut cancelled) = (Vec::new(), 0, 0);
-        for command in commands.try_iter() {
-            match command {
-                Command::Begin { .. } => begun += 1,
-                Command::Feed { samples, .. } => fed.extend(samples),
-                Command::Cancel { .. } => cancelled += 1,
-                _ => {}
-            }
-        }
-        (fed, begun, cancelled)
-    }
-
-    #[test]
-    fn resampled_clips_keep_the_last_word_through_a_delayed_release() {
-        for sample_rate in [44_100, 48_000] {
-            let audio = paused_speech(sample_rate);
-            // Release 300 ms before the audio ends, inside the final word,
-            // after the chunk carrying that audio and its tail has arrived.
-            let released_ms = audio.len() as u64 * 1_000 / u64::from(sample_rate) - 300;
-            let kept_ms = released_ms + POST_RELEASE_TAIL.as_millis() as u64;
-            let kept = kept_ms as usize * sample_rate as usize / 1_000;
-            let expected = resample_for_parakeet(&audio[..kept], sample_rate);
-            let mut clips = Vec::new();
-            for streamed in [false, true] {
-                let (engine, commands) = TranscriptionEngine::for_test();
-                let mut capture = DictationCapture::new(sample_rate);
-                let start = capture_time();
-                capture.start(start);
-                assert!(capture.become_intentional(start + MINIMUM_HOLD_DURATION));
-                if streamed {
-                    capture.begin_stream(&engine);
-                }
-                let mut through = start;
-                for chunk in audio.chunks(sample_rate as usize / 100) {
-                    through = through + Duration::from_millis(10);
-                    capture.ingest(chunk, through);
-                }
-                let Finish::Transcribe(mut clip) = capture.finish_with_tail(
-                    start + Duration::from_millis(released_ms),
-                    POST_RELEASE_TAIL,
-                ) else {
-                    panic!("expected transcription")
-                };
-                let stream = clip.take_stream();
-                assert_eq!(stream.is_some(), streamed);
-                let (fed, begun, cancelled) = stream_traffic(&commands);
-                drop(stream);
-                assert_eq!((begun, cancelled), (usize::from(streamed), 0));
-                // The stream saw exactly the clip's audio, in order, plus at
-                // most the audio captured after the release's tail.
-                let shared = fed.len().min(clip.samples.len());
-                assert_eq!(fed[..shared], clip.samples[..shared], "{sample_rate} Hz");
-                assert!(fed.len() <= clip.samples.len() + 16_000 / 4);
-                assert_eq!(fed.len() > clip.samples.len() / 2, streamed);
-                assert_eq!(clip.samples.len(), expected.len(), "{sample_rate} Hz");
-                // Only the final 10 ms may differ: the clip's resampler saw the
-                // real audio after the tail where the reference saw silence.
-                let settled = expected.len() - 160;
-                assert!(
-                    clip.samples[..settled]
-                        .iter()
-                        .zip(&expected[..settled])
-                        .all(|(clip, expected)| (clip - expected).abs() < 1e-4),
-                    "{sample_rate} Hz streamed={streamed} lost audio before the tail ended"
-                );
-                clips.push(clip.samples);
-            }
-            assert!(
-                clips[0] == clips[1],
-                "{sample_rate} Hz: streaming changed the clip"
-            );
-        }
-    }
-
-    #[test]
-    fn a_stream_starts_with_the_backlog_and_feeds_in_blocks() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let mut capture = DictationCapture::new(16_000);
-        capture.keep_warm(&vec![0.25; 16_000]);
-        let start = capture_time();
-        capture.start(start);
-        assert!(!capture.is_streaming());
-        // Toggle and Linux open the stream before the hold threshold.
-        capture.begin_stream(&engine);
-        capture.begin_stream(&engine);
-        assert!(capture.is_streaming());
-        let (fed, begun, _) = stream_traffic(&commands);
-        assert_eq!(begun, 1, "a recording opens one stream");
-        assert_eq!(fed.len(), 7_200, "the 450 ms pre-roll is fed at once");
-        capture.ingest(&[0.5; 1_600], start + Duration::from_millis(100));
-        assert!(
-            stream_traffic(&commands).0.is_empty(),
-            "100 ms waits for a block"
-        );
-        capture.ingest(&[0.5; 1_600], start + Duration::from_millis(200));
-        assert_eq!(stream_traffic(&commands).0.len(), 3_200);
-    }
-
-    #[test]
-    fn live_text_follows_the_recording_and_never_outlives_it() {
-        use crate::transcription::engine::Command;
-        let said = |stable: &str| Partial {
-            stable: stable.into(),
-            tentative: String::new(),
-        };
-        let begun = |commands: &std::sync::mpsc::Receiver<Command>| {
-            commands
-                .try_iter()
-                .find_map(|command| match command {
-                    Command::Begin { partials, .. } => partials,
-                    _ => None,
-                })
-                .expect("live text gives the stream a slot")
-        };
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_live_text();
-        let start = capture_time();
-        let mut capture = DictationCapture::new(16_000);
-        assert_eq!(capture.take_partial(), None, "no recording, no text");
-        capture.start(start);
-        assert!(capture.become_intentional(start + MINIMUM_HOLD_DURATION));
-        capture.begin_stream(&engine);
-        let first = begun(&commands);
-        capture.ingest(&[0.5; 16_000], start + Duration::from_secs(1));
-        assert_eq!(
-            capture.take_partial(),
-            None,
-            "nothing until the model publishes"
-        );
-        first.publish(said("so the plan"));
-        assert_eq!(capture.take_partial(), Some(said("so the plan")));
-        assert_eq!(capture.take_partial(), None);
-
-        // Finishing hands the stream to the clip; the capture shows nothing,
-        // even when the old stream publishes again while it finishes.
-        let Finish::Transcribe(mut clip) = capture.finish(start + Duration::from_secs(1)) else {
-            panic!("expected transcription")
-        };
-        first.publish(say_more());
-        assert_eq!(capture.take_partial(), None);
-
-        // The next capture starts empty and shows only its own text.
-        capture.start(start + Duration::from_secs(2));
-        assert!(capture.become_intentional(start + Duration::from_secs(3)));
-        capture.begin_stream(&engine);
-        let second = begun(&commands);
-        assert_eq!(capture.take_partial(), None, "no text carried over");
-        first.publish(said("stale"));
-        assert_eq!(capture.take_partial(), None);
-        second.publish(said("next"));
-        assert_eq!(capture.take_partial(), Some(said("next")));
-
-        // A cancelled recording (a lost microphone) drops its text.
-        second.publish(said("next one"));
-        capture.cancel();
-        assert_eq!(capture.take_partial(), None);
-        drop(clip.take_stream());
-
-        fn say_more() -> Partial {
-            Partial {
-                stable: "so the plan for today".into(),
-                tentative: " is".into(),
-            }
-        }
-    }
-
-    #[test]
-    fn short_taps_cancellation_and_unstreamable_models_end_the_stream() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let start = capture_time();
-        let mut short = DictationCapture::new(16_000);
-        short.start(start);
-        short.begin_stream(&engine);
-        short.ingest(&[0.5; 1_600], start + Duration::from_millis(100));
-        assert!(matches!(
-            short.finish(start + Duration::from_millis(100)),
-            Finish::Discard
-        ));
-        assert_eq!(stream_traffic(&commands).2, 1, "a short tap cancels");
-
-        let mut cancelled = DictationCapture::new(16_000);
-        cancelled.start(start);
-        assert!(cancelled.become_intentional(start + MINIMUM_HOLD_DURATION));
-        cancelled.begin_stream(&engine);
-        cancelled.ingest(&[0.5; 16_000], start + Duration::from_secs(1));
-        cancelled.cancel();
-        assert!(!cancelled.is_streaming());
-        let (_, _, cancels) = stream_traffic(&commands);
-        assert_eq!(cancels, 1, "a cancelled recording cancels its stream");
-
-        let (offline, commands) = TranscriptionEngine::for_test_without_streaming();
-        let mut capture = DictationCapture::new(16_000);
-        capture.start(start);
-        capture.begin_stream(&offline);
-        assert!(!capture.is_streaming());
-        capture.ingest(&[0.5; 16_000], start + Duration::from_secs(1));
-        let Finish::Transcribe(mut clip) = capture.finish(start + Duration::from_secs(1)) else {
-            panic!("expected transcription")
-        };
-        assert!(clip.take_stream().is_none());
-        assert!(commands.try_iter().next().is_none());
     }
 }

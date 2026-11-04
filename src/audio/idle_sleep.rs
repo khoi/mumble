@@ -25,11 +25,6 @@ pub fn prevent_sleep() -> Option<PreventSleep> {
     })
 }
 
-/// Whether Hex records now (a dictation past its hold): some guard is alive.
-pub fn held() -> bool {
-    HELD.load(Ordering::Acquire) > 0
-}
-
 /// Idle-sleep prevention, held until dropped.
 pub struct PreventSleep {
     _platform: Option<platform::PreventSleep>,

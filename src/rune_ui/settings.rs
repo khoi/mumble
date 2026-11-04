@@ -7,21 +7,17 @@ use std::time::{Duration, Instant};
 use rune::{Edge, El, Key, KeyEvent, Transition, Tx, col, row, spacer, text};
 
 use super::controls::{
-    ButtonKind, Choice, DESCRIPTION, KEY_GAP, KeySize, METRICS, Paint, button, fixed_select,
-    keycap, note, pulsing_dot, section, select, setting_row, status_dot,
+    ButtonKind, Choice, DESCRIPTION, KEY_GAP, KeySize, METRICS, Paint, button, keycap, note,
+    pulsing_dot, section, setting_row, status_dot,
 };
 use super::host;
 use super::{Menu, Request, Service, ShortcutTarget, Ui};
-use crate::app_settings::{
-    AppSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, KeyboardModelChoice, ModifierSide,
-};
+use crate::app_settings::{AppSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, ModifierSide};
 use crate::desktop::host::{
     DesktopAction, DesktopGrantedShortcut, DesktopShortcut, DesktopShortcuts, DesktopUpdateStatus,
 };
 use crate::desktop::i18n::{tr, tr_fill};
 use crate::dictation::ShortcutMode;
-use crate::transcription::keyboard_model_switching::InputSource;
-use crate::transcription::models::{self as transcription_models, ModelPreparationStage};
 
 static CHECK: &rune::Icon = &rune_theme_opencode::icons::CHECK_SMALL;
 
@@ -600,9 +596,7 @@ pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
         }) => trigger.clone(),
         _ => ui.settings.dictation_hotkey.keycaps().join("+"),
     };
-    let no_model = super::general::missing_model(ui).is_some();
     let hint = match (running, ui.settings.shortcut_mode) {
-        _ if no_model => tr("Hex can't dictate until a speech model is installed").to_string(),
         _ if !ui.records_shortcuts() => {
             tr("Ready anywhere · Use your desktop's shortcuts to dictate").to_string()
         }
@@ -651,11 +645,7 @@ pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
         .py(8.0)
         .gap(12.0)
         .center_y()
-        .child(status_dot(if running && !no_model {
-            p.success()
-        } else {
-            p.muted()
-        }))
+        .child(status_dot(if running { p.success() } else { p.muted() }))
         .child(
             col()
                 .key("copy")
@@ -672,7 +662,7 @@ pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
                     text(hint)
                         .key("hint")
                         .font(DESCRIPTION)
-                        .color(if no_model { p.danger() } else { p.muted() })
+                        .color(p.muted())
                         .wrap(),
                 )
                 .children(failure.map(|failure| {
@@ -932,203 +922,10 @@ fn command_row(p: Paint, key: &str, title: &str, description: &str, commands: &[
     setting_row(p, key, title, Some(description), lines)
 }
 
-/// Lists keyboard input sources every few seconds while General shows the
-/// switching rows. The window lists them itself on Windows and Linux.
-#[cfg(not(target_os = "macos"))]
-pub(super) fn poll_input_sources(ui: &mut Ui, clock: f64) -> bool {
-    let switching =
-        ui.platform.caps.keyboard_model_switching && ui.settings.keyboard_model_switching.enabled;
-    if !switching {
-        let changed = !ui.platform.input_sources.is_empty();
-        ui.platform.input_sources.clear();
-        return changed;
-    }
-    if ui.pane != super::Pane::General
-        || !ui.live()
-        || !ui.window.as_ref().is_some_and(rune::AppHandle::is_visible)
-        || clock < ui.input_sources_listed_at + 2.0
-    {
-        return false;
-    }
-    ui.input_sources_listed_at = clock;
-    let listed = crate::keyboard_input_sources::enabled();
-    let changed = ui.platform.input_sources != listed;
-    ui.platform.input_sources = listed;
-    changed
-}
-
-/// One row per enabled input source: "Don't switch" or an installed model,
-/// then a language that model supports, as the Language row offers it.
-pub(super) fn input_source_rows(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<El> {
-    ui.platform
-        .input_sources
-        .iter()
-        .enumerate()
-        .map(|(index, source)| {
-            let mapped = ui
-                .settings
-                .keyboard_model_switching
-                .mappings
-                .get(&source.id)
-                .cloned();
-            let source_id = source.id.clone();
-            let mut choices = vec![Choice {
-                label: tr("Don't switch").into(),
-                detail: None,
-                selected: mapped.is_none(),
-                choose: Box::new(move |ui| {
-                    ui.open = None;
-                    ui.update(|settings| {
-                        settings
-                            .keyboard_model_switching
-                            .mappings
-                            .remove(&source_id);
-                    });
-                }),
-            }];
-            choices.extend(
-                transcription_models::all_models()
-                    .into_iter()
-                    .filter_map(|model| {
-                        let fallback = ui.settings.transcription_for_model(model.id).language;
-                        if !model.available()
-                            || !matches!(model.runtime, transcription_models::ModelRuntime::Gguf(_))
-                            || !ui.picker.installed(model, &fallback)
-                        {
-                            return None;
-                        }
-                        let language = match &mapped {
-                            Some(choice) if model.supports_language(&choice.language) => {
-                                choice.language.clone()
-                            }
-                            _ => source.language_for(model, &fallback),
-                        };
-                        let source_id = source.id.clone();
-                        let id = model.id;
-                        Some(Choice {
-                            label: model.name.into(),
-                            detail: None,
-                            selected: mapped.as_ref().is_some_and(|choice| choice.model == id),
-                            choose: Box::new(move |ui| {
-                                ui.open = None;
-                                ui.update(|settings| {
-                                    settings.keyboard_model_switching.mappings.insert(
-                                        source_id.clone(),
-                                        KeyboardModelChoice {
-                                            model: id,
-                                            language: language.clone(),
-                                        },
-                                    );
-                                });
-                            }),
-                        })
-                    }),
-            );
-            let label = mapped.as_ref().map_or_else(
-                || tr("Don't switch").to_string(),
-                |choice| {
-                    let model = transcription_models::definition(choice.model);
-                    if ui.picker.installed(model, &choice.language) {
-                        model.name.into()
-                    } else {
-                        format!("{} · {}", model.name, tr("Not installed"))
-                    }
-                },
-            );
-            let mut controls = row().gap(8.0).center_y();
-            if let Some(choice) = &mapped {
-                controls =
-                    controls.child(input_source_language(ui, p, index, source, choice, layer));
-            }
-            setting_row(
-                p,
-                &format!("input-source{index}"),
-                &source.name,
-                None,
-                controls.child(select(
-                    p,
-                    &format!("input-source-model{index}"),
-                    &label,
-                    ui.open == Some(Menu::InputSourceModel(index)),
-                    choices,
-                    move |ui| toggle_menu(ui, Menu::InputSourceModel(index)),
-                    layer,
-                )),
-            )
-        })
-        .collect()
-}
-
-/// A mapped source's language: a select, or fixed for one-language models.
-fn input_source_language(
-    ui: &Ui,
-    p: Paint,
-    index: usize,
-    source: &InputSource,
-    choice: &KeyboardModelChoice,
-    layer: &mut Vec<El>,
-) -> El {
-    let key = format!("input-source-language{index}");
-    let current = transcription_models::language_name(&choice.language);
-    let codes = transcription_models::definition(choice.model).language_choices();
-    if codes.len() <= 1 {
-        return fixed_select(p, &key, current);
-    }
-    let choices = codes
-        .into_iter()
-        .map(|code| {
-            let source_id = source.id.clone();
-            let model = choice.model;
-            Choice {
-                label: transcription_models::language_name(code).to_owned(),
-                detail: None,
-                selected: code == choice.language,
-                choose: Box::new(move |ui: &mut Ui| {
-                    ui.open = None;
-                    ui.update(|settings| {
-                        settings.keyboard_model_switching.mappings.insert(
-                            source_id.clone(),
-                            KeyboardModelChoice {
-                                model,
-                                language: code.to_owned(),
-                            },
-                        );
-                    });
-                }),
-            }
-        })
-        .collect();
-    select(
-        p,
-        &key,
-        current,
-        ui.open == Some(Menu::InputSourceLanguage(index)),
-        choices,
-        move |ui| toggle_menu(ui, Menu::InputSourceLanguage(index)),
-        layer,
-    )
-}
-
-/// The speech model row's description: preparation progress or its error.
-pub(super) fn transcription_status(ui: &Ui, p: Paint) -> Option<(String, rune::Color)> {
-    let transcription = &ui.view.as_ref()?.transcription;
-    if let Some(error) = &transcription.error {
-        return Some((error.clone(), p.danger()));
-    }
-    let Some(model) = transcription.preparing else {
-        return super::model_import::selection_notice(ui).map(|notice| (notice, p.warning()));
-    };
-    let name = transcription_models::definition(model).name;
-    let stage = match transcription.preparation_stage {
-        Some(ModelPreparationStage::Verifying) => tr("Verifying model").to_string(),
-        Some(ModelPreparationStage::Loading) => tr("Loading model").to_string(),
-        _ => format!(
-            "{} {:.0} MB",
-            tr("Downloading"),
-            transcription.downloaded_bytes as f64 / 1_000_000.0
-        ),
-    };
-    Some((format!("{name} · {stage}"), p.accent()))
+/// The Transcribe with row's description. Cloud transcription uses the
+/// chosen app's own sign-in, so the row needs no extra status line.
+pub(super) fn transcription_status(_ui: &Ui, _p: Paint) -> Option<(String, rune::Color)> {
+    None
 }
 
 /// What a recorder shows; each change rolls up into it from below.

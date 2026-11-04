@@ -1,41 +1,21 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::Once;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread;
 use std::time::Instant;
 
-use color_eyre::eyre::{Result, WrapErr, eyre};
-use transcribe_cpp::{Backend, Model, ModelOptions, RunOptions, TimestampKind};
+use color_eyre::eyre::{Result, eyre};
 
+use crate::dictation::DictationClip;
 use crate::dictation::context::ContextSnapshot;
 use crate::dictation::processor::ProcessingObservation;
-use crate::dictation::{DictationClip, pad_for_parakeet};
 use crate::history::{History, HistoryDraft, HistoryKind};
 use crate::paste::{PasteMode, Paster};
 use crate::suppression::InputActivity;
-use crate::transcription::WarmTranscriber;
 use crate::transcription::engine::{PendingTranscript, TranscriptionEngine};
-use crate::transcription::gguf_session::OfflineGgufSession;
-use crate::transcription::models::{
-    TranscriptionModelId, TranscriptionSelection, model_path, validate,
-};
 
-pub struct Parakeet {
-    session: OfflineGgufSession,
-    options: RunOptions,
-    name: String,
-    selection: Option<TranscriptionSelection>,
-    max_audio_samples: Option<usize>,
-    stream: Option<transcribe_cpp::StreamOptions>,
-    _weights: procwatch::Lease,
-}
-
-/// Loaded model weights, estimated from the model file size (they live in Metal buffers).
-static MODEL_WEIGHTS: procwatch::Gauge = procwatch::Gauge::new("speech.model_weights");
-static TRANSCRIBE_LOGGING: Once = Once::new();
 const MAX_PENDING_OUTPUTS: usize = 16;
 
 pub enum WorkerEvent {
@@ -96,8 +76,6 @@ struct InferenceJob {
     prepare_ms: u128,
     target: TranscriptionTarget,
     context: ContextSnapshot,
-    /// The clip, kept for History while Labs › Keep recordings is on.
-    recording: Option<crate::history::Recording>,
 }
 
 struct ProcessorJob {
@@ -107,7 +85,6 @@ struct ProcessorJob {
     text: String,
     context: ContextSnapshot,
     timings: JobTimings,
-    recording: Option<crate::history::Recording>,
 }
 
 /// Pipeline timings carried from inference through output for the final log.
@@ -127,7 +104,6 @@ struct CompletedTranscript {
     application: Option<String>,
     timings: JobTimings,
     processing: Option<ProcessingObservation>,
-    recording: Option<crate::history::Recording>,
 }
 
 enum OutputJob {
@@ -220,7 +196,6 @@ pub struct DictationWorker {
     inference_jobs: Option<SyncSender<InferenceJob>>,
     output_jobs: Option<SyncSender<OutputJob>>,
     events: Receiver<WorkerEvent>,
-    event_sender: mpsc::Sender<WorkerEvent>,
     state: Arc<Mutex<WorkerState>>,
     inference_worker: Option<thread::JoinHandle<()>>,
     processor_workers: Vec<thread::JoinHandle<()>>,
@@ -262,25 +237,8 @@ impl DictationWorker {
             pending_pastes: 0,
         }));
 
-        let engine = match TranscriptionEngine::start(WarmTranscriber::default()) {
-            Ok(engine) => {
-                let events = event_sender.clone();
-                let _ = engine.run(move |model| {
-                    prioritize_inference_thread();
-                    match WarmTranscriber::load() {
-                        Ok(loaded) => {
-                            tracing::info!("transcription model loaded");
-                            *model = loaded;
-                        }
-                        Err(error) => {
-                            let _ = events.send(WorkerEvent::ModelFailed(error.to_string()));
-                        }
-                    }
-                });
-                let engine = Arc::new(engine);
-                engine.share();
-                Some(engine)
-            }
+        let engine = match TranscriptionEngine::start() {
+            Ok(engine) => Some(Arc::new(engine)),
             Err(error) => {
                 let _ = event_sender.send(WorkerEvent::ModelFailed(error.to_string()));
                 None
@@ -317,7 +275,6 @@ impl DictationWorker {
             inference_jobs: Some(inference_jobs),
             output_jobs: Some(output_jobs),
             events,
-            event_sender,
             state,
             inference_worker: Some(inference_worker),
             processor_workers,
@@ -369,35 +326,15 @@ impl DictationWorker {
             print: Mutex::new(print),
             ..JobControl::default()
         });
-        let (_, selection) = crate::app_settings::transcription_selection();
         let submitted_at = Instant::now();
         let audio_ms = clip.duration_ms();
         let stream = clip.take_stream();
         let _capture = clip.take_capture_marker();
         let samples = clip.into_transcription_samples();
         crate::dictation::diagnostics::persist(&samples);
-        let recording = match target {
-            TranscriptionTarget::Service => None,
-            _ => crate::history::Recording::keep(&samples),
-        };
         let prepare_ms = submitted_at.elapsed().as_millis();
-        let offline = {
-            let control = control.clone();
-            Box::new(move |model: &mut WarmTranscriber, samples: Vec<f32>| {
-                if control.is_cancelled() {
-                    return Err("dictation was cancelled".to_string());
-                }
-                let _busy = DictationInference::begin();
-                let transcriber = model
-                    .activate(&selection)
-                    .map_err(|error| error.to_string())?;
-                transcriber
-                    .transcribe(samples)
-                    .map_err(|error| error.to_string())
-            })
-        };
         let transcript = engine
-            .finish_with(stream, samples, offline)
+            .finish(stream, samples)
             .map_err(|_| "dictation worker is unavailable")?;
         jobs.try_send(InferenceJob {
             job_id,
@@ -408,7 +345,6 @@ impl DictationWorker {
             prepare_ms,
             target,
             context,
-            recording,
         })
         .map(|()| {
             state.next_sequence += 1;
@@ -433,21 +369,6 @@ impl DictationWorker {
             return;
         };
         let _ = output_jobs.try_send(OutputJob::PreparePaste);
-    }
-
-    /// Switches the warm model after the work already handed to the engine.
-    pub fn reload(&self, selection: TranscriptionSelection) -> Result<(), &'static str> {
-        let events = self.event_sender.clone();
-        self.engine
-            .as_ref()
-            .ok_or("dictation worker is unavailable")?
-            .run(move |model| {
-                let _busy = DictationInference::begin();
-                if let Err(error) = model.activate(&selection) {
-                    let _ = events.send(WorkerEvent::ModelFailed(error.to_string()));
-                }
-            })
-            .map_err(|_| "dictation worker is unavailable")
     }
 
     pub fn paste_last(&self) -> Result<(), &'static str> {
@@ -587,7 +508,6 @@ fn run_processor_worker(
                     application: job.context.application,
                     timings: job.timings,
                     processing: processed.observation,
-                    recording: job.recording,
                 })),
             })
             .is_err()
@@ -623,7 +543,6 @@ fn run_inference_worker(
             let _ = output.send(OutputJob::Cancelled { job_id: job.job_id });
             continue;
         }
-        let _busy = DictationInference::begin();
         let _ = events.send(WorkerEvent::Stage {
             job_id: job.job_id,
             stage: DictationJobStage::Transcribing,
@@ -634,7 +553,6 @@ fn run_inference_worker(
         let audio_ms = job.audio_ms;
         let result = job.transcript.wait().map(|transcribed| {
             tracing::info!(
-                source = transcribed.source.label(),
                 finish_ms = transcribed.finish_ms,
                 audio_ms,
                 "transcribed dictation"
@@ -679,7 +597,6 @@ fn run_inference_worker(
                         text,
                         context: job.context,
                         timings,
-                        recording: job.recording,
                     })
                     .is_err()
                 {
@@ -688,14 +605,12 @@ fn run_inference_worker(
             }
             result => {
                 let application = job.context.application;
-                let recording = job.recording;
                 let result = result.map(|text| CompletedTranscript {
                     raw: text.clone(),
                     text,
                     application,
                     timings,
                     processing: None,
-                    recording,
                 });
                 if output
                     .send(OutputJob::Completed {
@@ -719,54 +634,6 @@ fn join_worker(worker: Option<thread::JoinHandle<()>>, name: &str) {
     {
         tracing::error!(worker = name, "worker panicked during shutdown");
     }
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn prioritize_inference_thread() {
-    // ggml worker pthreads start at default QoS instead of inheriting this
-    // class; GGUF sessions use one decoder thread so decoding stays here.
-    const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
-    unsafe extern "C" {
-        fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
-    }
-    // SAFETY: This configures only the calling worker thread using the public
-    // macOS pthread QoS API. Relative priority zero is valid for this class.
-    let status = unsafe { pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) };
-    if status == 0 {
-        tracing::info!("dictation inference worker uses user-interactive QoS");
-    } else {
-        tracing::warn!(status, "could not raise dictation inference worker QoS");
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn prioritize_inference_thread() {}
-
-static DICTATION_INFERENCE: AtomicUsize = AtomicUsize::new(0);
-
-struct DictationInference;
-
-impl DictationInference {
-    fn begin() -> Self {
-        DICTATION_INFERENCE.fetch_add(1, Ordering::AcqRel);
-        Self
-    }
-}
-
-impl Drop for DictationInference {
-    fn drop(&mut self) {
-        DICTATION_INFERENCE.fetch_sub(1, Ordering::AcqRel);
-    }
-}
-
-/// Whether dictation is capturing or running inference. Background
-/// transcription starts no work while this holds. A capture counts from its
-/// press: work already running then finishes during the hold threshold and
-/// release tail, before the clip needs the model.
-pub(crate) fn dictation_busy() -> bool {
-    DICTATION_INFERENCE.load(Ordering::Acquire) > 0
-        || crate::audio::recording_environment::capture_active()
-        || crate::audio::recording_environment::intentional_recording_active()
 }
 
 fn queue_error(error: TrySendError<impl Sized>) -> &'static str {
@@ -795,7 +662,7 @@ fn finish_output(
                 .as_ref()
                 .ok()
                 .and_then(|result| result.processing.clone());
-            let result = result.and_then(|mut completed| {
+            let result = result.and_then(|completed| {
                 if control.is_cancelled() {
                     return Err("dictation was cancelled".into());
                 }
@@ -828,7 +695,7 @@ fn finish_output(
                         *last_transcript = Some(completed.text.clone());
                     }
                     if let Some(history) = history {
-                        record_history(history, target, &mut completed);
+                        record_history(history, target, &completed);
                     }
                 }
                 tracing::info!(
@@ -885,11 +752,7 @@ fn finish_output(
 
 /// Record one successfully pasted result. History failures must never fail
 /// the paste that already happened.
-fn record_history(
-    history: &History,
-    target: TranscriptionTarget,
-    completed: &mut CompletedTranscript,
-) {
+fn record_history(history: &History, target: TranscriptionTarget, completed: &CompletedTranscript) {
     let kind = match target {
         TranscriptionTarget::Paste => HistoryKind::Dictation,
         TranscriptionTarget::RawPaste => HistoryKind::Raw,
@@ -905,215 +768,15 @@ fn record_history(
         audio_ms: completed.timings.audio_ms,
         inference_ms: completed.timings.inference_ms as u64,
         total_ms: completed.timings.total_started.elapsed().as_millis() as u64,
-        recording: completed.recording.take(),
     };
     if let Err(error) = history.record(draft) {
         tracing::warn!(%error, "could not record dictation history");
     }
 }
 
-pub(crate) fn default_model_path() -> Result<std::path::PathBuf> {
-    model_path(crate::transcription::models::definition(
-        crate::transcription::models::TranscriptionModelId::default(),
-    ))
-}
-
-impl Parakeet {
-    #[cfg(test)]
-    pub fn load() -> Result<Self> {
-        let (_, selection) = crate::app_settings::transcription_selection();
-        Self::load_selection(&selection)
-    }
-
-    pub fn load_selection(selection: &TranscriptionSelection) -> Result<Self> {
-        let definition = validate(selection)?;
-        if !crate::transcription::models::is_installed(definition, &selection.language) {
-            return Err(eyre!("{} is not installed", definition.name));
-        }
-        let path = model_path(definition)?;
-        let mut parakeet = Self::load_from(&path, true, Some(selection))?;
-        parakeet.prewarm()?;
-        let stream_run = parakeet.stream_run_options();
-        let architecture = match definition.runtime {
-            crate::transcription::models::ModelRuntime::Gguf(artifact) => artifact.architecture,
-            crate::transcription::models::ModelRuntime::AppleSpeech => "",
-        };
-        parakeet.stream = parakeet.session.probe_stream(&stream_run, architecture);
-        Ok(parakeet)
-    }
-
-    /// Streams decode like offline runs, at segment timestamps: only the text
-    /// of a stream is used.
-    fn stream_run_options(&self) -> RunOptions {
-        RunOptions {
-            timestamps: match self.options.timestamps {
-                TimestampKind::Word | TimestampKind::Token => TimestampKind::Segment,
-                timestamps => timestamps,
-            },
-            ..self.options.clone()
-        }
-    }
-
-    pub(crate) fn stream_options(&self) -> Option<&transcribe_cpp::StreamOptions> {
-        self.stream.as_ref()
-    }
-
-    pub(crate) fn with_stream<R>(
-        &mut self,
-        stream_options: &transcribe_cpp::StreamOptions,
-        cancel: &transcribe_cpp::CancelToken,
-        drive: impl FnOnce(&mut transcribe_cpp::Stream<'_>) -> R,
-    ) -> transcribe_cpp::Result<R> {
-        let options = self.stream_run_options();
-        self.session
-            .with_stream(&options, stream_options, cancel, drive)
-    }
-
-    pub(crate) fn load_for_benchmark(model_path: &std::path::Path) -> Result<Self> {
-        Self::load_from(model_path, false, None)
-    }
-
-    fn load_from(
-        model_path: &std::path::Path,
-        diagnostics: bool,
-        selection: Option<&TranscriptionSelection>,
-    ) -> Result<Self> {
-        if diagnostics {
-            TRANSCRIBE_LOGGING.call_once(transcribe_cpp::init_logging);
-        } else {
-            transcribe_cpp::disable_logging();
-        }
-        let model = Model::load_with(
-            model_path,
-            &ModelOptions {
-                backend: Backend::Metal,
-                ..Default::default()
-            },
-        )
-        .wrap_err_with(|| {
-            format!(
-                "could not load transcription model from {}",
-                model_path.display()
-            )
-        })?;
-        let device = model.device()?;
-        if device.kind != "metal" {
-            return Err(eyre!(
-                "transcription model selected {} ({}) instead of Metal",
-                device.kind,
-                device.name
-            ));
-        }
-        let variant = model.variant();
-        let architecture = model.arch();
-        let name = format!("transcribe-cpp-{}-{variant}", device.kind);
-        let definition = selection.map(validate).transpose()?;
-        tracing::info!(
-            backend = device.kind,
-            device = device.description,
-            variant,
-            "loaded transcription model"
-        );
-        let capabilities = model.capabilities()?;
-        let mut options = RunOptions {
-            timestamps: match capabilities.max_timestamp_kind {
-                TimestampKind::Word | TimestampKind::Token => TimestampKind::Word,
-                TimestampKind::Auto | TimestampKind::Segment => TimestampKind::Segment,
-                TimestampKind::None => TimestampKind::None,
-            },
-            ..Default::default()
-        };
-        if let (Some(selection), Some(definition)) = (selection, definition) {
-            let runtime_language = crate::transcription::gguf_session::validate_gguf_artifact(
-                model_path,
-                definition,
-                &architecture,
-                &variant,
-                selection,
-                capabilities.supports_language_detect,
-            )?;
-            if let Some(runtime_language) = &runtime_language
-                && !capabilities.languages.is_empty()
-                && !capabilities
-                    .languages
-                    .iter()
-                    .any(|language| language == runtime_language)
-            {
-                return Err(eyre!(
-                    "{} does not advertise support for {}",
-                    definition.name,
-                    crate::transcription::models::language_name(&selection.language)
-                ));
-            }
-            options.language = runtime_language;
-        }
-        let session = OfflineGgufSession::new(model)?;
-        let weights_bytes = std::fs::metadata(model_path).map_or(0, |meta| meta.len() as usize);
-        Ok(Self {
-            session,
-            options,
-            name,
-            selection: selection.cloned(),
-            max_audio_samples: crate::transcription::models::max_audio_chunk_samples(
-                &architecture,
-                capabilities.max_audio_ms,
-            ),
-            stream: None,
-            _weights: MODEL_WEIGHTS.track(weights_bytes),
-        })
-    }
-
-    /// Runs a short silent inference. ggml keeps the Metal weights resident
-    /// for only three minutes after a run; then macOS may compress or swap
-    /// them out, and the next run pays to bring them back. A prewarm pays that
-    /// before the audio arrives.
-    pub(crate) fn prewarm(&mut self) -> Result<()> {
-        let started = Instant::now();
-        let mut silence = Vec::new();
-        pad_for_parakeet(&mut silence);
-        self.transcribe(&silence)
-            .wrap_err("could not prewarm transcription model")?;
-        tracing::info!(
-            prewarm_ms = started.elapsed().as_millis(),
-            "prewarmed transcription model"
-        );
-        Ok(())
-    }
-
-    pub(crate) fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub(crate) fn matches_selection(&self, selection: &TranscriptionSelection) -> bool {
-        self.selection.as_ref() == Some(selection)
-    }
-
-    pub(crate) fn selection(&self) -> Option<&TranscriptionSelection> {
-        self.selection.as_ref()
-    }
-
-    pub(crate) fn model_id(&self) -> Option<TranscriptionModelId> {
-        self.selection.as_ref().map(|selection| selection.model)
-    }
-
-    /// Low-level GGUF entry point over prepared audio. `Transcriber` owns the
-    /// whole-clip padding; chunks only apply the minimum duration, never
-    /// another model-specific trailing context.
-    pub fn transcribe(&mut self, samples: &[f32]) -> Result<String> {
-        self.session
-            .transcribe_chunked(samples, &self.options, self.max_audio_samples)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use hound::WavReader;
-
     use super::*;
-
-    use crate::dictation::resample_for_parakeet;
 
     fn processing_job(target: TranscriptionTarget) -> ProcessorJob {
         ProcessorJob {
@@ -1129,7 +792,6 @@ mod tests {
                 prepare_ms: 0,
                 inference_ms: 0,
             },
-            recording: None,
         }
     }
 
@@ -1163,53 +825,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires HEX_COHERE_MODEL and HEX_COHERE_FIXTURES synthetic audio"]
-    fn cohere_long_form_keeps_all_sections_with_and_without_pauses() {
-        let model_path = PathBuf::from(std::env::var_os("HEX_COHERE_MODEL").expect("model path"));
-        let fixtures =
-            PathBuf::from(std::env::var_os("HEX_COHERE_FIXTURES").expect("fixture path"));
-        let selection = TranscriptionSelection {
-            model: TranscriptionModelId::CohereTranscribe,
-            language: "en".into(),
-        };
-        let mut model = Parakeet::load_from(&model_path, false, Some(&selection)).unwrap();
-        eprintln!(
-            "Cohere maximum chunk: {:?} samples",
-            model.max_audio_samples
-        );
-        for (name, repeats) in [
-            ("long-continuous", 1),
-            ("long-pauses", 1),
-            ("long-repeated", 3),
-        ] {
-            let mut reader = WavReader::open(fixtures.join(format!("{name}.wav"))).unwrap();
-            assert_eq!(reader.spec().sample_rate, 16_000);
-            assert_eq!(reader.spec().channels, 1);
-            let samples = reader
-                .samples::<i16>()
-                .map(|sample| f32::from(sample.unwrap()) / 32768.0)
-                .collect::<Vec<_>>();
-            assert!(samples.len() > 35 * 16_000);
-            let text = model.transcribe(&samples).unwrap().to_lowercase();
-            for phrase in [
-                "small community garden",
-                "bright green door",
-                "purple submarine",
-            ] {
-                assert_eq!(
-                    text.matches(phrase).count(),
-                    repeats,
-                    "{name} lost {phrase:?}: {text}"
-                );
-            }
-            assert!(
-                text.split_whitespace().count() >= 160 * repeats,
-                "{name}: {text}"
-            );
-        }
-    }
-
-    #[test]
     fn parallel_processing_results_are_released_in_submission_order() {
         let mut outputs = OrderedOutputs::default();
         let job = |sequence| OutputJob::Paste { sequence };
@@ -1236,13 +851,12 @@ mod tests {
     #[test]
     fn ordered_waiting_outputs_remain_bounded_after_channel_drain() {
         let (output_sender, output_receiver) = mpsc::sync_channel(1);
-        let (event_sender, events) = mpsc::channel();
+        let (_event_sender, events) = mpsc::channel();
         let worker = DictationWorker {
             engine: None,
             inference_jobs: None,
             output_jobs: Some(output_sender),
             events,
-            event_sender,
             state: Arc::new(Mutex::new(WorkerState {
                 next_sequence: 1,
                 jobs: BTreeMap::from([(DictationJobId(0), Arc::new(JobControl::default()))]),
@@ -1295,190 +909,4 @@ mod tests {
         assert!(matches!(ready[1], OutputJob::Cancelled { .. }));
         assert!(outputs.push(completed(1)).is_empty());
     }
-
-    /// Replays recordings into the production engine as capture would (160 ms
-    /// blocks, the last 200 ms held back as the release tail) and compares
-    /// the stream's release latency and text with whole-clip transcription.
-    #[test]
-    #[ignore = "requires HEX_STREAM_MODEL (Unified English GGUF) and HEX_STREAM_WAVS (comma-separated)"]
-    fn metal_stream_tracks_offline_transcription() {
-        use crate::transcription::engine::{Offline, Source, TranscriptionEngine};
-        use crate::transcription::{Transcriber, WarmTranscriber};
-
-        let selection = TranscriptionSelection::default();
-        let mut model = Parakeet::load_from(
-            &PathBuf::from(std::env::var("HEX_STREAM_MODEL").unwrap()),
-            false,
-            Some(&selection),
-        )
-        .unwrap();
-        model.stream = model
-            .session
-            .probe_stream(&model.stream_run_options(), "parakeet");
-        assert!(model.stream.is_some(), "Metal must stream");
-        let engine = TranscriptionEngine::start(WarmTranscriber::serving(Transcriber::Gguf(
-            Box::new(model),
-        )))
-        .unwrap();
-        // `HEX_STREAM_LIVE_TEXT=0` replays without reading live text.
-        let engine = if std::env::var("HEX_STREAM_LIVE_TEXT").is_ok_and(|value| value == "0") {
-            engine
-        } else {
-            engine.with_live_text()
-        };
-        let speed = std::env::var("HEX_STREAM_SPEED")
-            .ok()
-            .and_then(|speed| speed.parse::<f64>().ok())
-            .unwrap_or(4.0);
-        let offline = || -> Offline {
-            let selection = selection.clone();
-            Box::new(move |model, samples| {
-                model
-                    .activate(&selection)
-                    .and_then(|model| model.transcribe(samples))
-                    .map_err(|error| error.to_string())
-            })
-        };
-        let words = |text: &str| {
-            text.split_whitespace()
-                .map(|word| {
-                    word.chars()
-                        .filter(|c| c.is_alphanumeric())
-                        .flat_map(char::to_lowercase)
-                        .collect::<String>()
-                })
-                .filter(|word| !word.is_empty())
-                .collect::<Vec<_>>()
-        };
-        for path in std::env::var("HEX_STREAM_WAVS").unwrap().split(',') {
-            let mut reader = WavReader::open(path).unwrap();
-            let rate = reader.spec().sample_rate;
-            let channels = usize::from(reader.spec().channels);
-            let raw = match reader.spec().sample_format {
-                hound::SampleFormat::Float => reader
-                    .samples::<f32>()
-                    .map(Result::unwrap)
-                    .collect::<Vec<_>>(),
-                hound::SampleFormat::Int => reader
-                    .samples::<i16>()
-                    .map(|sample| f32::from(sample.unwrap()) / 32_768.0)
-                    .collect(),
-            };
-            let mono = raw
-                .chunks(channels)
-                .map(|frame| frame.iter().sum::<f32>() / channels as f32)
-                .collect::<Vec<_>>();
-            let samples = resample_for_parakeet(&mono, rate);
-            // A warm app has already run inputs of this size.
-            let run = |samples: Vec<f32>| {
-                engine
-                    .finish_with(None, samples, offline())
-                    .unwrap()
-                    .wait()
-                    .unwrap()
-            };
-            run(samples.clone());
-            let whole = run(samples.clone());
-
-            let mut stream = engine.begin().expect("the model streams");
-            let held = samples.len().saturating_sub(3_200);
-            let feeding = Instant::now();
-            // Live text as a HUD would read it: (audio fed in ms, stable
-            // words, tentative words), and how often the stable text was
-            // rewritten instead of extended.
-            let mut timeline = Vec::new();
-            let mut stable = String::new();
-            let mut rewrites = 0;
-            for (index, block) in samples[..held].chunks(2_560).enumerate() {
-                let due = std::time::Duration::from_secs_f64(index as f64 * 0.16 / speed);
-                thread::sleep(due.saturating_sub(feeding.elapsed()));
-                stream.feed(block);
-                if let Some(partial) = stream.take_partial() {
-                    if !partial.stable.starts_with(stable.as_str()) {
-                        rewrites += 1;
-                    }
-                    stable = partial.stable.clone();
-                    timeline.push((
-                        stream.fed() / 16,
-                        words(&partial.stable).len(),
-                        words(&partial.tentative).len(),
-                    ));
-                }
-            }
-            thread::sleep(std::time::Duration::from_secs_f64(0.2 / speed));
-            let streamed = engine
-                .finish_with(Some(stream), samples.clone(), offline())
-                .unwrap()
-                .wait()
-                .unwrap();
-
-            let (reference, hypothesis) = (words(&whole.text), words(&streamed.text));
-            let mut previous = (0..=hypothesis.len()).collect::<Vec<_>>();
-            for (row, expected) in reference.iter().enumerate() {
-                let mut current = vec![row + 1; hypothesis.len() + 1];
-                for (column, actual) in hypothesis.iter().enumerate() {
-                    current[column + 1] = (previous[column + 1] + 1)
-                        .min(current[column] + 1)
-                        .min(previous[column] + usize::from(expected != actual));
-                }
-                previous = current;
-            }
-            let differences = previous[hypothesis.len()];
-            println!(
-                "{path}: audio_ms={} offline_ms={} release_ms={} ({}) word_differences={differences}/{}",
-                samples.len() / 16,
-                whole.finish_ms,
-                streamed.finish_ms,
-                streamed.source.label(),
-                reference.len()
-            );
-            println!("  offline {}", whole.text);
-            println!("  stream  {}", streamed.text);
-            let first_text_ms = timeline
-                .iter()
-                .find(|(_, stable, tentative)| stable + tentative > 0)
-                .map(|(fed_ms, ..)| *fed_ms);
-            println!(
-                "  live text: updates={} first_text_at_audio_ms={first_text_ms:?} stable_rewrites={rewrites} last_stable_words={}/{}",
-                timeline.len(),
-                timeline.last().map_or(0, |(_, stable, _)| *stable),
-                reference.len()
-            );
-            for (fed_ms, stable, tentative) in &timeline {
-                println!("    audio_ms={fed_ms} stable_words={stable} tentative_words={tentative}");
-            }
-            assert_eq!(streamed.source, Source::Stream);
-            assert!(differences * 20 <= reference.len().max(20));
-        }
-    }
-
-    #[test]
-    #[ignore = "requires HEX_STUTTER_FIXTURE and the installed Parakeet model"]
-    fn tdt_decoder_does_not_repeat_single_letter_tokens() {
-        let path = PathBuf::from(std::env::var("HEX_STUTTER_FIXTURE").unwrap());
-        let mut reader = WavReader::open(path).unwrap();
-        let sample_rate = reader.spec().sample_rate;
-        let samples = reader
-            .samples::<f32>()
-            .skip(sample_rate as usize * 20)
-            .take(sample_rate as usize * 25)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        let samples = resample_for_parakeet(&samples, sample_rate);
-        let text = Parakeet::load().unwrap().transcribe(&samples).unwrap();
-
-        assert!(text.contains("sweatshirt"), "unexpected transcript: {text}");
-        assert!(
-            !text.contains("p p p p") && !text.contains("p-p-p-p"),
-            "pathological token repetition: {text}"
-        );
-    }
 }
-
-#[cfg(test)]
-#[path = "dictation/tail_tests.rs"]
-mod dictation_tail_tests;
-
-#[cfg(test)]
-#[path = "dictation/corpus_tests.rs"]
-mod dictation_corpus_tests;

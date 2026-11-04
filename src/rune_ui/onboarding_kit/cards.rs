@@ -4,17 +4,14 @@
 
 use rune::{Color, El, Path, Shape, Spring, TextStyle, Transition, canvas, col, el, row, text};
 
-use super::super::controls::{KeySize, Paint, key_tray, keycap};
+use super::super::controls::Paint;
 use super::super::lists::allowed;
 use super::field_text;
-use super::mic::mic_level;
-use super::words::live_words;
 
 pub(crate) const CARD_W: f32 = 404.0;
 const CARD_PAD: f32 = 14.0;
 const RADIUS: f32 = 16.0;
 const ICON: f32 = 32.0;
-const FIELD_H: f32 = 36.0;
 const FIELD_PX: f32 = 12.0;
 const FIELD_PY: f32 = 7.0;
 pub(crate) const FIELD_FONT: TextStyle = TextStyle::new(13.0, 440.0);
@@ -82,31 +79,20 @@ pub(crate) const ADAM: Notice = Notice {
     field: "Reply in thread",
 };
 
+/// The card's reply field: the typed/spoken text, any sent bubbles, and
+/// whether it is focused or already sent.
 #[derive(Clone, Copy)]
-pub(crate) enum Reply<'a> {
-    Empty,
-    Ask {
-        keys: &'a [String],
-        hint: &'a str,
-    },
-    Hearing {
-        partial: &'a str,
-        meter: (f32, f32),
-    },
-    Typing(&'a str),
-    Sent(&'a str),
-    Lines {
-        sent_bubbles: &'a [String],
-        text: &'a str,
-        caret: Option<usize>,
-        lines: usize,
-        placeholder: bool,
-        focus: bool,
-        sent: bool,
-    },
+pub(crate) struct Reply<'a> {
+    pub(crate) sent_bubbles: &'a [String],
+    pub(crate) text: &'a str,
+    pub(crate) caret: Option<usize>,
+    pub(crate) lines: usize,
+    pub(crate) placeholder: bool,
+    pub(crate) focus: bool,
+    pub(crate) sent: bool,
 }
 
-/// Height of [`notice`] when its reply field uses [`Reply::Lines`] with empty
+/// Height of [`notice`] when its reply field has empty
 /// `sent_bubbles` and `lines` wrapped lines.
 pub(crate) fn lines_card_height(n: &Notice, lines: usize) -> f32 {
     // Measure how many lines `n.body` takes inside the top message column
@@ -164,10 +150,7 @@ pub(crate) fn notice(p: Paint, n: &Notice, reply: Reply<'_>, example: bool) -> E
                 .max_lines(2),
         );
 
-    let bubbles: &[String] = match reply {
-        Reply::Lines { sent_bubbles, .. } => sent_bubbles,
-        _ => &[],
-    };
+    let bubbles: &[String] = reply.sent_bubbles;
 
     let (fill, rim) = material(p);
     let mut card = col()
@@ -197,7 +180,7 @@ pub(crate) fn notice(p: Paint, n: &Notice, reply: Reply<'_>, example: bool) -> E
     // Remove the field in the same layout change as the second sent bubble,
     // not when Return lifts. Otherwise the card first makes room for both,
     // then shrinks while the departing field is already outside its new edge.
-    let hide_field = bubbles.len() >= 2 && matches!(reply, Reply::Lines { text: "", .. });
+    let hide_field = bubbles.len() >= 2 && reply.text.is_empty();
     if !hide_field {
         card = card.child(field(p, n, reply));
     }
@@ -331,55 +314,15 @@ pub(crate) fn floating(card: El, now: Option<f64>, phase: f64) -> El {
 
 fn field(p: Paint, n: &Notice, reply: Reply<'_>) -> El {
     let k = p.k;
-    let focus = match reply {
-        Reply::Hearing { .. } => true,
-        Reply::Lines { focus, .. } => focus,
-        _ => false,
-    };
-    let body = match reply {
-        Reply::Empty => placeholder(p, n.field),
-        Reply::Ask { keys, hint } => row()
-            .key("ask")
-            .gap(8.0)
-            .center_y()
-            .transition(Transition::opacity())
-            .child(text("Hold").key("hold").font(k.ty.small).color(p.muted()))
-            .child(key_tray(
-                p,
-                "keys",
-                KeySize::Small,
-                keys.iter()
-                    .enumerate()
-                    .map(|(i, cap)| keycap(p, i, cap, KeySize::Small, false)),
-            ))
-            .child(text(hint).key("hint").font(k.ty.small).color(p.muted())),
-        Reply::Hearing { partial: "", .. } => placeholder(p, "Listening…"),
-        Reply::Hearing { partial, .. } | Reply::Typing(partial) => {
-            live_words(p, "words", partial, false, FIELD_FONT, FIELD_LINE).grow(1.0)
-        }
-        Reply::Sent(words) => live_words(p, "words", words, true, FIELD_FONT, FIELD_LINE).grow(1.0),
-        Reply::Lines {
-            text: typed,
-            caret,
-            lines,
-            placeholder: empty,
-            ..
-        } => {
-            let body = field_text::typed(p, "typed", typed, caret, lines);
-            if empty {
-                body.child(placeholder(p, n.field).absolute(4.0, 0.0))
-            } else {
-                body
-            }
+    let body = {
+        let body = field_text::typed(p, "typed", reply.text, reply.caret, reply.lines);
+        if reply.placeholder {
+            body.child(placeholder(p, n.field).absolute(4.0, 0.0))
+        } else {
+            body
         }
     };
-    let trailing = match reply {
-        Reply::Hearing { meter, .. } => Some(mic_level(p, "mic", 16.0, meter.0, meter.1, true)),
-        Reply::Sent(_) => Some(allowed(p, "sent", "Sent").transition(Transition::opacity())),
-        Reply::Lines { sent: true, .. } => Some(allowed(p, "sent", "Sent")),
-        _ => None,
-    };
-    let drawn = matches!(reply, Reply::Lines { .. });
+    let trailing = reply.sent.then(|| allowed(p, "sent", "Sent"));
     let field = row()
         .key("field")
         .px(FIELD_PX)
@@ -389,7 +332,7 @@ fn field(p: Paint, n: &Notice, reply: Reply<'_>) -> El {
         .fill(if k.dark { k.c.bg_deep } else { k.c.layer_01 })
         .border(
             p.hair,
-            if focus {
+            if reply.focus {
                 k.c.border_focus
             } else {
                 k.c.border_base
@@ -397,11 +340,7 @@ fn field(p: Paint, n: &Notice, reply: Reply<'_>) -> El {
         )
         .child(body)
         .children(trailing);
-    if drawn {
-        field.items_end()
-    } else {
-        field.min_h(FIELD_H).center_y()
-    }
+    field.items_end()
 }
 
 fn placeholder(p: Paint, copy: &str) -> El {

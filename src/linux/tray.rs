@@ -58,10 +58,6 @@ fn perform(host: &HostHandle, published: &Published, command: TrayCommand) {
             let route = published.shortcuts.lock().unwrap().clone();
             crate::linux::service::route_shortcut(route.as_ref(), ShortcutCommand::PasteLast)
         }
-        TrayCommand::UseModel(model) => host.request(HostRequest::ChooseModel {
-            model,
-            language: snapshot.settings.transcription_for_model(model).language,
-        }),
         TrayCommand::Update => {
             match crate::desktop::tray_menu::update_action(&snapshot.desktop.update_status) {
                 Some(action) => host.request(HostRequest::Desktop(action)),
@@ -93,11 +89,6 @@ pub(crate) fn view(snapshot: &HostSnapshot) -> TrayView {
         desktop.listener.running,
         desktop.activity.state,
         &desktop.update_status,
-        crate::desktop::tray_menu::model_menu_entries(
-            &snapshot.settings,
-            desktop.transcription.preparing.is_some(),
-            crate::transcription::models::is_installed,
-        ),
     )
 }
 

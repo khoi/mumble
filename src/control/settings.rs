@@ -84,33 +84,12 @@ const fn optional(key: &'static str, kind: Kind, about: &'static str) -> Key {
     }
 }
 
-const fn read_only(key: &'static str, kind: Kind, about: &'static str, why: &'static str) -> Key {
-    Key {
-        key,
-        kind,
-        optional: false,
-        read_only: Some(why),
-        about,
-    }
-}
-
 const UNIT: Kind = Kind::Number { min: 0.0, max: 1.0 };
-const MODEL_CHANGE: &str = "change the transcription model with `hex model use`";
 
 /// Choice keys whose values are numbers in settings.json.
-const NUMERIC_CHOICES: [&str; 1] = ["labs.unload_idle_minutes"];
+const NUMERIC_CHOICES: [&str; 0] = [];
 
 const KEYS: &[Key] = &[
-    key(
-        "keyboard_model_switching.enabled",
-        Kind::Bool,
-        "Labs: switch the model when the keyboard input source changes (macOS, Windows, X11)",
-    ),
-    key(
-        "keyboard_model_switching.mappings",
-        Kind::Json,
-        "Input-source IDs mapped to a model and language; absent sources don't switch (macOS, Windows, X11)",
-    ),
     key(
         "release_microphone_while_idle",
         Kind::Bool,
@@ -213,28 +192,15 @@ const KEYS: &[Key] = &[
         Kind::Bool,
         "Keep Hex in the Dock when Settings is closed (macOS)",
     ),
-    read_only(
-        "transcription.model",
-        Kind::Text,
-        "The dictation model",
-        MODEL_CHANGE,
-    ),
-    read_only(
-        "transcription.language",
-        Kind::Text,
-        "The dictation language",
-        MODEL_CHANGE,
-    ),
-    read_only(
-        "transcription_recents",
-        Kind::Json,
-        "Recently used models, each with its language",
-        "Hex records these as you switch models",
+    key(
+        "transcription.provider",
+        Kind::Choice(&["claude", "codex"]),
+        "The transcription service: Claude or Codex, through the app you're signed in to",
     ),
     key(
-        "vocabulary_boost",
-        Kind::Choice(&["off", "light", "normal", "strong"]),
-        "How readily transcription swaps heard words for a vocabulary term",
+        "transcription.language",
+        Kind::Text,
+        "The dictation language code (en, de, fr, …) or auto",
     ),
     key(
         "dictation_processing.default_mode",
@@ -262,24 +228,9 @@ const KEYS: &[Key] = &[
         "Labs: the scene and story browser in the window",
     ),
     key(
-        "labs.vocabulary_biasing",
-        Kind::Bool,
-        "Labs: bias Parakeet transcription toward the vocabulary",
-    ),
-    key(
         "labs.mouse_shortcuts",
         Kind::Bool,
         "Labs: record mouse buttons as shortcuts (macOS)",
-    ),
-    key(
-        "labs.unload_idle",
-        Kind::Bool,
-        "Labs: unload the speech model when idle, freeing its memory",
-    ),
-    key(
-        "labs.unload_idle_minutes",
-        Kind::Choice(&["5", "15", "30", "60"]),
-        "Minutes unused before Labs › Unload model when idle unloads the model",
     ),
     key(
         "labs.restore_shortcut_default",
@@ -322,11 +273,6 @@ const KEYS: &[Key] = &[
         "Labs: add a space before a dictation pasted right after a word (macOS)",
     ),
     key(
-        "labs.picker_sort_filter",
-        Kind::Bool,
-        "Labs: sort the Local transcription picker by recommendation, size, or name, and show only models for the saved language",
-    ),
-    key(
         "labs.sided_modifier_chords",
         Kind::Bool,
         "Labs: the shortcut recorder keeps which side each modifier of a modifier-only chord is on, such as Right Command + Right Option (macOS)",
@@ -337,16 +283,6 @@ const KEYS: &[Key] = &[
         "Labs: in Toggle mode, a press held past the hold threshold dictates until it lifts; a short tap still starts and stops (macOS)",
     ),
     key(
-        "labs.benchmark_details",
-        Kind::Bool,
-        "Labs: the Local transcription picker shows each model's raw error rate (WER or CER), benchmark, source, and conditions",
-    ),
-    key(
-        "labs.parakeet_ultra",
-        Kind::Bool,
-        "Labs: Parakeet Ultra, Moondream's post-trained Parakeet v3, in the Local transcription picker; stays on while it is the dictation model",
-    ),
-    key(
         "labs.standalone_special_keys",
         Kind::Bool,
         "Labs: shortcuts may use Menu, Pause, or Scroll Lock, alone or with modifiers (Linux); off puts such a shortcut back to its default",
@@ -355,11 +291,6 @@ const KEYS: &[Key] = &[
         "labs.section_key_alone",
         Kind::Bool,
         "Labs: a shortcut may be the § key, left of 1 on ISO keyboards, with no modifier (Linux); off puts such a shortcut back to its default",
-    ),
-    key(
-        "labs.keep_recordings",
-        Kind::Bool,
-        "Labs: dictations saved to History keep their audio, so History can transcribe them again with another model; off stops saving, clearing History deletes it",
     ),
     key(
         "labs.history_stats",
@@ -377,44 +308,14 @@ const KEYS: &[Key] = &[
         "Labs: hide Hex's menu bar icon while nothing records; shortcuts keep working, and opening Hex again from Finder or Spotlight shows Settings (macOS)",
     ),
     key(
-        "labs.skip_pauses",
-        Kind::Bool,
-        "Labs: a dictation transcribed as a whole clip hears only the start and end of each long pause, so slow computers paste sooner (Linux and Windows)",
-    ),
-    key(
         "labs.gnome_clipboard_restore",
         Kind::Bool,
         "Labs: on Wayland desktops without data-control, such as GNOME, a paste restores the previous clipboard through XWayland while it is already running (Linux)",
     ),
     key(
-        "labs.cloud_transcription",
-        Kind::Bool,
-        "Labs: transcribe dictations with Claude or Codex through the app you're signed in to; the audio leaves this computer",
-    ),
-    key(
-        "labs.cloud_transcription_provider",
-        Kind::Choice(&["claude", "codex"]),
-        "The service Labs › Cloud transcription sends dictations to",
-    ),
-    key(
         "labs.output_fixes",
         Kind::Bool,
         "Labs: Output's Try card offers Vocabulary and Fix this, which copies an agent prompt naming the wrong result",
-    ),
-    key(
-        "labs.picker_active_first",
-        Kind::Bool,
-        "Labs: the speech model picker lists the model in use first",
-    ),
-    key(
-        "labs.model_in_place",
-        Kind::Bool,
-        "Labs: the speech model picker's Use model file where it is… adds a GGUF file without copying it, so several accounts can share one file",
-    ),
-    key(
-        "labs.picker_downloaded",
-        Kind::Bool,
-        "Labs: the speech model picker's All speech models view offers Only downloaded models, with the space they take",
     ),
     key(
         "experimental.hex_microphone",
@@ -474,11 +375,6 @@ const KEYS: &[Key] = &[
         "Interface language; none follows the system",
     ),
     key(
-        "transcription_device",
-        Kind::Choice(&["auto", "gpu", "cpu"]),
-        "Where the speech model runs: auto (a GPU unless it failed before), gpu, or cpu (Linux and Windows)",
-    ),
-    key(
         "indicator_position",
         Kind::Choice(&["top", "bottom", "hidden"]),
         "Where the dictation HUD appears",
@@ -497,7 +393,6 @@ const NEEDS: &[(&str, &str)] = &[
     ("experimental.hex_microphone", "fun"),
     ("show_dock_icon", "dock_icon"),
     ("labs.hide_menu_bar_icon", "dock_icon"),
-    ("keyboard_model_switching.", "keyboard_model_switching"),
     ("enable_on_launch", "listener_control"),
     ("share_dictation_shortcut", "share_shortcut"),
 ];
@@ -586,31 +481,6 @@ impl Change {
     }
 }
 
-/// Deprecated: recognition hints merged into the vocabulary. `get` reads
-/// the vocabulary's terms, comma-separated, and `set` adds names to it;
-/// `list` leaves it out.
-const RECOGNITION_HINTS: &str = "transcription.recognition_hints";
-
-fn recognition_hints(settings: &AppSettings) -> SettingValue {
-    SettingValue {
-        key: RECOGNITION_HINTS.into(),
-        value: Value::String(
-            settings
-                .vocabulary
-                .iter()
-                .map(|entry| entry.term.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-        ),
-        kind: Kind::Text.name().into(),
-        choices: Vec::new(),
-        writable: true,
-        about: "Deprecated: the vocabulary's terms; setting it adds names to the vocabulary                 (use `hex vocabulary`)"
-            .into(),
-        available: true,
-    }
-}
-
 /// Every setting, in registry order.
 pub fn list(settings: &AppSettings) -> Vec<SettingValue> {
     let json = serde_json::to_value(settings).unwrap_or(Value::Null);
@@ -619,9 +489,6 @@ pub fn list(settings: &AppSettings) -> Vec<SettingValue> {
 
 /// One setting, or every setting under a prefix such as `labs`.
 pub fn get(settings: &AppSettings, name: &str) -> Result<Vec<SettingValue>, ControlError> {
-    if name == RECOGNITION_HINTS {
-        return Ok(vec![recognition_hints(settings)]);
-    }
     let json = serde_json::to_value(settings).unwrap_or(Value::Null);
     let prefix = format!("{name}.");
     let found: Vec<_> = keys()
@@ -692,17 +559,6 @@ pub fn apply(
     raw: &str,
     shortcuts: &ShortcutRules,
 ) -> Result<Change, ControlError> {
-    if name == RECOGNITION_HINTS {
-        let mut candidate = settings.clone();
-        crate::dictation::vocabulary::fold_hints(&mut candidate.vocabulary, raw);
-        return Ok(Change {
-            settings: candidate,
-            effects: Vec::new(),
-            message: "Added the names to the vocabulary (transcription.recognition_hints is \
-                      deprecated; use `hex vocabulary`)"
-                .into(),
-        });
-    }
     let key = keys()
         .find(|key| key.key == name)
         .ok_or_else(|| unknown(name))?;
@@ -792,13 +648,6 @@ pub fn apply(
                 candidate.double_tap_only = false;
             }
         }
-        "keyboard_model_switching.mappings" => {
-            for choice in candidate.keyboard_model_switching.mappings.values() {
-                choice
-                    .validate()
-                    .map_err(|error| invalid(name, &error.to_string()))?;
-            }
-        }
         "dictation_processing.default_mode" => {
             candidate.dictation_processing.default_mode.name = "Global".into();
         }
@@ -813,11 +662,6 @@ pub fn apply(
         }
         "labs.standalone_special_keys" => candidate.repair_special_keys(),
         "labs.section_key_alone" => candidate.repair_section_key(),
-        "labs.parakeet_ultra" if !candidate.labs.parakeet_ultra => {
-            if let Some(why) = crate::labs::Feature::ParakeetUltra.off_refusal(settings) {
-                return Err(invalid(name, why));
-            }
-        }
         "history_retention" => effects.push(Effect::HistoryRetention(candidate.history_retention)),
         "show_dock_icon" => effects.push(Effect::DockIcon),
         "updates.channel" => effects.push(Effect::CheckForUpdates),
@@ -833,46 +677,18 @@ pub fn apply(
 /// Validates every `key: value` in `values` against `settings` and returns
 /// the settings to save, all or none (`hex settings apply`, the Home Manager
 /// module). Values are JSON: booleans, numbers, `null` for `none`, objects
-/// and arrays for json settings, text for the rest. `transcription.model`
-/// and `transcription.language` select a model, as `hex model use` would,
-/// without needing it installed. Keys that depend on each other (a
-/// double-tap-only start and its shortcut) apply in any order.
+/// and arrays for json settings, text for the rest. Keys that depend on each
+/// other (a double-tap-only start and its shortcut) apply in any order.
 pub fn apply_all(
     settings: &AppSettings,
     values: &serde_json::Map<String, Value>,
     shortcuts: &ShortcutRules,
 ) -> Result<Change, ControlError> {
     let mut candidate = settings.clone();
-    let model = values.get("transcription.model");
-    let language = values.get("transcription.language");
-    if model.is_some() || language.is_some() {
-        let text = |name: &str, value: Option<&Value>| match value {
-            None => Ok(None),
-            Some(Value::String(text)) => Ok(Some(text.clone())),
-            Some(_) => Err(invalid(name, "expected text")),
-        };
-        let model = text("transcription.model", model)?
-            .unwrap_or_else(|| candidate.transcription.model.as_str().to_owned());
-        let language = text("transcription.language", language)?;
-        candidate.transcription = super::model_selection(&candidate, &model, language.as_deref())?;
-    }
     let mut pending = Vec::new();
     for (name, value) in values {
-        if matches!(
-            name.as_str(),
-            "transcription.model" | "transcription.language"
-        ) {
-            continue;
-        }
         if let Some(error) = unavailable(name) {
             return Err(error);
-        }
-        if name == RECOGNITION_HINTS {
-            let Value::String(text) = value else {
-                return Err(invalid(name, "expected text"));
-            };
-            pending.push((name.as_str(), text.clone()));
-            continue;
         }
         let key = keys()
             .find(|key| key.key == name)
@@ -951,10 +767,8 @@ fn parse(key: &Key, raw: &str, shortcuts: &ShortcutRules) -> Result<Value, Contr
                 .iter()
                 .find(|choice| choice.to_ascii_lowercase().replace('-', "_") == normalized)
                 .ok_or_else(|| invalid(name, &format!("expected one of {}", choices.join(", "))))?;
-            Ok(if name == "labs.unload_idle_minutes" {
-                let minutes: u32 = choice.parse().expect("idle choices are numbers");
-                debug_assert!(crate::app_settings::UNLOAD_IDLE_MINUTES.contains(&minutes));
-                Value::from(minutes)
+            Ok(if NUMERIC_CHOICES.contains(&name) {
+                Value::from(choice.parse::<u32>().expect("numeric choices are numbers"))
             } else {
                 Value::String((*choice).into())
             })
@@ -1262,62 +1076,14 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_model_switching_settings_map_sources_to_a_model_and_its_language() {
-        let settings = apply(
-            &AppSettings::default(),
-            "keyboard_model_switching.enabled",
-            "on",
-            &rules(),
-        )
-        .unwrap()
-        .settings;
-        assert!(settings.keyboard_model_switching.enabled);
-        let change = apply(
-            &settings,
-            "keyboard_model_switching.mappings",
-            r#"{"com.apple.keylayout.Spanish":{"model":"parakeet_v3","language":"es"}}"#,
-            &rules(),
-        )
-        .unwrap();
-        assert_eq!(
-            change
-                .settings
-                .keyboard_model_switching
-                .mappings
-                .get("com.apple.keylayout.Spanish"),
-            Some(&crate::app_settings::KeyboardModelChoice {
-                model: crate::transcription::models::TranscriptionModelId::ParakeetV3,
-                language: "es".into(),
-            })
-        );
-        for invalid in [
-            r#"{"Spanish":"parakeet_v3"}"#,
-            r#"{"Spanish":{"model":"unknown-model","language":"es"}}"#,
-            r#"{"Japanese":{"model":"parakeet_unified_en","language":"ja"}}"#,
-            r#"{"ABC":{"model":"apple_speech","language":"en"}}"#,
-        ] {
-            assert!(
-                apply(
-                    &settings,
-                    "keyboard_model_switching.mappings",
-                    invalid,
-                    &rules()
-                )
-                .is_err(),
-                "{invalid} was accepted"
-            );
-        }
-    }
-
-    #[test]
     fn settings_read_by_key_and_prefix() {
         let settings = AppSettings::default();
         let all = list(&settings);
         assert_eq!(all.len(), keys().count());
         let experimental = get(&settings, "experimental").unwrap();
         assert_eq!(experimental.len(), 4);
-        let idle = get(&settings, "labs.unload_idle_minutes").unwrap();
-        assert_eq!(idle[0].value, Value::String("15".into()));
+        let provider = get(&settings, "transcription.provider").unwrap();
+        assert_eq!(provider[0].value, Value::String("claude".into()));
         assert_eq!(get(&settings, "nope").unwrap_err().code, "unknown-setting");
         let retention = get(&settings, "history_retention").unwrap();
         assert_eq!(retention[0].value, Value::String("week".into()));
@@ -1325,32 +1091,21 @@ mod tests {
     }
 
     #[test]
-    fn recognition_hints_alias_the_vocabulary() {
-        let settings = AppSettings {
-            vocabulary: vec![crate::dictation::vocabulary::VocabularyEntry {
-                term: "Rune".into(),
-                sounds_like: Vec::new(),
-            }],
-            ..Default::default()
-        };
-        let change = apply(&settings, RECOGNITION_HINTS, "rune, Kaffar", &rules()).unwrap();
-        let terms: Vec<_> = change
-            .settings
-            .vocabulary
-            .iter()
-            .map(|entry| entry.term.as_str())
-            .collect();
-        assert_eq!(terms, ["Rune", "Kaffar"]);
-        let read = get(&change.settings, RECOGNITION_HINTS).unwrap();
-        assert_eq!(read[0].value, Value::String("Rune, Kaffar".into()));
-        assert!(
-            list(&settings)
-                .iter()
-                .all(|value| value.key != RECOGNITION_HINTS)
+    fn the_transcription_provider_and_language_are_set() {
+        let settings = AppSettings::default();
+        let change = apply(&settings, "transcription.provider", "codex", &rules()).unwrap();
+        assert_eq!(
+            change.settings.transcription.provider,
+            crate::transcription::CloudProvider::Codex
         );
-        let values = serde_json::json!({ RECOGNITION_HINTS: "Rodolfo" });
-        let applied = apply_all(&settings, values.as_object().unwrap(), &rules()).unwrap();
-        assert_eq!(applied.settings.vocabulary.len(), 2);
+        assert_eq!(
+            apply(&settings, "transcription.provider", "whisper", &rules())
+                .unwrap_err()
+                .code,
+            "invalid-value"
+        );
+        let change = apply(&settings, "transcription.language", "de", &rules()).unwrap();
+        assert_eq!(change.settings.transcription.language, "de");
     }
 
     #[test]
@@ -1363,7 +1118,6 @@ mod tests {
             ("sound_effects", "maybe"),
             ("sound_effect_volume", "2"),
             ("shortcut_mode", "tap"),
-            ("labs.unload_idle_minutes", "3"),
             ("dictation_processing.modes", "[{"),
         ] {
             assert_eq!(
@@ -1373,12 +1127,6 @@ mod tests {
             );
         }
         assert_eq!(
-            apply(&settings, "transcription.model", "parakeet_v2", &rules())
-                .unwrap_err()
-                .code,
-            "read-only"
-        );
-        assert_eq!(
             apply(&settings, "bogus", "1", &rules()).unwrap_err().code,
             "unknown-setting"
         );
@@ -1387,8 +1135,6 @@ mod tests {
             change.settings.shortcut_mode,
             crate::dictation::ShortcutMode::Toggle
         );
-        let change = apply(&settings, "labs.unload_idle_minutes", "30", &rules()).unwrap();
-        assert_eq!(change.settings.labs.unload_idle_minutes, 30);
         let change = apply(&settings, "ui_language", "none", &rules()).unwrap();
         assert_eq!(change.settings.ui_language, None);
         let change = apply(&settings, "microphone", "USB Mic", &rules()).unwrap();
@@ -1631,7 +1377,7 @@ mod tests {
             &values(
                 r#"{"double_tap_only": true, "double_tap_lock": true,
                     "dictation_hotkey": "option+space", "sound_effect_volume": 0.4,
-                    "microphone": null, "transcription.model": "parakeet_v3",
+                    "microphone": null, "transcription.provider": "codex",
                     "transcription.language": "de"}"#,
             ),
             &rules(),
@@ -1643,13 +1389,16 @@ mod tests {
             "option+space"
         );
         assert_eq!(change.settings.sound_effect_volume, 0.4);
-        assert_eq!(change.settings.transcription.model.as_str(), "parakeet_v3");
+        assert_eq!(
+            change.settings.transcription.provider,
+            crate::transcription::CloudProvider::Codex
+        );
         assert_eq!(change.settings.transcription.language, "de");
 
         for refused in [
             r#"{"sound_effects": false, "no_such_setting": 1}"#,
             r#"{"sound_effects": false, "sound_effect_volume": 7}"#,
-            r#"{"transcription.model": "no_such_model"}"#,
+            r#"{"transcription.provider": "no_such_provider"}"#,
         ] {
             assert!(apply_all(&settings, &values(refused), &rules()).is_err());
         }

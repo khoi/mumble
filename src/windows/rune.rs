@@ -39,7 +39,6 @@ use crate::desktop::host::{
 use crate::desktop::tray_menu::{TrayCommand, TrayView};
 use crate::history::History;
 use crate::rune_ui::Ui;
-use crate::transcription::models::TranscriptionModelId;
 use crate::windows::app::WindowsDesktopHost;
 
 /// The tray icon: the white Hex mark as raw 32×32 RGBA, recolored black for
@@ -64,11 +63,6 @@ pub(crate) enum Request {
         target: ShortcutTarget,
         shortcut: DesktopShortcut,
     },
-    ChooseModel {
-        model: TranscriptionModelId,
-        language: String,
-    },
-    CancelModel,
     /// The window saved `settings.json`; adopt it.
     ReloadSettings,
     /// The tray's Enable / Disable Hex.
@@ -447,20 +441,6 @@ impl crate::control::host::Host for WindowsControl {
         }
     }
 
-    fn choose_model(
-        &self,
-        selection: crate::transcription::models::TranscriptionSelection,
-    ) -> std::result::Result<(), ControlError> {
-        self.send(Request::ChooseModel {
-            model: selection.model,
-            language: selection.language,
-        })
-    }
-
-    fn cancel_model(&self) {
-        let _ = self.runtime.send(Request::CancelModel);
-    }
-
     fn check_for_updates(&self) -> std::result::Result<(), ControlError> {
         self.send(Request::Desktop(DesktopAction::CheckForUpdates))
     }
@@ -499,11 +479,6 @@ fn tray_view_for(published: &Published) -> TrayView {
         published.listener.running,
         published.state,
         &published.update_status,
-        crate::desktop::tray_menu::model_menu_entries(
-            &published.settings,
-            published.transcription.preparing.is_some(),
-            crate::transcription::models::is_installed,
-        ),
     )
 }
 
@@ -625,13 +600,6 @@ fn create_tray(window: rune::AppHandle<Ui>) -> Result<rune::Tray> {
                 let request = match command {
                     TrayCommand::PasteLast => Request::PasteLast,
                     TrayCommand::ToggleListening => Request::ToggleListening,
-                    TrayCommand::UseModel(model) => {
-                        let Some(published) = published else { return };
-                        Request::ChooseModel {
-                            model,
-                            language: published.settings.transcription_for_model(model).language,
-                        }
-                    }
                     TrayCommand::Update => {
                         let Some(action) = published.and_then(|published| {
                             crate::desktop::tray_menu::update_action(&published.update_status)

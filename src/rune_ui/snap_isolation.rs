@@ -38,8 +38,13 @@ fn every_scene_render_leaves_the_data_folder_untouched() {
     fs::create_dir_all(&support).unwrap();
     fs::create_dir_all(&home).unwrap();
     let settings = support.join("settings.json");
-    fs::write(&settings, b"{}\n").unwrap();
-    // A launch would write this file's one-time migrations back.
+    // A legacy top-level text replacement migrates into the default mode, so
+    // a launch would rewrite this file's one-time migrations back.
+    fs::write(
+        &settings,
+        br#"{"text_replacements":[{"matched_phrase":"teh","output":"the"}]}"#,
+    )
+    .unwrap();
     assert!(AppSettings::read_from(&settings).unwrap().1);
     // SAFETY: nextest runs each test in its own process, so no other test
     // reads the environment meanwhile.

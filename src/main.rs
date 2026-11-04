@@ -7,8 +7,6 @@ mod accessibility;
 mod app_paths;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 mod app_settings;
-#[cfg(target_os = "macos")]
-mod apple_speech;
 mod application_catalog;
 #[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 mod audio;
@@ -24,10 +22,6 @@ mod feedback;
 mod history;
 #[cfg(target_os = "macos")]
 mod keyboard;
-#[cfg_attr(target_os = "macos", path = "keyboard_input_sources/macos.rs")]
-#[cfg_attr(target_os = "windows", path = "keyboard_input_sources/windows.rs")]
-#[cfg_attr(target_os = "linux", path = "keyboard_input_sources/x11.rs")]
-mod keyboard_input_sources;
 mod labs;
 #[cfg(target_os = "linux")]
 mod linux;
@@ -61,7 +55,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 #[cfg(target_os = "macos")]
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use color_eyre::Result;
 #[cfg(target_os = "macos")]
 use color_eyre::eyre::eyre;
@@ -118,31 +112,6 @@ enum Command {
         #[command(subcommand)]
         command: DevCommand,
     },
-    /// Measure the local transcription runtime against a fixed WAV corpus.
-    #[command(hide = true)]
-    BenchmarkTranscription {
-        /// JSON manifest containing audio paths and reference transcripts.
-        manifest: PathBuf,
-        /// Runtime to measure.
-        #[arg(long, value_enum, default_value = "transcribe-cpp")]
-        backend: TranscriptionBenchmarkBackend,
-        /// Override the default GGUF model path for the transcribe.cpp backend.
-        #[arg(long)]
-        model: Option<PathBuf>,
-        /// Full-corpus passes discarded before measurement.
-        #[arg(long, default_value_t = 1)]
-        warmups: usize,
-        /// Full-corpus measured passes.
-        #[arg(long, default_value_t = 7)]
-        runs: usize,
-    },
-}
-
-#[cfg(target_os = "macos")]
-#[derive(Clone, Copy, ValueEnum)]
-enum TranscriptionBenchmarkBackend {
-    Onnx,
-    TranscribeCpp,
 }
 
 #[cfg(target_os = "macos")]
@@ -308,26 +277,6 @@ fn main() -> Result<()> {
                     DevCommand::VoiceFilter { .. } => unreachable!("handled before startup"),
                 }
             }
-        }
-        Command::BenchmarkTranscription {
-            manifest,
-            backend,
-            model,
-            warmups,
-            runs,
-        } => {
-            let backend = match backend {
-                TranscriptionBenchmarkBackend::Onnx => transcription::benchmark::Backend::Onnx,
-                TranscriptionBenchmarkBackend::TranscribeCpp => {
-                    transcription::benchmark::Backend::TranscribeCpp {
-                        model: match model {
-                            Some(model) => model,
-                            None => parakeet::default_model_path()?,
-                        },
-                    }
-                }
-            };
-            transcription::benchmark::run(&manifest, warmups, runs, backend)
         }
     }
 }
@@ -534,19 +483,14 @@ mod tests {
 
 #[cfg(target_os = "linux")]
 fn main() -> Result<()> {
-    #[cfg(target_arch = "x86_64")]
-    transcription::cpu_floor::require();
     linux::input_route::mark_streams();
     linux::run(&SHUTDOWN)
 }
 
 #[cfg(target_os = "windows")]
 fn main() -> Result<()> {
-    // DLL search hardening first: the CPU check's message box loads DLLs.
     windows::restrict_dll_search();
     windows::gpu_fallback::choose();
-    #[cfg(target_arch = "x86_64")]
-    transcription::cpu_floor::require();
     windows::run(&SHUTDOWN)
 }
 

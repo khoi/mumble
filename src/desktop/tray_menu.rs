@@ -1,63 +1,21 @@
-//! What the tray menu offers: the downloaded models the macOS menu bar and
-//! the Linux and Windows trays list, and the tray menu those two share
-//! (status, Show Hex, Paste last dictation, the model picker, the update,
-//! Enable / Disable Hex, Quit Hex). Each tray maps a picked [`TrayCommand`]
-//! onto its own runtime.
-
-use crate::app_settings::AppSettings;
-use crate::transcription::models::{
-    ModelDefinition, TranscriptionModelId, all_models, language_name,
-};
-
-/// One downloaded model in a menu's model picker.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ModelMenuEntry {
-    pub(crate) model: TranscriptionModelId,
-    pub(crate) title: String,
-    pub(crate) selected: bool,
-    pub(crate) enabled: bool,
-}
-
-/// The available models `installed` reports downloaded, each with its
-/// remembered language. None can be picked while one is `preparing`, and
-/// the selected one never can.
-pub(crate) fn model_menu_entries(
-    settings: &AppSettings,
-    preparing: bool,
-    installed: impl Fn(&ModelDefinition, &str) -> bool,
-) -> Vec<ModelMenuEntry> {
-    all_models()
-        .into_iter()
-        .filter(|model| model.available())
-        .filter_map(|model| {
-            let selection = settings.transcription_for_model(model.id);
-            installed(model, &selection.language).then(|| ModelMenuEntry {
-                model: model.id,
-                title: format!("{} · {}", model.name, language_name(&selection.language)),
-                selected: model.id == settings.transcription.model,
-                enabled: !preparing && model.id != settings.transcription.model,
-            })
-        })
-        .collect()
-}
+//! The tray menu the Linux and Windows trays share (status, Show Hex, Paste
+//! last dictation, the update, Enable / Disable Hex, Quit Hex). Each tray
+//! maps a picked [`TrayCommand`] onto its own runtime.
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) use tray::*;
 
 #[cfg(not(target_os = "macos"))]
 mod tray {
-    use super::ModelMenuEntry;
     use crate::desktop::events::VoiceState;
     use crate::desktop::host::DesktopUpdateStatus;
     use crate::desktop::i18n::tr;
-    use crate::transcription::models::TranscriptionModelId;
 
     /// What a tray menu item asks for.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) enum TrayCommand {
         Show,
         PasteLast,
-        UseModel(TranscriptionModelId),
         /// The update item: restart into it, download it, or switch channel.
         Update,
         ToggleListening,
@@ -73,7 +31,7 @@ mod tray {
                 "update" => Self::Update,
                 "toggle" => Self::ToggleListening,
                 "quit" => Self::Quit,
-                _ => Self::UseModel(id.strip_prefix("model:")?.parse().ok()?),
+                _ => return None,
             })
         }
     }
@@ -84,7 +42,6 @@ mod tray {
         pub(crate) listening: bool,
         pub(crate) state: Option<VoiceState>,
         pub(crate) update: Option<String>,
-        pub(crate) models: Vec<ModelMenuEntry>,
     }
 
     impl TrayView {
@@ -92,13 +49,11 @@ mod tray {
             listening: bool,
             state: Option<VoiceState>,
             update: &DesktopUpdateStatus,
-            models: Vec<ModelMenuEntry>,
         ) -> Self {
             Self {
                 listening,
                 state: state.filter(|_| listening),
                 update: update_label(update),
-                models,
             }
         }
 
@@ -140,18 +95,6 @@ mod tray {
             menu.push(
                 TrayItem::action("paste-last", tr("Paste last dictation")).enabled(self.listening),
             );
-            if !self.models.is_empty() {
-                menu.push(TrayItem::Separator);
-                menu.push(TrayItem::action("models", tr("Speech model")).enabled(false));
-                menu.extend(self.models.iter().map(|entry| {
-                    let mark = if entry.selected { "✓ " } else { "    " };
-                    TrayItem::action(
-                        format!("model:{}", entry.model.as_str()),
-                        format!("{mark}{}", entry.title),
-                    )
-                    .enabled(entry.enabled)
-                }));
-            }
             menu.push(TrayItem::Separator);
             menu.extend(
                 self.update
@@ -192,57 +135,18 @@ mod tray {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "macos")))]
 mod tests {
     use super::*;
-    use crate::transcription::models::TranscriptionSelection;
 
-    #[test]
-    fn model_menu_only_lists_downloaded_models_with_their_remembered_language() {
-        let mut settings = AppSettings::default();
-        settings.remember_transcription(TranscriptionSelection {
-            model: TranscriptionModelId::WhisperLargeV3Turbo,
-            language: "fr".into(),
-        });
-        settings.remember_transcription(TranscriptionSelection::default());
-        let installed = |model: &ModelDefinition, _: &str| {
-            matches!(
-                model.id,
-                TranscriptionModelId::ParakeetUnifiedEnglish
-                    | TranscriptionModelId::WhisperLargeV3Turbo
-            )
-        };
-        let entries = model_menu_entries(&settings, false, installed);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].title, "Parakeet Unified English · English");
-        assert!(entries[0].selected);
-        assert!(!entries[0].enabled);
-        assert_eq!(entries[1].title, "Whisper large-v3-turbo · French");
-        assert!(!entries[1].selected);
-        assert!(entries[1].enabled);
-        let preparing = model_menu_entries(&settings, true, installed);
-        assert!(preparing.iter().all(|entry| !entry.enabled));
-        assert!(
-            preparing[0].selected,
-            "preparing must not mark the candidate selected"
-        );
-        assert!(model_menu_entries(&settings, false, |_, _| false).is_empty());
-    }
-
-    #[cfg(not(target_os = "macos"))]
     #[test]
     fn tray_menu_ids_round_trip_and_show_the_state() {
         use crate::desktop::events::VoiceState;
         use crate::desktop::host::DesktopUpdateStatus;
-        let settings = AppSettings::default();
-        let models = model_menu_entries(&settings, false, |model, _| {
-            model.id == settings.transcription.model
-        });
         let view = TrayView::new(
             true,
             Some(VoiceState::Dictating),
             &DesktopUpdateStatus::ReadyToRestart,
-            models,
         );
         let menu = view.menu();
         let ids: Vec<&str> = menu
@@ -252,23 +156,9 @@ mod tests {
                 _ => None,
             })
             .collect();
-        let model_id = format!("model:{}", settings.transcription.model.as_str());
         assert_eq!(
             ids,
-            [
-                "status",
-                "show",
-                "paste-last",
-                "models",
-                model_id.as_str(),
-                "update",
-                "toggle",
-                "quit"
-            ]
-        );
-        assert_eq!(
-            TrayCommand::from_id(&model_id),
-            Some(TrayCommand::UseModel(settings.transcription.model))
+            ["status", "show", "paste-last", "update", "toggle", "quit"]
         );
         assert_eq!(
             TrayCommand::from_id("paste-last"),
@@ -280,7 +170,6 @@ mod tests {
             false,
             Some(VoiceState::Dictating),
             &DesktopUpdateStatus::Current,
-            Vec::new(),
         );
         assert_eq!(stopped.tooltip(), "Hex Dictation");
     }

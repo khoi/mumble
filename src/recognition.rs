@@ -341,7 +341,6 @@ pub fn listen(
         microphone_policy.release_while_idle,
         dictation_worker.engine(),
     )?;
-    let (mut transcription_revision, _) = crate::app_settings::transcription_selection();
     let mut personal_host_enabled = crate::app_settings::custom_transformations_enabled();
     let mut personal_commands = personal_host_enabled
         .then(|| crate::personal_commands::PersonalCommands::start(transformations.clone()))
@@ -732,7 +731,6 @@ pub fn listen(
                 input_monitor.activity.invalidate();
             }
             context = next_context;
-            crate::dictation::vocabulary::focus(&context);
             events.emit(&VoiceEvent::Context {
                 timestamp_ms: now_ms(),
                 application: context.application.clone(),
@@ -768,10 +766,6 @@ pub fn listen(
         if next_microphone_revision != microphone_revision {
             input.request_selection(next_microphone_revision, microphone.as_deref());
             microphone_revision = next_microphone_revision;
-        }
-        let (next_revision, selection) = crate::app_settings::transcription_selection();
-        if next_revision != transcription_revision && dictation_worker.reload(selection).is_ok() {
-            transcription_revision = next_revision;
         }
         let hotkey_capture_active = crate::app_settings::hotkey_capture_active();
         let hotkey_capture_suspended = hotkey_capture_active || input.is_recovering();

@@ -1,6 +1,6 @@
+use super::scenes::portal_fixture;
 use super::settings::{desktop_shortcut, recorded_binding, validate};
 use super::*;
-use crate::transcription::models::TranscriptionSelection;
 use rune::render::Gpu;
 use rune::text::TextSystem;
 use rune::{Env, Key, KeyEvent, Mods, Runtime, TextEdit};
@@ -1276,7 +1276,6 @@ fn history_search_without_matches_says_so() {
             audio_ms: 900,
             inference_ms: 80,
             total_ms: 200,
-            recording: None,
         })
         .unwrap();
     let mut rt = runtime("history-empty", true, PANE_SIZE);
@@ -1296,122 +1295,6 @@ fn history_search_without_matches_says_so() {
             .iter()
             .all(|text| text != "No dictations retained yet.")
     );
-    let _ = std::fs::remove_dir_all(&directory);
-}
-
-#[test]
-fn transcribe_again_offers_a_language_only_for_models_that_take_one() {
-    use crate::transcription::models::{AUTO_LANGUAGE, TranscriptionModelId};
-    let whisper = history::language_choices(TranscriptionModelId::WhisperLargeV3Turbo).unwrap();
-    assert_eq!(whisper[0], AUTO_LANGUAGE);
-    assert!(whisper.contains(&"en") && whisper.contains(&"es"));
-    assert!(history::language_choices(TranscriptionModelId::ParakeetV3).is_none());
-    assert!(history::language_choices(TranscriptionModelId::GigaAmV3).is_none());
-
-    let mut rt = runtime("history", true, GOLDEN_SIZE);
-    rt.state.settings.labs.keep_recordings = true;
-    rt.state.settings.transcription.language = "es".into();
-    history::choose_model(
-        &mut rt.state,
-        2,
-        TranscriptionModelId::WhisperLargeV3Turbo,
-        "Whisper",
-    );
-    let pending = rt.state.history.pending.as_ref().unwrap();
-    assert_eq!(pending.id, 2);
-    assert_eq!(pending.language, "es", "it starts at the saved language");
-    assert!(
-        rt.state.history.again.is_none(),
-        "nothing runs before Transcribe"
-    );
-    assert_eq!(rt.state.settings.transcription.language, "es");
-
-    rt.state.settings.transcription.language = "pl".into();
-    history::choose_model(
-        &mut rt.state,
-        2,
-        TranscriptionModelId::CohereTranscribe,
-        "Cohere",
-    );
-    let pending = rt.state.history.pending.as_ref().unwrap();
-    assert!(
-        history::language_choices(TranscriptionModelId::CohereTranscribe)
-            .unwrap()
-            .contains(&pending.language.as_str()),
-        "an unsupported saved language falls back to one the model has"
-    );
-}
-
-#[test]
-fn transcribe_again_shows_only_with_its_lab_and_replace_updates_the_entry() {
-    use crate::history::{
-        History, HistoryDraft, HistoryKind, HistoryRetention, HistoryStore, Recording,
-    };
-    let directory = std::env::temp_dir().join(format!("hex-rune-again-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).unwrap();
-    let history = History::new(HistoryStore::open(
-        directory.join("history.json"),
-        HistoryRetention::Week,
-        crate::history::now_ms(),
-    ));
-    let draft = |recording| HistoryDraft {
-        kind: HistoryKind::Dictation,
-        raw_text: "ship it".into(),
-        final_text: "Ship it.".into(),
-        application: None,
-        processing: None,
-        audio_ms: 900,
-        inference_ms: 80,
-        total_ms: 200,
-        recording,
-    };
-    let plain = history.record(draft(None)).unwrap().unwrap();
-    let id = history
-        .record(draft(Some(Recording::from_samples(vec![0.2; 1_600]))))
-        .unwrap()
-        .unwrap();
-    let mut rt = runtime("history-empty", true, GOLDEN_SIZE);
-    rt.state.history = history::HistoryPane::shared(Some(history.clone()));
-    rt.state.history.reload();
-    rt.state.history.selected = Some(id);
-    rt.invalidate();
-    settle(&mut rt);
-    assert!(rt.find("again").is_none(), "off, History is unchanged");
-
-    rt.state.settings.labs.keep_recordings = true;
-    rt.invalidate();
-    settle(&mut rt);
-    assert!(rt.find("again").is_some());
-    rt.state.history.selected = Some(plain);
-    rt.invalidate();
-    settle(&mut rt);
-    assert!(
-        rt.find("again").is_none(),
-        "an entry without audio has nothing to transcribe"
-    );
-
-    rt.state.history.selected = Some(id);
-    rt.state.history.again = Some(history::Again::finished(
-        id,
-        "Whisper",
-        Ok("Ship it now.".into()),
-    ));
-    rt.invalidate();
-    settle(&mut rt);
-    assert!(texts(&rt).iter().any(|text| text == "Ship it now."));
-    tap(&mut rt, "again-copy");
-    assert_eq!(rt.copy_request.as_deref(), Some("Ship it now."));
-    tap(&mut rt, "again-replace");
-    settle(&mut rt);
-    assert!(rt.state.history.again.is_none());
-    let entry = history
-        .search("")
-        .into_iter()
-        .find(|entry| entry.id == id)
-        .unwrap();
-    assert_eq!(entry.final_text, "Ship it now.");
-    assert!(entry.has_recording(), "replacing keeps the recording");
     let _ = std::fs::remove_dir_all(&directory);
 }
 
@@ -1602,149 +1485,6 @@ fn mode_applications_refuse_one_another_modes_use() {
     assert!(chat(&rt).contains(&"Zed".to_string()));
 }
 
-#[test]
-fn the_transcription_picker_asks_the_service_for_a_model() {
-    let mut rt = runtime("picker", true, PANE_SIZE);
-    tap(&mut rt, "model2/action/cell/slot/choose-model");
-    assert!(matches!(
-        sent(&rt),
-        [Request::ChooseModel {
-            model: TranscriptionModelId::WhisperLargeV3Turbo,
-            ..
-        }]
-    ));
-    assert_eq!(
-        rt.state.picker.fallback, None,
-        "Whisper keeps the saved English"
-    );
-    tap(&mut rt, "close-picker");
-    assert!(!rt.state.picker.open);
-}
-
-/// Scrolls the full model list until `key` is inside it, then presses it.
-fn tap_in_model_list(rt: &mut Runtime<Ui>, key: &str) {
-    for _ in 0..400 {
-        let target = element(rt, key).rect;
-        let list = element(rt, "model-scroll").rect;
-        let middle = target[1] + target[3] / 2.0;
-        if middle > list[1] && middle < list[1] + list[3] {
-            break;
-        }
-        let dy = if middle > list[1] + list[3] {
-            20.0
-        } else {
-            -20.0
-        };
-        rt.wheel(list[0] + list[2] / 2.0, list[1] + list[3] / 2.0, dy);
-        rt.frame(1.0 / 60.0);
-    }
-    tap(rt, key);
-}
-
-#[test]
-fn a_model_without_the_saved_language_falls_back_to_its_own_visibly() {
-    let mut rt = runtime("picker", true, PANE_SIZE);
-    rt.state.settings.transcription = TranscriptionSelection {
-        model: TranscriptionModelId::WhisperLargeV3Turbo,
-        language: "he".into(),
-    };
-    rt.state.picker.installed = Some(Vec::new());
-    rt.invalidate();
-    settle(&mut rt);
-    // Parakeet is folded away with the models that don't speak Hebrew.
-    tap(&mut rt, "more-models");
-    tap(&mut rt, "other-languages");
-    let shown = texts(&rt);
-    assert!(
-        shown.contains(&"Choosing it switches the language to English".to_owned()),
-        "{shown:?}"
-    );
-    tap_in_model_list(&mut rt, "model-parakeet_unified_en/actions/choose-model");
-    assert_eq!(
-        sent(&rt),
-        [Request::ChooseModel {
-            model: TranscriptionModelId::ParakeetUnifiedEnglish,
-            language: "en".into(),
-        }]
-    );
-    // The service saves the pair; Settings names the change and fixes the
-    // language, since the model has only English.
-    rt.state.settings.transcription = TranscriptionSelection {
-        model: TranscriptionModelId::ParakeetUnifiedEnglish,
-        language: "en".into(),
-    };
-    rt.invalidate();
-    tap(&mut rt, "close-picker");
-    let shown = texts(&rt);
-    assert!(
-        shown.contains(
-            &"Parakeet Unified English doesn't support Hebrew, so the language changed to English"
-                .to_owned()
-        ),
-        "{shown:?}"
-    );
-    assert!(rt.find("transcription-language-control-item0").is_none());
-    tap(&mut rt, "transcription-language-control");
-    assert_eq!(rt.state.open, None, "a single language opens no menu");
-}
-
-#[test]
-fn single_language_models_hide_the_language_row_without_a_fallback() {
-    let single = runtime("mac-settings", true, PANE_SIZE);
-    assert!(single.find("transcription-language").is_none());
-    let multi = runtime("language-menu", true, PANE_SIZE);
-    assert!(multi.find("transcription-language").is_some());
-    let fallback = runtime("language-fallback", true, PANE_SIZE);
-    assert!(fallback.find("transcription-language").is_some());
-}
-
-#[test]
-fn browsing_the_picker_never_changes_the_language() {
-    let mut rt = runtime("picker", true, PANE_SIZE);
-    let before = rt.state.settings.transcription.clone();
-    for _ in 0..12 {
-        key(&mut rt, Key::Tab, Mods::default());
-    }
-    rt.pointer_move(400.0, 300.0);
-    settle(&mut rt);
-    assert_eq!(rt.state.settings.transcription, before);
-    assert!(sent(&rt).is_empty());
-}
-
-#[test]
-fn changing_only_the_language_prepares_the_same_model_again() {
-    let mut rt = runtime("portal", true, GOLDEN_SIZE);
-    rt.state.settings.transcription.model = TranscriptionModelId::WhisperLargeV3Turbo;
-    rt.state.picker.fallback = Some(picker::LanguageFallback {
-        model: TranscriptionModelId::WhisperLargeV3Turbo,
-        from: "xx".into(),
-    });
-    rt.invalidate();
-    settle(&mut rt);
-    tap(&mut rt, "transcription-language-control-trigger");
-    assert_eq!(rt.state.open, Some(Menu::Pick("transcription-language")));
-    // Whisper lists every language in the catalog's order.
-    let japanese =
-        crate::transcription::models::definition(TranscriptionModelId::WhisperLargeV3Turbo)
-            .language_choices()
-            .iter()
-            .position(|code| *code == "ja")
-            .unwrap();
-    tap_option(&mut rt, japanese);
-    assert_eq!(rt.state.open, None);
-    assert_eq!(
-        sent(&rt),
-        [Request::ChooseModel {
-            model: TranscriptionModelId::WhisperLargeV3Turbo,
-            language: "ja".into(),
-        }]
-    );
-    assert_eq!(
-        rt.state.picker.fallback, None,
-        "an explicit choice clears the note"
-    );
-}
-
 /// General's Vocabulary row opens the sheet, and Escape closes it.
 #[test]
 fn the_vocabulary_row_opens_its_sheet() {
@@ -1818,29 +1558,6 @@ fn the_wheel_scrolls_a_long_term_list() {
     }
 }
 
-/// The model picker's full list scrolls with the wheel too. The picker opens
-/// on the comparison, which fits without scrolling, so this opens every model.
-#[test]
-fn the_wheel_scrolls_the_model_picker() {
-    let mut rt = runtime("picker-custom-models", true, (900.0, 480.0));
-    let list = element(&rt, "model-scroll").rect;
-    let first = |rt: &Runtime<Ui>| {
-        rt.elements()
-            .into_iter()
-            .find(|e| e.path.contains("model-scroll/inset/"))
-            .map(|e| e.rect[1])
-            .unwrap()
-    };
-    let before = first(&rt);
-    wheel_down(
-        &mut rt,
-        list[0] + list[2] / 2.0,
-        list[1] + list[3] / 2.0,
-        true,
-    );
-    assert!(first(&rt) < before - 50.0, "the picker didn't scroll");
-}
-
 /// Ten wheel steps down at (x, y), as the window's platform sends them: the
 /// pointer moves there first, and a gesture begins, moves, and ends.
 fn wheel_down(rt: &mut Runtime<Ui>, x: f32, y: f32, precise: bool) {
@@ -1861,48 +1578,6 @@ fn wheel_down(rt: &mut Runtime<Ui>, x: f32, y: f32, precise: bool) {
         rt.frame(1.0 / 60.0);
     }
     settle(rt);
-}
-
-/// A model whose transcription takes no vocabulary says so on the Vocabulary
-/// row and in its sheet; Parakeet-based and prompt-reading models show none.
-#[test]
-fn the_vocabulary_row_says_when_the_model_ignores_the_list() {
-    let note = "Cohere Transcribe doesn't use these terms; rewriting and search still do";
-    let shows_note = |rt: &Runtime<Ui>| texts(rt).iter().any(|text| text == note);
-    let sheet_note = |rt: &Runtime<Ui>| {
-        rt.elements()
-            .into_iter()
-            .any(|e| !e.exiting && e.key.as_deref() == Some("unused"))
-    };
-    let mut rt = runtime("portal", true, GOLDEN_SIZE);
-    assert!(!shows_note(&rt));
-    rt.state.settings.transcription.model = TranscriptionModelId::CohereTranscribe;
-    rt.invalidate();
-    settle(&mut rt);
-    assert!(shows_note(&rt), "{:?}", texts(&rt));
-    tap(&mut rt, "vocabulary-control");
-    assert!(rt.state.vocabulary.open);
-    assert!(sheet_note(&rt));
-    key(&mut rt, Key::Escape, Mods::default());
-    settle(&mut rt);
-    for model in [
-        TranscriptionModelId::UnderdogBark3Pro,
-        TranscriptionModelId::WhisperLargeV3Turbo,
-        TranscriptionModelId::QwenCleoAsr17B,
-    ] {
-        rt.state.settings.transcription.model = model;
-        rt.invalidate();
-        settle(&mut rt);
-        assert!(
-            !texts(&rt)
-                .iter()
-                .any(|text| text.contains("doesn't use these terms"))
-        );
-    }
-
-    let rt = runtime("vocabulary-unused", true, PANE_SIZE);
-    assert!(rt.state.vocabulary.open);
-    assert!(sheet_note(&rt));
 }
 
 /// The Sounds row opens the sheet. A set's play button plays its dictation
@@ -1949,13 +1624,6 @@ fn the_sound_sets_sheet_plays_and_chooses_sets() {
     assert!(!rt.state.sound_sets.open);
     assert_eq!(playing(&rt), None);
     assert!(texts(&rt).iter().any(|text| text == "Wood"));
-}
-
-#[test]
-fn a_download_in_progress_can_be_cancelled() {
-    let mut rt = runtime("picker-downloading", true, PANE_SIZE);
-    tap(&mut rt, "model1/action/cell/slot/preparing/cancel-model");
-    assert!(matches!(sent(&rt), [Request::CancelModel]));
 }
 
 fn focused(rt: &Runtime<Ui>) -> String {
@@ -2027,27 +1695,6 @@ fn toggle_rows_take_focus_and_flip_on_space() {
 }
 
 #[test]
-fn the_picker_keeps_focus_inside_and_escape_returns_it() {
-    let mut rt = runtime("portal", true, GOLDEN_SIZE);
-    tab_to(&mut rt, "transcription-control");
-    key(&mut rt, Key::Text(" ".into()), Mods::default());
-    settle(&mut rt);
-    assert!(rt.state.picker.open);
-    for _ in 0..12 {
-        key(&mut rt, Key::Tab, Mods::default());
-        assert!(
-            focused(&rt).contains("transcription-picker"),
-            "focus left the picker: {}",
-            focused(&rt)
-        );
-    }
-    key(&mut rt, Key::Escape, Mods::default());
-    settle(&mut rt);
-    assert!(!rt.state.picker.open);
-    assert!(focused(&rt).ends_with("transcription-control"));
-}
-
-#[test]
 fn history_rows_select_with_arrows() {
     let mut rt = runtime("history", true, PANE_SIZE);
     tap(&mut rt, "history-entry3");
@@ -2055,178 +1702,6 @@ fn history_rows_select_with_arrows() {
     assert_ne!(rt.state.history.selected, Some(3));
     key(&mut rt, Key::Up, Mods::default());
     assert_eq!(rt.state.history.selected, Some(3));
-}
-
-#[test]
-fn settings_opens_the_picker_and_names_the_model_and_language_apart() {
-    let mut rt = runtime("portal", true, GOLDEN_SIZE);
-    let shown = texts(&rt);
-    assert!(
-        shown.contains(&"Parakeet Unified English".to_owned()),
-        "{shown:?}"
-    );
-    assert!(
-        !shown.iter().any(|text| text.contains(" · Parakeet")),
-        "{shown:?}"
-    );
-    tap(&mut rt, "transcription-control");
-    assert!(rt.state.picker.open);
-}
-
-#[test]
-fn a_new_install_opens_the_first_run() {
-    use crate::desktop::onboarding::{PermissionState, SetupStatus};
-    let fresh = SetupStatus {
-        microphone: PermissionState::Ready,
-        accessibility: PermissionState::Ready,
-        transcription_model: false,
-    };
-    let mut ui = portal_fixture();
-    ui.platform.permissions = fresh;
-    ui.picker.installed = Some(Vec::new());
-    ui.tour = Some(onboarding::Tour::replay(&ui.settings, &ui.platform));
-    onboarding_kit::live::open(&mut ui);
-    assert!(ui.first_run.is_some(), "the story opens over the tour");
-}
-
-#[test]
-fn onboarding_downloads_the_model_through_the_service() {
-    let mut rt = runtime("onboarding", true, PANE_SIZE);
-    // The download starts as soon as onboarding opens.
-    assert!(matches!(
-        sent(&rt),
-        [Request::ChooseModel {
-            model: TranscriptionModelId::ParakeetUnifiedEnglish,
-            ..
-        }]
-    ));
-    assert!(texts(&rt).contains(&"Setting up Hex".to_owned()));
-    // The service finishes: the model is installed and the practice opens.
-    rt.state.picker.installed = Some(vec![TranscriptionModelId::ParakeetUnifiedEnglish]);
-    settle(&mut rt);
-    rt.update(|ui, _| onboarding_kit::live::fixture_resume(ui, Page::Try));
-    settle(&mut rt);
-    let step = |rt: &Runtime<Ui>| rt.state.tour.as_ref().unwrap().flow.step();
-    assert_eq!(step(&rt), crate::desktop::onboarding::Step::TryIt);
-    // The practice can be left with Done; Start using Hex closes onboarding.
-    tap(&mut rt, "done");
-    tap(&mut rt, "start-using-hex");
-    assert!(rt.state.tour.is_none(), "Start using Hex closes setup");
-    assert!(rt.state.first_run.is_none());
-}
-
-#[test]
-fn a_found_model_moves_on_without_a_download_and_back_returns_to_it() {
-    let mut rt = runtime("onboarding-model-found", false, PANE_SIZE);
-    assert!(rt.find("model-list").is_some());
-    tap(&mut rt, "model1");
-    // The service saves the pick and has the found file ready: the list
-    // stays, with no "Setting up Hex" download page.
-    rt.state.settings.transcription = TranscriptionSelection {
-        model: TranscriptionModelId::ParakeetV3,
-        language: "en".into(),
-    };
-    rt.state.picker.installed = Some(vec![TranscriptionModelId::ParakeetV3]);
-    settle(&mut rt);
-    let shown = texts(&rt);
-    assert!(
-        shown.contains(&"Choose a speech model".to_owned()),
-        "{shown:?}"
-    );
-    assert!(!shown.contains(&"Setting up Hex".to_owned()), "{shown:?}");
-    assert!(
-        shown.contains(&"Parakeet Unified English".to_owned()),
-        "the rows stay"
-    );
-    tap(&mut rt, "continue");
-    rt.update(|ui, _| onboarding_kit::live::fixture_resume(ui, Page::Demo));
-    settle(&mut rt);
-    let s = rt.state.first_run.as_ref().unwrap();
-    assert!(s.had_model, "a model here needs no download pill");
-    assert!(!texts(&rt).contains(&"Setting up Hex".to_owned()));
-    // Back returns to the list to change the pick.
-    tap(&mut rt, "back");
-    assert!(rt.find("model-list").is_some());
-}
-
-#[test]
-fn a_failed_download_names_its_cause_and_offers_a_model_file() {
-    let mut rt = runtime("onboarding", false, PANE_SIZE);
-    if let Some(view) = &mut rt.state.view {
-        view.transcription.preparing = None;
-        view.transcription.error = Some(
-            "Couldn't reach huggingface.co through the proxy proxy.corp:8080: the proxy refused (403)\n\nCheck your connection, then retry, or choose a model file."
-                .into(),
-        );
-    }
-    rt.invalidate();
-    settle(&mut rt);
-    let shown = texts(&rt);
-    assert!(
-        shown.contains(
-            &"Couldn't reach huggingface.co through the proxy proxy.corp:8080: the proxy refused (403)"
-                .to_owned()
-        ),
-        "{shown:?}"
-    );
-    assert!(shown.contains(&"Use a model file…".to_owned()), "{shown:?}");
-    assert!(shown.contains(&"Try again".to_owned()), "{shown:?}");
-}
-
-#[test]
-fn with_no_model_found_onboarding_downloads_the_recommended_model_with_no_list() {
-    for scene in ["onboarding", "mac-onboarding"] {
-        let rt = runtime(scene, false, PANE_SIZE);
-        assert!(rt.state.found.models.is_empty());
-        // The download starts on its own, before any step or pick.
-        assert!(
-            matches!(
-                sent(&rt),
-                [Request::ChooseModel {
-                    model: TranscriptionModelId::ParakeetUnifiedEnglish,
-                    ..
-                }]
-            ),
-            "{scene}: {:?}",
-            sent(&rt)
-        );
-        let shown = texts(&rt);
-        assert!(rt.find("model-list").is_none(), "{scene}: no model list");
-        assert!(
-            shown.contains(&"Setting up Hex".to_owned()),
-            "{scene}: {shown:?}"
-        );
-        assert!(
-            !shown.contains(&"Choose a speech model".to_owned()),
-            "{scene}: {shown:?}"
-        );
-    }
-}
-
-#[test]
-fn the_onboarding_model_list_starts_the_row_picked_or_the_recommended_one() {
-    // Continue with no pick starts the selected, recommended model.
-    let mut rt = runtime("onboarding-model-found", false, PANE_SIZE);
-    assert!(sent(&rt).is_empty(), "nothing starts before a pick");
-    tap(&mut rt, "continue");
-    assert!(matches!(
-        sent(&rt),
-        [Request::ChooseModel {
-            model: TranscriptionModelId::ParakeetUnifiedEnglish,
-            ..
-        }]
-    ));
-    // Picking a found catalog model uses it, with no download of ours.
-    let mut rt = runtime("onboarding-model-found", false, PANE_SIZE);
-    tap(&mut rt, "model1");
-    assert!(matches!(
-        sent(&rt),
-        [Request::ChooseModel {
-            model: TranscriptionModelId::ParakeetV3,
-            ..
-        }]
-    ));
-    assert_eq!(rt.state.found.picked, Some(1));
 }
 
 #[test]
@@ -2479,22 +1954,14 @@ fn goldens() {
             "output",
             "modes",
             "modes-picker",
-            "picker-downloading",
         ] {
             check_golden(scene, dark, PANE_SIZE);
         }
     }
-    for dark in [true, false] {
-        check_golden("mac-labs-cloud", dark, GOLDEN_SIZE);
-    }
     check_golden("commands", true, GOLDEN_SIZE);
     check_golden("menus", false, GOLDEN_SIZE);
-    // A list longer than the window fades at its scrolling edge (#840).
-    check_golden("language-menu", false, GOLDEN_SIZE);
     check_golden("modes-opencode-not-running", false, PANE_SIZE);
     check_golden("output-trust", false, PANE_SIZE);
-    check_golden("picker-custom-models", false, PANE_SIZE);
-    check_golden("picker-found", false, PANE_SIZE);
 }
 
 mod onboarding_check;

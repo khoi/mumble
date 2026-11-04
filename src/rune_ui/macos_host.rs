@@ -557,9 +557,7 @@ impl MacHost {
         }
         match kind {
             PermissionKind::Accessibility => {
-                if crate::desktop::onboarding::status_with_transcription_model(true).accessibility
-                    != PermissionState::Ready
-                {
+                if crate::desktop::onboarding::status().accessibility != PermissionState::Ready {
                     let _ = crate::desktop::permission_guide::prompt_accessibility_trust();
                     crate::desktop::permission_guide::show(PermissionKind::Accessibility);
                 }
@@ -714,20 +712,6 @@ impl NativeHost for MacHost {
             return changed;
         }
         self.refresh_at = Instant::now() + PLATFORM_REFRESH;
-        // Input sources are read only while keyboard model switching is on.
-        let switching = crate::macos_rune::runtime()
-            .and_then(|runtime| runtime.published())
-            .is_some_and(|published| published.settings.keyboard_model_switching.enabled);
-        if let Some(mtm) = objc2::MainThreadMarker::new() {
-            changed |= update(
-                &mut state.input_sources,
-                if switching {
-                    crate::keyboard_input_sources::enabled(mtm)
-                } else {
-                    Vec::new()
-                },
-            );
-        }
         changed |= update(
             &mut state.accessibility_renamed,
             crate::desktop::permission_guide::list_name(PermissionKind::Accessibility)
@@ -739,9 +723,7 @@ impl NativeHost for MacHost {
                 .ok()
                 .map(|logs| logs.join("live.ndjson")),
         );
-        let permissions = crate::desktop::onboarding::status_with_transcription_model(
-            state.permissions.transcription_model,
-        );
+        let permissions = crate::desktop::onboarding::status();
         let system_audio = crate::audio::system_audio::ready();
         changed |= update(&mut state.permissions, permissions);
         changed |= update(&mut state.system_audio, system_audio);

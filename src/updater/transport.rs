@@ -161,10 +161,31 @@ pub fn verify(path: &Path, target: &Target) -> Result<()> {
     if size != target.size {
         bail!("the update has {size} bytes, expected {}", target.size);
     }
-    if crate::transcription::models::sha256_hex(path, None)? != target.sha256 {
+    if sha256_hex(path)? != target.sha256 {
         bail!("the update's SHA-256 does not match the manifest");
     }
     Ok(())
+}
+
+/// The lowercase hex SHA-256 of the file at `path`.
+fn sha256_hex(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut file = fs::File::open(path)?;
+    let mut digest = Sha256::new();
+    // Heap-allocated: a 1 MB array overflows Windows' 1 MB main-thread stack.
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 /// Removes downloads other than `keep` (a target's SHA-256).
@@ -211,7 +232,7 @@ mod tests {
         let mut target = Target {
             url: "files/x/file".into(),
             size: 3,
-            sha256: crate::transcription::models::sha256_hex(&path, None).unwrap(),
+            sha256: sha256_hex(&path).unwrap(),
         };
         assert!(verify(&path, &target).is_ok());
         target.size = 4;
@@ -230,7 +251,7 @@ mod tests {
         let source = directory.join("source");
         fs::create_dir_all(&directory).unwrap();
         fs::write(&source, b"bytes").unwrap();
-        let sha256 = crate::transcription::models::sha256_hex(&source, None).unwrap();
+        let sha256 = sha256_hex(&source).unwrap();
         let target = Target {
             url: format!("files/{sha256}/Hex.zip"),
             size: 5,

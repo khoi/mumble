@@ -4,13 +4,13 @@
 
 use std::sync::mpsc::{self, SyncSender};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::app_settings::AppSettings;
 use crate::control::{
     self, CaptureReport, CaptureSnapshot, CaptureState, ControlCall, ControlCommand, ControlError,
-    ControlReply, ControlResponse, FeatureReport, ListenerReport, ModelReport, Pane,
-    PermissionReport, StatusReport, WindowReport, settings,
+    ControlReply, ControlResponse, FeatureReport, ListenerReport, Pane, PermissionReport,
+    StatusReport, TranscriptionReport, WindowReport, settings,
 };
 use crate::desktop::host::{DesktopAction, DesktopUpdateStatus};
 use crate::desktop::onboarding::PermissionState;
@@ -80,7 +80,6 @@ impl Pump {
                     );
                     if quitting {
                         thread::sleep(QUIT_GRACE);
-                        let _ = runtime.send(Request::CancelModel);
                         super::quit();
                     }
                 });
@@ -146,75 +145,6 @@ impl Pump {
             }
             ControlCommand::SettingsApply { values } => {
                 Some(reply_with(self.apply_settings(&values)))
-            }
-            ControlCommand::ModelList => {
-                Some(reply_with(load().map(|settings| ControlReply::Models {
-                    models: control::model_infos(&settings.transcription),
-                })))
-            }
-            ControlCommand::ModelUse { model, language } => {
-                let selection = match load().and_then(|settings| {
-                    control::model_selection(&settings, &model, language.as_deref())
-                }) {
-                    Ok(selection) => selection,
-                    Err(error) => return Some(error.into()),
-                };
-                let definition = crate::transcription::models::definition(selection.model);
-                if !crate::transcription::models::is_installed(definition, &selection.language) {
-                    return Some(ControlReply::error(
-                        "not-installed",
-                        format!(
-                            "{} isn't installed; `hex model install {}` downloads it ({})",
-                            definition.name,
-                            selection.model.as_str(),
-                            definition.size_label()
-                        ),
-                    ));
-                }
-                start_model_use(runtime, selection, reply)
-            }
-            ControlCommand::ModelInstall { model, language } => {
-                let selection = match load().and_then(|settings| {
-                    control::model_selection(&settings, &model, language.as_deref())
-                }) {
-                    Ok(selection) => selection,
-                    Err(error) => return Some(error.into()),
-                };
-                let definition = crate::transcription::models::definition(selection.model);
-                if crate::transcription::models::is_installed(definition, &selection.language) {
-                    return start_model_use(runtime, selection, reply);
-                }
-                Some(reply_with(
-                    runtime
-                        .send(Request::ChooseModel {
-                            model: selection.model,
-                            language: selection.language,
-                        })
-                        .map_err(|error| ControlError::new("unavailable", error.to_string()))
-                        .map(|()| {
-                            ControlReply::done(format!(
-                                "Downloading {} ({}); Hex switches to it once it's ready. \
-                                 `hex status` shows progress, `hex model cancel` stops it",
-                                definition.name,
-                                definition.size_label()
-                            ))
-                        }),
-                ))
-            }
-            ControlCommand::ModelCancel => {
-                let preparing = runtime
-                    .published()
-                    .and_then(|published| published.preparation.model);
-                Some(match preparing {
-                    None => ControlReply::unchanged("No model is downloading or loading"),
-                    Some(model) => {
-                        let _ = runtime.send(Request::CancelModel);
-                        ControlReply::done(format!(
-                            "Stopped preparing {}",
-                            crate::transcription::models::definition(model).name
-                        ))
-                    }
-                })
             }
             ControlCommand::WindowShow { pane } => Some(reply_with(self.show_window(pane))),
             ControlCommand::WindowHide => Some(if window_visible() {
@@ -518,73 +448,6 @@ fn launch_at_login(enabled: Option<bool>) -> Result<ControlReply, ControlError> 
     )))
 }
 
-/// What `hex model use` asks the runtime: the installed-only path, which
-/// verifies the model on disk and never downloads or repairs it.
-fn use_request(selection: crate::transcription::models::TranscriptionSelection) -> Request {
-    Request::UseInstalledSelection(selection)
-}
-
-/// Admit on the main thread, even for an unchanged selection, before spawning
-/// the waiter. An idempotent manual choice still cancels automatic work.
-fn start_model_use(
-    runtime: RuntimeHandle,
-    selection: crate::transcription::models::TranscriptionSelection,
-    reply: &SyncSender<ControlResponse>,
-) -> Option<ControlReply> {
-    if let Err(error) = runtime.send(use_request(selection.clone())) {
-        return Some(ControlReply::error("unavailable", error.to_string()));
-    }
-    background(reply, move || wait_for_model(&runtime, selection));
-    None
-}
-
-/// Waits for an already-admitted installed-model choice without blocking AppKit.
-fn wait_for_model(
-    runtime: &RuntimeHandle,
-    selection: crate::transcription::models::TranscriptionSelection,
-) -> Result<ControlReply, ControlError> {
-    let name = crate::transcription::models::definition(selection.model).name;
-    let matches = |settings: &AppSettings| {
-        super::same_model_and_language(&settings.transcription, &selection)
-    };
-    if load().is_ok_and(|settings| matches(&settings)) {
-        return Ok(ControlReply::unchanged(format!(
-            "{name} ({}) is already in use",
-            selection.language
-        )));
-    }
-    let started = Instant::now();
-    let mut seen_preparing = false;
-    while started.elapsed() < CONFIRM_WAIT {
-        thread::sleep(Duration::from_millis(100));
-        let Some(published) = runtime.published() else {
-            continue;
-        };
-        let preparing = published.preparation.model.is_some();
-        seen_preparing |= preparing;
-        if preparing {
-            continue;
-        }
-        if matches(&published.settings) {
-            return Ok(ControlReply::done(format!(
-                "Switched to {name} ({})",
-                selection.language
-            )));
-        }
-        if let Some(error) = &published.preparation.error
-            && (seen_preparing || started.elapsed() > Duration::from_secs(1))
-        {
-            return Err(ControlError::new(
-                "failed",
-                format!("couldn't switch to {name}: {error}"),
-            ));
-        }
-    }
-    Ok(ControlReply::done(format!(
-        "Loading {name}; `hex status` shows when it's ready"
-    )))
-}
-
 /// The pane the window shows, asked on the UI thread.
 fn current_pane(window: &rune::AppHandle<Ui>) -> Option<String> {
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -644,8 +507,7 @@ fn status(
     let open = window.is_visible();
     let settings = &published.settings;
     let selection = &settings.transcription;
-    let definition = crate::transcription::models::definition(selection.model);
-    let setup = crate::desktop::onboarding::status(selection);
+    let setup = crate::desktop::onboarding::status();
     Ok(ControlReply::Status(Box::new(StatusReport {
         app_version: crate::VERSION.into(),
         pid: std::process::id(),
@@ -660,17 +522,12 @@ fn status(
             shortcuts: Vec::new(),
         },
         capture,
-        model: ModelReport {
-            id: selection.model.as_str().into(),
-            name: definition.name.into(),
+        transcription: TranscriptionReport {
+            provider: serde_json::to_value(selection.provider)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_default(),
             language: selection.language.clone(),
-            installed: crate::transcription::models::is_installed(definition, &selection.language),
-            preparing: published
-                .preparation
-                .model
-                .map(|model| model.as_str().into()),
-            downloaded_bytes: published.preparation.downloaded_bytes,
-            error: published.preparation.error.clone(),
         },
         features: FeatureReport {
             release_microphone_while_idle: settings.release_microphone_while_idle,
@@ -683,7 +540,6 @@ fn status(
             ready: setup.ready(),
             microphone: permission(setup.microphone),
             accessibility: permission(setup.accessibility),
-            transcription_model: setup.transcription_model,
         },
         window: WindowReport {
             open,
@@ -693,49 +549,4 @@ fn status(
         labs: crate::labs::active_names(settings),
         capabilities: crate::rune_ui::capabilities(),
     })))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicBool, AtomicU64};
-    use std::sync::{Arc, mpsc};
-    use std::time::Duration;
-
-    use crate::transcription::models::{TranscriptionModelId, TranscriptionSelection};
-    use crate::transcription::preparation::TranscriptionPreparation;
-
-    #[test]
-    fn model_use_prepares_the_exact_selection_installed_only() {
-        let (sender, prepared) = mpsc::channel();
-        let preparation = TranscriptionPreparation::with_prepare(Arc::new(
-            move |selection: &TranscriptionSelection,
-                  installed_only: bool,
-                  _: &AtomicBool,
-                  _: &AtomicU64| {
-                let _ = sender.send((selection.clone(), installed_only));
-                Ok(())
-            },
-        ));
-        let mut runtime = super::super::Runtime {
-            settings: Default::default(),
-            keyboard_switcher: crate::transcription::keyboard_model_switching::Switcher::new(
-                Default::default(),
-                None,
-            ),
-            automatic_preparation: false,
-            preparation,
-            recognition_start: None,
-            listener_failure: Default::default(),
-        };
-        let selection = TranscriptionSelection {
-            model: TranscriptionModelId::WhisperLargeV3Turbo,
-            language: "de".into(),
-        };
-        runtime.handle(super::use_request(selection.clone()));
-        // installed_only: verify what's on disk, never download or repair.
-        assert_eq!(
-            prepared.recv_timeout(Duration::from_secs(3)).unwrap(),
-            (selection, true)
-        );
-    }
 }

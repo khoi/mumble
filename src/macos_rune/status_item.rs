@@ -9,9 +9,6 @@ use objc2_app_kit::{NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem};
 use objc2_foundation::{MainThreadMarker, NSData, NSObject, NSSize, NSString};
 
 use crate::app_settings::AppSettings;
-use crate::desktop::tray_menu::model_menu_entries;
-use crate::transcription::models::{MODELS, TranscriptionModelId};
-use crate::transcription::preparation::PreparationStatus;
 
 const IDLE_ICON_PNG: &[u8] = include_bytes!("../../assets/icons/menubar-idle@2x.png");
 const STATUS_ICON_POINTS: f64 = 18.0;
@@ -20,8 +17,6 @@ const STATUS_ICON_POINTS: f64 = 18.0;
 pub enum StatusItemAction {
     OpenSettings,
     OpenModels,
-    SelectModel(TranscriptionModelId),
-    CancelModelPreparation,
     PasteLast,
     /// Copy History entry `id` (Labs › Copy recent dictations).
     CopyRecentDictation(u64),
@@ -52,18 +47,6 @@ objc2::define_class!(
         #[unsafe(method(openModels:))]
         fn open_models(&self, _sender: &AnyObject) {
             let _ = self.ivars().actions.try_send(StatusItemAction::OpenModels);
-        }
-
-        #[unsafe(method(selectModel:))]
-        fn select_model(&self, sender: &NSMenuItem) {
-            if let Some(model) = model_from_tag(sender.tag()) {
-                let _ = self.ivars().actions.try_send(StatusItemAction::SelectModel(model));
-            }
-        }
-
-        #[unsafe(method(cancelModelPreparation:))]
-        fn cancel_model_preparation(&self, _sender: &AnyObject) {
-            let _ = self.ivars().actions.try_send(StatusItemAction::CancelModelPreparation);
         }
 
         #[unsafe(method(pasteLast:))]
@@ -118,11 +101,7 @@ struct StatusItemController {
     update_title: RefCell<String>,
     _menu: Retained<NSMenu>,
     target: Retained<StatusItemTarget>,
-    model_items: Vec<(TranscriptionModelId, Retained<NSMenuItem>)>,
-    model_empty: Retained<NSMenuItem>,
-    model_preparing: Retained<NSMenuItem>,
-    model_cancel: Retained<NSMenuItem>,
-    model_error: Retained<NSMenuItem>,
+    transcription: Retained<NSMenuItem>,
 }
 
 thread_local! {
@@ -151,54 +130,9 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
     recent.setHidden(true);
     menu.addItem(&recent);
     add_item(&menu, &target, "Settings…", sel!(openSettings:), mtm);
-    let models = NSMenu::initWithTitle(
-        NSMenu::alloc(mtm),
-        &NSString::from_str("Transcription Model"),
-    );
-    models.setAutoenablesItems(false);
-    let heading = plain_item("Transcription Model", mtm);
-    heading.setSubmenu(Some(&models));
-    menu.addItem(&heading);
-    let model_items = MODELS
-        .iter()
-        .enumerate()
-        .filter(|(_, model)| model.available())
-        .map(|(index, model)| {
-            let item = add_item(&models, &target, model.name, sel!(selectModel:), mtm);
-            item.setTag(index as isize);
-            item.setHidden(true);
-            (model.id, item)
-        })
-        .collect();
-    let model_empty = add_item(
-        &models,
-        &target,
-        "No downloaded models",
-        sel!(openModels:),
-        mtm,
-    );
-    model_empty.setEnabled(false);
-    models.addItem(&NSMenuItem::separatorItem(mtm));
-    let model_preparing = add_item(&models, &target, "Preparing model…", sel!(openModels:), mtm);
-    model_preparing.setEnabled(false);
-    model_preparing.setHidden(true);
-    let model_cancel = add_item(
-        &models,
-        &target,
-        "Cancel Model Switch",
-        sel!(cancelModelPreparation:),
-        mtm,
-    );
-    model_cancel.setHidden(true);
-    let model_error = add_item(
-        &models,
-        &target,
-        "Model switch failed — open Settings…",
-        sel!(openModels:),
-        mtm,
-    );
-    model_error.setHidden(true);
-    add_item(&models, &target, "Manage Models…", sel!(openModels:), mtm);
+    // Read-only line showing the transcription service and language; opens
+    // Settings › General, where it is chosen.
+    let transcription = add_item(&menu, &target, "Transcription…", sel!(openModels:), mtm);
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     let update = if crate::updater::managed_by_policy() {
         // An item without an action is shown disabled.
@@ -246,11 +180,7 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
             update_title: RefCell::new("Check for Updates…".into()),
             _menu: menu,
             target,
-            model_items,
-            model_empty,
-            model_preparing,
-            model_cancel,
-            model_error,
+            transcription,
         });
     });
     Ok(receiver)
@@ -297,49 +227,24 @@ fn add_item(
     item
 }
 
-fn model_from_tag(tag: isize) -> Option<TranscriptionModelId> {
-    MODELS
-        .get(usize::try_from(tag).ok()?)
-        .filter(|model| model.available())
-        .map(|model| model.id)
-}
-
 pub fn installed() -> bool {
     STATUS_ITEM.with(|controller| controller.borrow().is_some())
 }
 
-pub fn update_transcription(settings: &AppSettings, status: &PreparationStatus) {
+pub fn update_transcription(settings: &AppSettings) {
     STATUS_ITEM.with(|controller| {
         let controller = controller.borrow();
         let Some(controller) = controller.as_ref() else {
             return;
         };
-        let entries = model_menu_entries(
-            settings,
-            status.model.is_some(),
-            crate::transcription::models::is_installed,
-        );
-        for (model, item) in &controller.model_items {
-            let entry = entries.iter().find(|entry| entry.model == *model);
-            item.setHidden(entry.is_none());
-            if let Some(entry) = entry {
-                item.setTitle(&NSString::from_str(&entry.title));
-                item.setState(if entry.selected { 1 } else { 0 });
-                item.setEnabled(entry.enabled);
-            }
-        }
-        controller.model_empty.setHidden(!entries.is_empty());
-        controller.model_preparing.setHidden(status.model.is_none());
-        controller.model_cancel.setHidden(status.model.is_none());
-        if let Some(model) = status.model {
-            controller
-                .model_preparing
-                .setTitle(&NSString::from_str(&format!(
-                    "Preparing {}…",
-                    crate::transcription::models::definition(model).name,
-                )));
-        }
-        controller.model_error.setHidden(status.error.is_none());
+        let selection = &settings.transcription;
+        controller
+            .transcription
+            .setTitle(&NSString::from_str(&format!(
+                "Transcription: {} ({})…",
+                selection.provider.name(),
+                selection.language,
+            )));
     });
 }
 
@@ -462,18 +367,6 @@ mod tests {
         );
         assert_eq!(long, "A long dictation that goes on and on well past…");
         assert_eq!(long.chars().count(), 47);
-    }
-
-    #[test]
-    fn menu_tags_only_resolve_available_catalog_models() {
-        assert_eq!(model_from_tag(-1), None);
-        assert_eq!(model_from_tag(MODELS.len() as isize), None);
-        for (index, model) in MODELS.iter().enumerate() {
-            assert_eq!(
-                model_from_tag(index as isize),
-                model.available().then_some(model.id)
-            );
-        }
     }
 
     #[test]

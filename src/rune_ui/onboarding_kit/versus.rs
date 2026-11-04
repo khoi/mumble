@@ -22,9 +22,8 @@ use super::flight::{Flight, caret_x, flicker, flying, typeset};
 use super::flows::continue_button;
 use super::hud_stage::voice_or_idle_slot;
 use super::keyboard::{self, keyboard_lit};
-use super::landing::{LEAD, UI_SPRING, arrives, keys, language_pick, ready, title_font};
+use super::landing::{LEAD, UI_SPRING, arrives, keys, ready, title_font};
 use super::mic_line::mic_line;
-use super::pill::{pill, slot};
 use super::stories::{Flow, Onboard, Step};
 use super::typing;
 
@@ -98,9 +97,7 @@ fn flights(s: &Onboard) -> Vec<(Flight, field_text::Slot<'static>)> {
 pub(super) fn view(p: Paint, s: &Onboard) -> Vec<El> {
     if s.step == Step::Ready {
         return vec![
-            top_bar()
-                .justify_center()
-                .child(pill(p, download(s), s.closed)),
+            top_bar(),
             middle().pb(TOP_BAR).child(ready(
                 p,
                 &s.caps,
@@ -113,24 +110,12 @@ pub(super) fn view(p: Paint, s: &Onboard) -> Vec<El> {
         ];
     }
     let parked = s.step >= Step::Parked;
-    let top = top_bar().justify_end().child(if parked {
-        pill(p, download(s), s.closed)
-    } else {
-        slot()
-    });
     let act = match s.step {
-        Step::Pick => language_pick(p, Onboard::pick),
-        Step::Started => pill(p, download(s), s.closed),
-        Step::Heard if !s.downloaded() => text(tr("Finishing the download…"))
-            .key("finishing")
-            .font(p.k.ty.small)
-            .color(p.faint())
-            .transition(Transition::opacity()),
         Step::Done => continue_button(p, s),
         _ => el().key("none"),
     };
     vec![
-        top,
+        top_bar(),
         middle()
             .pb(TOP_BAR)
             .gap(16.0)
@@ -142,11 +127,7 @@ pub(super) fn view(p: Paint, s: &Onboard) -> Vec<El> {
                     .gap(10.0)
                     .items_center()
                     .child(row().key("action").h(ACTION_H).center().child(act))
-                    .child(mic_line(
-                        p,
-                        s.can_hear() && s.step >= Step::YourTurn,
-                        s.listening_peak(),
-                    )),
+                    .child(mic_line(p, s.step >= Step::YourTurn, s.listening_peak())),
             ),
     ]
 }
@@ -157,10 +138,6 @@ fn top_bar() -> El {
 
 fn middle() -> El {
     col().key("middle").grow(1.0).shrink().w_full().center()
-}
-
-fn download(s: &Onboard) -> super::fixture::Download {
-    s.download.expect("the download starts at the pick")
 }
 
 fn typed_secs() -> f64 {
@@ -185,14 +162,6 @@ pub(super) fn heading(p: Paint, s: &Onboard) -> El {
             .transition(Transition::opacity())
     };
     let (key, title, lead) = match s.step {
-        Step::Pick | Step::Started => (
-            "intro",
-            tr("Talk instead of typing"),
-            line(
-                "lead-intro",
-                tr("Hold a key and talk. Hex types it wherever your cursor is.").into(),
-            ),
-        ),
         Step::Parked if !typed_done(s) => (
             "without",
             tr("Without Hex"),
@@ -201,18 +170,10 @@ pub(super) fn heading(p: Paint, s: &Onboard) -> El {
                 tr("Answering under pressure, the usual way.").into(),
             ),
         ),
-        Step::Parked if s.demo_hears() => (
+        Step::Parked => (
             "without",
             tr("Without Hex"),
             line("lead-sent", tr("Two panic typos later.").into()),
-        ),
-        Step::Parked => (
-            "with",
-            tr("With Hex"),
-            line(
-                "lead-wait",
-                tr("Hex starts listening once the speech model has downloaded.").into(),
-            ),
         ),
         Step::YourTurn | Step::Hearing => (
             "with",
@@ -391,31 +352,18 @@ fn key_glow(s: &Onboard, id: &str, voice_u: f32) -> f32 {
 
 /// How many `"Without Hex"` bubbles Jay's card shows now.
 pub(super) fn sent_count(s: &Onboard) -> usize {
-    match jay_reply(s) {
-        Reply::Lines { sent_bubbles, .. } => sent_bubbles.len(),
-        _ => 0,
-    }
+    jay_reply(s).sent_bubbles.len()
 }
 
 fn jay_reply(s: &Onboard) -> Reply<'static> {
     let lines = reply_lines();
-    let empty = Reply::Lines {
-        sent_bubbles: &[],
-        text: "",
-        caret: None,
-        lines,
-        placeholder: true,
-        focus: false,
-        sent: false,
-    };
     match s.step {
-        Step::Pick | Step::Started => empty,
         Step::Parked if !typed_done(s) => {
             let active = typing_elapsed(s).filter(|&e| e >= 0.0);
             let stroke = active.and_then(typing::at);
             let typed = stroke.map_or("", |st| st.text.as_str());
             let bubbles = stroke.map_or(&[][..], |st| st.sent.as_slice());
-            Reply::Lines {
+            Reply {
                 sent_bubbles: bubbles,
                 text: typed,
                 caret: active.map(|_| stroke.map_or(0, |st| st.caret)),
@@ -425,7 +373,7 @@ fn jay_reply(s: &Onboard) -> Reply<'static> {
                 sent: false,
             }
         }
-        Step::Parked => Reply::Lines {
+        Step::Parked => Reply {
             sent_bubbles: typing::final_sent(),
             text: "",
             caret: None,
@@ -434,7 +382,7 @@ fn jay_reply(s: &Onboard) -> Reply<'static> {
             focus: false,
             sent: false,
         },
-        Step::YourTurn | Step::Hearing => Reply::Lines {
+        Step::YourTurn | Step::Hearing => Reply {
             sent_bubbles: &[],
             text: "",
             caret: None,
@@ -443,7 +391,7 @@ fn jay_reply(s: &Onboard) -> Reply<'static> {
             focus: true,
             sent: false,
         },
-        _ => Reply::Lines {
+        _ => Reply {
             sent_bubbles: &[],
             text: "",
             caret: None,

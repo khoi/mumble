@@ -135,34 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn an_app_mode_has_its_own_vocabulary() {
-        use crate::app_settings::DictationMode;
-        use crate::dictation::vocabulary::VocabularyEntry;
-        let term = |term: &str| VocabularyEntry {
-            term: term.into(),
-            sounds_like: Vec::new(),
-        };
-        let settings = DictationProcessingSettings {
-            modes: vec![DictationMode {
-                applications: vec!["Zed".into()],
-                vocabulary: vec![term("useEffect")],
-                ..DictationMode::default()
-            }],
-            ..DictationProcessingSettings::default()
-        };
-        let profiles = build_dictation_profiles(&settings);
-        let in_app = |application: &str| {
-            profiles.vocabulary_for(&ContextSnapshot {
-                application: Some(application.into()),
-                ..ContextSnapshot::default()
-            })
-        };
-
-        assert_eq!(in_app("Zed"), [term("useEffect")]);
-        assert!(in_app("Notes").is_empty());
-    }
-
-    #[test]
     fn browsers_are_asked_only_when_something_uses_the_page() {
         use crate::app_settings::{DictationMode, DictationPostProcessing};
         let with = |mode: DictationMode| DictationProcessingSettings {

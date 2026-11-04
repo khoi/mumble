@@ -134,22 +134,6 @@ impl crate::control::host::Host for LinuxControl {
         }
     }
 
-    fn choose_model(
-        &self,
-        selection: crate::transcription::models::TranscriptionSelection,
-    ) -> std::result::Result<(), ControlError> {
-        self.host
-            .request(HostRequest::ChooseModel {
-                model: selection.model,
-                language: selection.language,
-            })
-            .map_err(|error| ControlError::new("failed", format!("{error:#}")))
-    }
-
-    fn cancel_model(&self) {
-        let _ = self.host.request(HostRequest::CancelModel);
-    }
-
     fn check_for_updates(&self) -> std::result::Result<(), ControlError> {
         self.host
             .request(HostRequest::Desktop(DesktopAction::CheckForUpdates))

@@ -25,7 +25,6 @@ use crate::desktop::host::DesktopAction;
 use crate::desktop::i18n::{tr, tr_fill, tr_named};
 use crate::desktop::login_item::LoginItemStatus;
 use crate::desktop::onboarding::PermissionKind;
-use crate::transcription::models as transcription_models;
 
 /// The missing permissions, the listener (Windows and Linux), the basics,
 /// names and terms where they exist, then Advanced.
@@ -66,7 +65,6 @@ pub(super) fn pane(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
 // The basics
 
 fn basics(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
-    let model = transcription_models::definition(ui.settings.transcription.model);
     let mut rows: Vec<CardRow> = Vec::new();
     if ui.records_shortcuts() {
         rows.extend(shortcut_rows(
@@ -99,71 +97,34 @@ fn basics(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
         }
         rows.extend(configure_shortcuts_row(ui, p).map(CardRow::from));
     }
-    let picker_button = value_button(
+    // The transcription service (Claude or Codex) and language. Transcription
+    // is cloud-only, through the sign-in the chosen app already holds.
+    use crate::transcription::CloudProvider;
+    let labels: Vec<&'static str> = CloudProvider::ALL.iter().map(|p| p.name()).collect();
+    let selected = CloudProvider::ALL
+        .iter()
+        .position(|provider| *provider == ui.settings.transcription.provider)
+        .unwrap_or(0);
+    let provider_control = pick_select(
+        ui,
         p,
-        "transcription-control",
-        model.name,
-        &rune_theme_opencode::icons::CHEVRON_RIGHT,
-        super::picker::open,
+        "transcription-provider",
+        labels,
+        selected,
+        |ui, index| {
+            let provider = CloudProvider::ALL[index];
+            ui.update(|settings| settings.transcription.provider = provider);
+        },
+        layer,
     );
-    let (description, control) = match missing_model(ui) {
-        // Hex can't listen without the selected model: say so, with the
-        // download's progress, or Download and Add model file… when none
-        // runs, as after Continue without a model (#894).
-        Some(progress) => {
-            let description = match (
-                progress.downloading,
-                super::model_import::download_failure(ui),
-            ) {
-                (Some(_), _) => (
-                    tr("Hex can't listen until the speech model has downloaded").to_string(),
-                    p.muted(),
-                ),
-                (None, Some(error)) => {
-                    (tr_fill("No speech model installed: {}", &error), p.danger())
-                }
-                (None, None) => (
-                    tr("No speech model installed. Download one or add a model file.").to_string(),
-                    p.danger(),
-                ),
-            };
-            let controls = row().key("transcription-controls").gap(8.0).center_y();
-            let controls = match progress.downloading {
-                Some(fraction) => controls.child(
-                    rune_kit::Progress::new(Some(fraction))
-                        .show_value()
-                        .build(p.k)
-                        .key("transcription-progress")
-                        .w(120.0),
-                ),
-                None => controls
-                    .child(button(
-                        p,
-                        "transcription-download",
-                        tr("Download"),
-                        ButtonKind::Secondary,
-                        |ui: &mut Ui, _| {
-                            let selection = ui.settings.transcription.clone();
-                            ui.send(Request::ChooseModel {
-                                model: selection.model,
-                                language: selection.language,
-                            });
-                        },
-                    ))
-                    .child(super::model_import::use_file_button(ui, p)),
-            };
-            (Some(description), controls.child(picker_button))
-        }
-        None => (s::transcription_status(ui, p), picker_button),
-    };
     rows.push(
         icon_described_row(
             p,
             "transcription",
             &WAVE,
-            tr("Speech model"),
-            description,
-            control,
+            tr("Transcribe with"),
+            s::transcription_status(ui, p),
+            provider_control,
         )
         .into(),
     );
@@ -190,28 +151,6 @@ fn basics(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
     rows.push(microphone_release_row(ui, p));
     rows.extend(launch_at_login_rows(ui, p));
     card(p, "basics", rows)
-}
-
-/// The selected speech model's download, while it is not installed, so
-/// Hex can't listen yet. Fixtures that name no installed models say nothing,
-/// so their rows never depend on this machine's models.
-pub(super) fn missing_model(ui: &Ui) -> Option<crate::desktop::onboarding::ModelProgress> {
-    if !ui.live() && ui.picker.installed.is_none() {
-        return None;
-    }
-    // A saved import that is missing or changed: Hex listens with a
-    // downloaded model in its place, and the row's notice says how to fix it.
-    if ui.settings.transcription.model.is_labs_gated()
-        && super::model_import::selection_notice(ui).is_some()
-    {
-        let fallback = crate::transcription::custom_models::fallback();
-        let model = transcription_models::definition(fallback.model);
-        if ui.picker.installed(model, &fallback.language) {
-            return None;
-        }
-    }
-    let (installed, progress) = super::onboarding::progress(ui);
-    (!installed).then_some(progress)
 }
 
 /// A shortcut's row with what a shortcuts portal granted, and the note when
@@ -418,58 +357,56 @@ fn pause_browser_rows(ui: &Ui, p: Paint) -> Vec<El> {
     rows
 }
 
-/// The model's languages as a quiet select, or the fallback note when
-/// switching to a single-language model changed the saved language.
+/// The languages the transcription service can be told to expect, as a quiet
+/// select. `auto` lets the service detect the language.
+const TRANSCRIPTION_LANGUAGES: &[(&str, &str)] = &[
+    ("auto", "Auto"),
+    ("en", "English"),
+    ("de", "German"),
+    ("es", "Spanish"),
+    ("fr", "French"),
+    ("it", "Italian"),
+    ("pt", "Portuguese"),
+    ("nl", "Dutch"),
+    ("pl", "Polish"),
+    ("ru", "Russian"),
+    ("uk", "Ukrainian"),
+    ("tr", "Turkish"),
+    ("ar", "Arabic"),
+    ("hi", "Hindi"),
+    ("ja", "Japanese"),
+    ("ko", "Korean"),
+    ("zh", "Chinese"),
+];
+
 fn language_row(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Option<El> {
-    let selection = &ui.settings.transcription;
-    let model = transcription_models::definition(selection.model);
-    let current = transcription_models::language_name(&selection.language);
-    let codes = model.language_choices();
-    let fallback = super::picker::fallback_note(ui);
-    if codes.len() <= 1 && fallback.is_none() {
-        return None;
-    }
-    let control = if codes.len() <= 1 {
-        row()
-            .key("transcription-language-control")
-            .h(24.0)
-            .center_y()
-            .child(
-                text(current.to_string())
-                    .key("value")
-                    .font(value_font(p))
-                    .color(p.faint()),
-            )
-    } else {
-        let labels: Vec<&'static str> = codes
-            .iter()
-            .map(|code| transcription_models::language_name(code))
-            .collect();
-        let selected = codes
-            .iter()
-            .position(|code| *code == selection.language)
-            .unwrap_or(0);
-        pick_select(
-            ui,
-            p,
-            "transcription-language",
-            labels,
-            selected,
-            |ui, index| {
-                let model = transcription_models::definition(ui.settings.transcription.model);
-                if let Some(code) = model.language_choices().get(index) {
-                    super::picker::choose_language(ui, code);
-                }
-            },
-            layer,
-        )
-    };
+    let current = ui.settings.transcription.language.as_str();
+    let labels: Vec<&'static str> = TRANSCRIPTION_LANGUAGES
+        .iter()
+        .map(|(_, name)| *name)
+        .collect();
+    let selected = TRANSCRIPTION_LANGUAGES
+        .iter()
+        .position(|(code, _)| *code == current)
+        .unwrap_or(0);
+    let control = pick_select(
+        ui,
+        p,
+        "transcription-language",
+        labels,
+        selected,
+        |ui, index| {
+            let code = TRANSCRIPTION_LANGUAGES[index].0;
+            ui.update(|settings| settings.transcription.language = code.to_string());
+        },
+        layer,
+    );
     Some(icon_row(
         p,
         "transcription-language",
         &LANGUAGES,
         tr("Language"),
-        fallback.as_deref(),
+        None,
         control,
     ))
 }
@@ -842,17 +779,6 @@ fn dictation(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<CardRow> {
             layer,
         ));
     }
-    // Labs › Switch model with keyboard language: its mappings, while on.
-    if ui.platform.caps.keyboard_model_switching {
-        rows.push(folding(
-            "input-source-mappings",
-            if settings.keyboard_model_switching.enabled {
-                s::input_source_rows(ui, p, layer)
-            } else {
-                Vec::new()
-            },
-        ));
-    }
     rows.push(
         icon_toggle_row(
             p,
@@ -872,11 +798,6 @@ fn dictation(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<CardRow> {
         )
         .into(),
     );
-    // macOS runs its models on Metal or Apple's speech engine.
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
-    if ui.platform.caps.os != super::platform::Os::Macos {
-        rows.push(speech_engine_row(ui, p, layer));
-    }
     rows
 }
 
@@ -1235,59 +1156,6 @@ pub(super) fn advanced_toggle(ui: &Ui, p: Paint, pane: Pane) -> El {
             .key("arrow")
             .color(c.icon_weaker),
         )
-}
-
-/// Where the speech model runs (#856): Auto, GPU or CPU, and why Auto
-/// stays on the CPU after a GPU failed.
-#[cfg(any(target_os = "linux", target_os = "windows"))]
-fn speech_engine_row(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> CardRow {
-    use crate::app_settings::TranscriptionDevice;
-    let device = ui.settings.transcription_device;
-    let control = pick_select(
-        ui,
-        p,
-        "speech-engine",
-        vec![tr("Auto"), tr("GPU"), tr("CPU")],
-        match device {
-            TranscriptionDevice::Auto => 0,
-            TranscriptionDevice::Gpu => 1,
-            TranscriptionDevice::Cpu => 2,
-        },
-        |ui, index| {
-            let device = [
-                TranscriptionDevice::Auto,
-                TranscriptionDevice::Gpu,
-                TranscriptionDevice::Cpu,
-            ][index];
-            if ui.settings.transcription_device != device {
-                ui.update(|settings| settings.transcription_device = device);
-            }
-        },
-        layer,
-    );
-    // Fixtures never read this machine's GPU record.
-    let failed = (ui.live() && device == TranscriptionDevice::Auto)
-        .then(crate::transcription::gpu_health::current)
-        .flatten();
-    let note = failed.map(|failure| {
-        tr_named(
-            if failure.slow {
-                "Auto uses the CPU because it runs speech faster than {device}. Choose GPU to use it anyway."
-            } else {
-                "Auto uses the CPU because {device} stopped responding. Choose GPU to try it again."
-            },
-            &[("device", failure.device.as_str())],
-        )
-    });
-    icon_row(
-        p,
-        "speech-engine",
-        &WAVE,
-        tr("Speech engine"),
-        note.as_deref(),
-        control,
-    )
-    .into()
 }
 
 /// An icon row choosing one of `labels` from a quiet select.

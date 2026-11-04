@@ -88,21 +88,8 @@ impl AppSettings {
         settings.normalize_double_tap_settings();
         settings.migrate_legacy_replacements();
         settings.normalize_mode_application_names();
-        settings.migrate_disabled_transcription_model();
         for hints in &hints {
             crate::dictation::vocabulary::fold_hints(&mut settings.vocabulary, hints);
-        }
-        settings.apply_one_time_migrations();
-        settings.normalize_transcription_recents();
-        settings
-            .keyboard_model_switching
-            .mappings
-            .retain(|_, choice| choice.validate().is_ok());
-        // A saved import that can't run stays saved (`validate_saved`).
-        if let Err(error) = crate::transcription::models::validate_saved(&settings.transcription) {
-            warn("transcription", &error.to_string());
-            settings.transcription = Self::default().transcription;
-            repaired = true;
         }
         // A repair alone never rewrites the user's file. Ordinary migrations
         // keep their existing write-on-load behavior for healthy settings.
@@ -247,7 +234,6 @@ fn needs_backup(data: &[u8]) -> bool {
         return true;
     };
     settings.validate_recording_duck_volume().is_err()
-        || crate::transcription::models::validate_saved(&settings.transcription).is_err()
 }
 
 fn backup_path(path: &Path, data: &[u8]) -> PathBuf {

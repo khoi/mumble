@@ -1,3 +1,4 @@
+#[cfg(windows)]
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -6,49 +7,13 @@ fn main() {
     build_version();
     test_build_commit();
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
-        if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-            // transcribe-cpp's static manifest records OpenBLAS as an absolute
-            // link argument, which Cargo does not propagate through the -sys
-            // crate to this final binary. Keep it after the static archives so
-            // GNU ld's --as-needed does not discard it before seeing cblas_*.
-            println!("cargo:rustc-link-arg=-lopenblas");
-        }
+        #[cfg(windows)]
         if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-            // transcribe-cpp's Vulkan backend links the vulkan-1 import
-            // library by name without its search path. The DLL itself ships
-            // with the GPU driver.
-            println!("cargo:rerun-if-env-changed=VULKAN_SDK");
-            if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64")
-                && let Some(sdk) = std::env::var_os("VULKAN_SDK")
-            {
-                println!(
-                    "cargo:rustc-link-search=native={}",
-                    PathBuf::from(sdk).join("Lib").display()
-                );
-            }
-            #[cfg(windows)]
             embed_windows_resources();
         }
         return;
     }
-    let output = Command::new("xcode-select")
-        .arg("-p")
-        .output()
-        .expect("xcode-select is required to build the Swift bridges");
-    assert!(output.status.success(), "xcode-select -p failed");
-    let developer_dir = String::from_utf8(output.stdout).expect("Xcode path must be UTF-8");
-    compile_swift_bridge("apple_speech", "HEXAppleSpeechBridge");
-    println!("cargo:rustc-link-lib=framework=AVFAudio");
-    println!("cargo:rustc-link-lib=framework=Speech");
     compile_permission_guide();
-    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
-    for runtime in ["swift-5.5/macosx", "swift/macosx"] {
-        let swift_runtime = format!(
-            "{}/Toolchains/XcodeDefault.xctoolchain/usr/lib/{runtime}",
-            developer_dir.trim()
-        );
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{swift_runtime}");
-    }
 }
 
 /// The version Hex reports (`HEX_BUILD_VERSION`): the crate version, which
@@ -240,43 +205,4 @@ fn compile_permission_guide() {
         .file("native/permission_guide.m")
         .flag("-fobjc-arc")
         .compile("hex_permission_guide");
-}
-
-fn compile_swift_bridge(name: &str, module: &str) {
-    let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let output_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    let source = manifest_dir.join(format!("src/{name}.swift"));
-    let object = output_dir.join(format!("{name}.o"));
-    let sdk = Command::new("xcrun")
-        .args(["--sdk", "macosx", "--show-sdk-path"])
-        .output()
-        .expect("xcrun is required to compile Swift bridges");
-    assert!(sdk.status.success(), "could not locate the macOS SDK");
-    let target = match std::env::var("TARGET").as_deref() {
-        Ok("aarch64-apple-darwin") => "arm64-apple-macosx15.0",
-        Ok("x86_64-apple-darwin") => "x86_64-apple-macosx15.0",
-        Ok(target) => panic!("unsupported macOS target for {module}: {target}"),
-        Err(error) => panic!("TARGET is unavailable: {error}"),
-    };
-    println!("cargo:rerun-if-changed={}", source.display());
-    let mut swift = Command::new("xcrun");
-    swift.args([
-        "swiftc",
-        "-parse-as-library",
-        "-emit-object",
-        "-module-name",
-        module,
-        "-sdk",
-    ]);
-    swift
-        .arg(String::from_utf8_lossy(&sdk.stdout).trim())
-        .args(["-target", target]);
-    let status = swift
-        .arg(&source)
-        .arg("-o")
-        .arg(&object)
-        .status()
-        .expect("xcrun swiftc is required to compile Swift bridges");
-    assert!(status.success(), "{module} compilation failed");
-    println!("cargo:rustc-link-arg={}", object.display());
 }

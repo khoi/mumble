@@ -23,7 +23,7 @@ python3 scripts/code-shape.py --check || exit 13
 
 if [[ $# -eq 0 ]]; then
     stage "clippy"
-    cargo clippy --locked --workspace --all-targets --features onnx-benchmark -- -D warnings || exit 11
+    cargo clippy --locked --workspace --all-targets -- -D warnings || exit 11
 fi
 
 if command -v cargo-nextest >/dev/null 2>&1; then

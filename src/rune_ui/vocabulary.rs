@@ -136,24 +136,16 @@ pub(super) fn summary(ui: &Ui) -> String {
     }
 }
 
-/// Why the list doesn't reach transcription, when the selected model takes
-/// none (Parakeet biases toward it; Whisper and Qwen3-ASR read it as a
-/// prompt).
-pub(super) fn unused_note(ui: &Ui) -> Option<String> {
-    let model = crate::transcription::models::definition(ui.settings.transcription.model);
-    (!model.uses_vocabulary()).then(|| {
-        tr_fill(
-            "{} doesn't use these terms; rewriting and search still do",
-            model.name,
-        )
-    })
+/// The vocabulary always reaches transcription now (it is sent to the
+/// service as keyterms), so the list has no "unused" note.
+pub(super) fn unused_note(_ui: &Ui) -> Option<String> {
+    None
 }
 
 /// Opens the sheet alone, with an empty row to type into when the list is
 /// empty.
 pub(super) fn open(ui: &mut Ui) {
     super::settings::cancel_capture(ui);
-    super::picker::close(ui);
     super::explainer::close(ui);
     super::sound_sets::close(ui);
     ui.open = None;
@@ -321,15 +313,7 @@ pub(super) fn modal(ui: &Ui, p: Paint) -> Option<[El; 2]> {
                 .color(p.muted())
                 .wrap(),
         );
-    let biases = crate::transcription::models::definition(ui.settings.transcription.model)
-        .vocabulary_use()
-        == crate::transcription::models::VocabularyUse::Bias;
-    let unused = unused_note(ui).or_else(|| {
-        (biases && !ui.settings.labs.vocabulary_biasing).then(|| {
-            tr("Transcription uses these only with Labs › Vocabulary biasing on; rewriting and search always do")
-                .to_string()
-        })
-    });
+    let unused = unused_note(ui);
     if let Some(unused) = unused {
         heading = heading.child(
             text(unused)

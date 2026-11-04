@@ -27,7 +27,6 @@ pub(crate) struct SfxTrack {
     pub(crate) style: KeySoundStyle,
     cues: Vec<(f64, Tone)>,
     fired: usize,
-    almost_ready_scheduled: bool,
     flushed: bool,
 }
 
@@ -35,7 +34,6 @@ impl SfxTrack {
     pub(crate) fn clear(&mut self) {
         self.cues.clear();
         self.fired = 0;
-        self.almost_ready_scheduled = false;
         self.flushed = false;
     }
 
@@ -85,16 +83,8 @@ impl SfxTrack {
             .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     }
 
-    /// Initial `"Setting up Hex"` hexagon bloom.
-    pub(crate) fn on_download_start(&mut self, now: f64) {
-        self.push(now + 0.08, Tone::Onboarding(OnboardingTone::Hexagon));
-    }
-
-    /// `"Without Hex"`: hexagon settling into top pill + every typing stroke.
-    pub(crate) fn on_without_hex(&mut self, now: f64, typing_from: f64, had_model: bool) {
-        if !had_model {
-            self.push(now + 0.12, Tone::Onboarding(OnboardingTone::Hexagon));
-        }
+    /// `"Without Hex"`: every typing stroke.
+    pub(crate) fn on_without_hex(&mut self, _now: f64, typing_from: f64) {
         let style = self.style;
         let mut prev_variant: Option<u8> = None;
         for (i, stroke) in typing::all_strokes().iter().enumerate() {
@@ -159,14 +149,6 @@ impl SfxTrack {
             from + permissions::AX_GRANT,
             Tone::Onboarding(OnboardingTone::PermissionTick),
         );
-    }
-
-    /// `"Almost ready"` waiting screen (fires at most once per run).
-    pub(crate) fn on_almost_ready(&mut self, now: f64) {
-        if !self.almost_ready_scheduled {
-            self.almost_ready_scheduled = true;
-            self.push(now + 0.06, Tone::Onboarding(OnboardingTone::AlmostReady));
-        }
     }
 
     /// `"Hex is ready"` finale: hexagon arrival + Hex's `#292` success motif.
@@ -238,7 +220,7 @@ mod tests {
     #[test]
     fn typing_clacks_never_repeat_an_adjacent_key_sample() {
         let mut track = SfxTrack::default();
-        track.on_without_hex(0.0, 0.5, false);
+        track.on_without_hex(0.0, 0.5);
         track.advance_to(20.0);
 
         let mut last_key: Option<u8> = None;
@@ -271,10 +253,8 @@ mod tests {
     #[test]
     fn voice_and_permission_cues_include_real_dictation_tones_and_motion_beats() {
         let mut track = SfxTrack::default();
-        track.on_download_start(0.0);
         track.on_voice_take(10.0, &ANSWER_JAY);
         track.on_permissions(14.0);
-        track.on_almost_ready(21.5);
         track.on_ready(28.0);
         track.advance_to(30.0);
 
@@ -286,7 +266,6 @@ mod tests {
         assert!(tones.contains(&Tone::DictationDone));
         assert!(tones.contains(&Tone::Onboarding(OnboardingTone::PanelEscape)));
         assert!(tones.contains(&Tone::Onboarding(OnboardingTone::PermissionTick)));
-        assert!(tones.contains(&Tone::Onboarding(OnboardingTone::AlmostReady)));
         assert!(tones.contains(&Tone::OnboardingSuccess));
     }
 }

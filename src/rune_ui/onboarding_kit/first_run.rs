@@ -10,32 +10,23 @@
 //! - Auditionable typing key-sound candidates and `#292` `feedback` tones (`sfx`).
 
 use rune::{Anim, El, TextStyle, Transition, col, el, row, text};
-use rune_kit::{Badge, Button, ButtonVariant, RadioItem, TextArea, glyphs};
+use rune_kit::{Button, ButtonVariant, TextArea};
 
-use super::super::controls::{
-    CardRow, DESCRIPTION, KeySize, METRICS, Paint, PushSize, card, keycap,
-};
-use super::super::found_choice::ChoiceRow;
-use super::super::lists::allowed;
+use super::super::controls::{DESCRIPTION, KeySize, Paint, PushSize, keycap};
 use super::dictated::Stage;
 use super::field_text::Field;
-use super::fixture::{ANSWER_TRY, Download};
+use super::fixture::ANSWER_TRY;
 use super::flight::{Flight, caret_x, ember_tone, flicker, flying, typeset};
 use super::flows::continue_button;
-use super::hex_meter::hex_meter;
-use super::hud_stage::{flow_box, frame_slot, voice_or_idle_slot};
+use super::hud_stage::{frame_slot, voice_or_idle_slot};
 use super::landing::{LEAD, arrives, keys, ready, title_font};
-use super::live::{Live, ModelStep};
 use super::mic_line::mic_capsule;
-use super::pill::{CAPSULE, FLY, PILL, language_capsule, pill, slot};
 use super::sparks::impacts;
 use super::stories::{Onboard, Step, is_live_window};
 use super::{live, permissions, versus};
 use crate::desktop::i18n::{tr, tr_fill};
 
 const TOP_BAR: f32 = 48.0;
-/// The model step's list, as wide as the tour's column.
-const MODELS_W: f32 = 520.0;
 const ACTION_H: f32 = 32.0;
 
 const TRY_W: f32 = 468.0;
@@ -58,22 +49,14 @@ const KNOCK: f32 = 8.0;
 const BURST: f64 = 0.06;
 
 pub(super) fn view(p: Paint, s: &Onboard) -> Vec<El> {
-    let centred = matches!(s.step, Step::Pick | Step::Started | Step::Waiting);
     let top = row()
         .key("top-bar")
         .w_full()
         .h(TOP_BAR)
         .px(20.0)
         .center_y()
-        .justify_center()
-        .child(match s.download {
-            Some(d) if !s.had_model && !centred && s.step != Step::Ready => pill(p, d, s.closed),
-            _ => slot(),
-        });
-    let top = top
-        .children(back(p, s))
-        .children(reopen(p, s))
-        .children(skip(p, s));
+        .justify_center();
+    let top = top.children(reopen(p, s)).children(skip(p, s));
     // The real window has no title bar: the top of the page moves it.
     let top = if s.live.is_some() {
         super::super::sidebar::title_bar(top)
@@ -81,8 +64,6 @@ pub(super) fn view(p: Paint, s: &Onboard) -> Vec<El> {
         top
     };
     let page = match s.step {
-        Step::Pick | Step::Started => download_page(p, s, false),
-        Step::Waiting => download_page(p, s, true),
         Step::Parked | Step::YourTurn | Step::Hearing | Step::Heard | Step::Done => demo_page(p, s),
         Step::Permissions => permissions::page(p, s),
         Step::Try | Step::TryHearing | Step::TryHeard => {
@@ -154,122 +135,8 @@ fn reopen(p: Paint, s: &Onboard) -> Option<El> {
     })
 }
 
-/// Back to the model step, on the pages after it, once the person chose
-/// from it.
-fn back(p: Paint, s: &Onboard) -> Option<El> {
-    let chosen = s
-        .live
-        .as_ref()
-        .is_some_and(|live| live.model_step == ModelStep::Chosen);
-    let after = matches!(
-        s.step,
-        Step::Parked
-            | Step::YourTurn
-            | Step::Hearing
-            | Step::Heard
-            | Step::Done
-            | Step::Permissions
-            | Step::Waiting
-    );
-    (chosen && after).then(|| {
-        Button::new(tr("Back"))
-            .variant(ButtonVariant::Ghost)
-            .on_press(live::back_to_models)
-            .build_push(p.k)
-            .key("back")
-            .absolute(20.0, 8.0)
-            .transition(arrives())
-    })
-}
-
-/// The model step: the models found on this computer, Hex's recommended
-/// one first and selected. A pick starts at once; Continue moves on once it
-/// is under way.
-fn models_page(p: Paint, s: &Onboard, live: &Live) -> El {
-    let rows: Vec<CardRow> = live
-        .models
-        .iter()
-        .enumerate()
-        .map(|(index, model)| model_row(p, index, model).into())
-        .collect();
-    let list = card(p, "model-list", rows).w(MODELS_W);
-    col()
-        .key("models")
-        .gap(22.0)
-        .items_center()
-        .child(heading(
-            p,
-            s,
-            "models-head",
-            tr("Choose a speech model"),
-            lead(p, tr("Hex found speech models already on this computer.")),
-        ))
-        .child(s.motion.staggered(list, 1.0, 8.0))
-        .child(action(continue_model_button(p)))
-}
-
-fn model_row(p: Paint, index: usize, model: &ChoiceRow) -> El {
-    let radio = RadioItem::new(&model.name, model.selected)
-        .description(&model.line)
-        .on_select_tx(move |ui: &mut super::super::Ui, tx: &mut rune::Tx| {
-            tx.instant();
-            live::pick_model(index)(ui);
-        })
-        .build(p.k)
-        .key("radio")
-        .grow(1.0);
-    let tag = model
-        .recommended
-        .then(|| Badge::new(tr("Recommended")).build(p.k).key("recommended"));
-    row()
-        .key(format!("model{index}"))
-        .min_h(METRICS.row_h_described)
-        .px(METRICS.row_px)
-        .py(10.0)
-        .gap(12.0)
-        .center_y()
-        .radius(p.k.radius.md)
-        .hover(p.k.c.hover)
-        .on_press_tx(move |ui: &mut super::super::Ui, tx: &mut rune::Tx| {
-            tx.instant();
-            live::pick_model(index)(ui);
-        })
-        .child(radio)
-        .children(tag)
-}
-
-fn continue_model_button(p: Paint) -> El {
-    let label = tr("Continue");
-    Button::new(label)
-        .variant(ButtonVariant::Contrast)
-        .label_with(move |font, ink| {
-            row()
-                .gap(6.0)
-                .center_y()
-                .child(text(label).key("label").font(font).color(ink))
-                .child(
-                    rune::icon(&glyphs::ARROW_RIGHT, 15.0)
-                        .key("arrow")
-                        .color(ink),
-                )
-        })
-        .on_press(live::continue_model)
-        .build_push(p.k)
-        .key("continue")
-        .default_button()
-        .transition(arrives())
-}
-
 fn ready_page(p: Paint, s: &Onboard) -> El {
-    let core = ready(
-        p,
-        &s.caps,
-        (!s.had_model).then_some(PILL),
-        s.now,
-        s.reduced.get(),
-        s.motion,
-        s.home,
-    );
+    let core = ready(p, &s.caps, None, s.now, s.reduced.get(), s.motion, s.home);
     if s.live.is_some() {
         return col()
             .key("ready-live-wrap")
@@ -325,14 +192,6 @@ fn none() -> El {
     el().key("none")
 }
 
-fn download(s: &Onboard) -> Download {
-    s.download.unwrap_or(Download {
-        language: s.wants,
-        downloaded: 0,
-        total: s.wants.bytes(),
-    })
-}
-
 fn lead(p: Paint, copy: impl Into<String>) -> El {
     text(copy.into())
         .key("lead")
@@ -362,180 +221,6 @@ fn hold(p: Paint, s: &Onboard, rest: &str, down: bool) -> El {
         .child(text(tr("Hold")).key("hold").font(LEAD).color(p.muted()))
         .child(keys(p, "keys", &s.caps, down))
         .child(text(rest).key("rest").font(LEAD).color(p.muted()))
-}
-
-fn download_page(p: Paint, s: &Onboard, waiting: bool) -> El {
-    if let Some(live) = s
-        .live
-        .as_ref()
-        .filter(|live| !waiting && live.model_step != ModelStep::None)
-    {
-        return models_page(p, s, live);
-    }
-    let d = download(s);
-
-    let head = if waiting {
-        heading(
-            p,
-            s,
-            "waiting-head",
-            tr("Almost ready"),
-            lead(p, tr("Finishing the speech model so Hex can hear you.")),
-        )
-    } else {
-        let subtitle = row()
-            .key("download-line")
-            .gap(7.0)
-            .center_y()
-            .child(
-                text(tr("Downloading"))
-                    .key("pre")
-                    .font(LEAD)
-                    .color(p.muted()),
-            )
-            .child(if s.live.is_some() {
-                language_capsule(p, d.language, live::cycle_language)
-            } else {
-                language_capsule(p, d.language, Onboard::cycle_language)
-            })
-            .child(
-                text(tr("speech model"))
-                    .key("post")
-                    .font(LEAD)
-                    .color(p.muted()),
-            );
-        heading(p, s, "download-head", tr("Setting up Hex"), subtitle)
-    };
-
-    let pct = (d.fraction() * 100.0).round() as u32;
-    let status_inner = if d.done() {
-        allowed(p, "status", tr("Ready")).transition(Transition::opacity())
-    } else {
-        text(format!("{pct}%"))
-            .key("status")
-            .font(TextStyle::new(13.0, 520.0).lh(18.0).features("'tnum' 1"))
-            .color(p.text())
-    };
-    let progress_capsule = row()
-        .key("download-progress-pill")
-        .h(32.0)
-        .pl(10.0)
-        .pr(13.0)
-        .gap(8.0)
-        .center_y()
-        .radius(16.0)
-        .fill(p.k.c.surface_raised)
-        .border(p.hair, p.k.c.border_weak)
-        .matched(CAPSULE)
-        .motion(FLY)
-        .width_leads()
-        .child(hex_meter(p, "meter", 18.0, d.fraction(), s.closed))
-        .child(status_inner);
-    // "Almost ready" receives the capsule back from the top bar, so it
-    // arrives by that flight rather than a staggered entrance.
-    let progress_capsule = if waiting {
-        progress_capsule
-    } else {
-        s.motion.staggered(progress_capsule, 2.0, 6.0)
-    };
-
-    // A network that blocks the download: why, then retry or use a model
-    // file brought some other way (#894).
-    let retry = s.live.as_ref().filter(|live| live.failed).map(|live| {
-        let why = live
-            .failure
-            .clone()
-            .unwrap_or_else(|| tr("The download stopped.").to_owned());
-        col()
-            .key("download-failed")
-            .gap(12.0)
-            .items_center()
-            .transition(arrives())
-            .child(
-                text(why)
-                    .key("why")
-                    .font(LEAD)
-                    .color(p.muted())
-                    .align(rune::Align::Center)
-                    .wrap()
-                    .w(TRY_W),
-            )
-            .child(
-                row()
-                    .key("actions")
-                    .gap(10.0)
-                    .center_y()
-                    .child(
-                        Button::new(if live.using_file {
-                            tr("Adding model…")
-                        } else {
-                            tr("Use a model file…")
-                        })
-                        .variant(ButtonVariant::Neutral)
-                        .on_press(live::use_file)
-                        .build_push(p.k)
-                        .key("use-file"),
-                    )
-                    .child(
-                        Button::new(tr("Try again"))
-                            .variant(ButtonVariant::Neutral)
-                            .on_press(live::retry_download)
-                            .build_push(p.k)
-                            .key("retry-download"),
-                    ),
-            )
-    });
-    col()
-        .key(if waiting { "waiting" } else { "download" })
-        .gap(22.0)
-        .items_center()
-        .child(flow_box(
-            if waiting {
-                "waiting-hud"
-            } else {
-                "download-hud"
-            },
-            1.24,
-            s,
-        ))
-        .child(head)
-        .child(progress_capsule)
-        .children(retry)
-        .children(without_model(p, s))
-}
-
-/// The one way past a model that can't be had (#894): once its download
-/// failed or stalled, and every permission is ready, onboarding can finish
-/// without one.
-fn without_model(p: Paint, s: &Onboard) -> Option<El> {
-    s.live
-        .as_ref()
-        .filter(|live| s.granted && live.model_blocked())
-        .map(|_| {
-            col()
-                .key("without-model")
-                .gap(6.0)
-                .items_center()
-                .transition(arrives())
-                .child(
-                    Button::new(tr("Continue without a model"))
-                        .variant(ButtonVariant::Ghost)
-                        .on_press(live::continue_without_model)
-                        .build_push(p.k)
-                        .key("continue-without-model"),
-                )
-                .child(
-                    text(tr(
-                        "Dictation won't work until you add a model with Add model file… in Settings.",
-                    ))
-                    .key("without-model-why")
-                    .font(DESCRIPTION)
-                    .color(p.muted())
-                    .align(rune::Align::Center)
-                    .wrap()
-                    .w(TRY_W),
-                )
-        })
 }
 
 fn demo_page(p: Paint, s: &Onboard) -> El {

@@ -6,7 +6,6 @@
 //! [`crate::rune_hud::Painter`] (`rune_hud.wgsl`), identical to `#292`'s Sounds
 //! sheet and the real desktop HUD.
 
-use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 use rune::{El, effect};
@@ -36,54 +35,6 @@ const JOB: u64 = 1;
 /// Seconds after shortcut release (`Submitted` + `Transcribing`) when the final
 /// streamed word lands and `JobCompleted` triggers Dot scope's Done wipe.
 pub(crate) const DONE_DELAY: f64 = 0.14;
-
-/// The download plate advances from the last presentation time. Rebuilding
-/// its whole history in every view made a long download progressively costly.
-#[derive(Default)]
-pub(crate) struct FlowHud(RefCell<Option<Flow>>);
-
-struct Flow {
-    model: IndicatorModel,
-    clock: Instant,
-    at: f64,
-    reduced: bool,
-    frame: DotFrame,
-}
-
-impl FlowHud {
-    pub(crate) fn frame(&self, now: f64, reduced: bool) -> DotFrame {
-        let mut cached = self.0.borrow_mut();
-        if cached
-            .as_ref()
-            .is_none_or(|flow| flow.at > now || flow.reduced != reduced)
-        {
-            let clock = Instant::now();
-            let mut model = IndicatorModel::new(Tuning::default(), clock);
-            model.handle(Event::Started, clock, reduced);
-            model.handle(Event::Submitted { job_id: JOB }, clock, reduced);
-            model.handle(Event::Transcribing { job_id: JOB }, clock, reduced);
-            let frame = model.step(clock, 0.0, reduced);
-            *cached = Some(Flow {
-                model,
-                clock,
-                at: now - 0.45,
-                reduced,
-                frame,
-            });
-        }
-        let flow = cached.as_mut().expect("created above");
-        // A window returning after a long pause catches up once, bounded to
-        // one second; ordinary frames advance exactly their clock delta.
-        let delta = (now - flow.at).clamp(0.0, 1.0) as f32;
-        let (count, dt) = steps(delta);
-        for _ in 0..count {
-            flow.clock += Duration::from_secs_f32(dt);
-            flow.frame = flow.model.step(flow.clock, dt, reduced);
-        }
-        flow.at = now;
-        flow.frame.clone()
-    }
-}
 
 /// The resting meter the plate hums at while waiting for the user to hold `⌥`.
 const IDLE_METER: Event = Event::Meter {
@@ -323,18 +274,6 @@ pub(crate) fn frame_slot(key: &str, centre: [f32; 2], scale: f32, frame: &DotFra
     slot_el(key, centre, scale)
 }
 
-/// Mounts the real `Dot scope` `Processing::Flow` phosphor HUD centred in a
-/// layout box of `(w, h)` for `"Setting up Hex"` and `"Almost ready"`.
-pub(crate) fn flow_box(key: &str, scale: f32, s: &super::stories::Onboard) -> El {
-    update_hud(hud_mark(key), s.flow_hud.frame(s.now, s.reduced.get()));
-    let (w, h) = (WINDOW.0 * scale, 62.0 * scale);
-    rune::el()
-        .key(format!("{key}-wrap"))
-        .size(w, h)
-        .transition(s.motion.roll(8.0))
-        .child(slot_el(key, [w * 0.5, h * 0.5], scale))
-}
-
 /// Mounts the real `Dot scope` phosphor HUD for `"With Hex"` or `"Your turn"`,
 /// returning `(hud_element, hud_heat, voice_energy)`. The plate rests while
 /// `waiting`, then records `take` from `take_from`, on one model that started
@@ -412,11 +351,6 @@ mod tests {
         let a = voice_frame_at(0.25, None, false).unwrap();
         let b = voice_frame_at(0.25 + 1.0 / 120.0, None, false).unwrap();
         assert_ne!(a, b, "a 120 Hz frame must not repeat the previous pose");
-        let flow = FlowHud::default();
-        assert_ne!(
-            flow.frame(0.25, false),
-            flow.frame(0.25 + 1.0 / 120.0, false)
-        );
     }
 
     #[test]
@@ -433,8 +367,5 @@ mod tests {
             frame_at(&ANSWER_JAY, ANSWER_JAY.release + 1.0, false).is_none(),
             "HUD collapses away cleanly after Done"
         );
-
-        let flow = FlowHud::default().frame(0.9, false);
-        assert!(flow.pose.opacity > 0.8);
     }
 }

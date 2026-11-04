@@ -4,7 +4,7 @@ use super::{
     CONTROL_VERSION, ControlReply, ControlResponse, EXIT_NO_SPEECH, EXIT_NOT_RUNNING, EXIT_REFUSED,
     Output, fail,
 };
-use crate::control::{ModelInfo, StatusReport, settings::SettingValue};
+use crate::control::{StatusReport, settings::SettingValue};
 use crate::dictation::vocabulary::VocabularyEntry;
 
 /// Prints `reply` and returns its exit code.
@@ -25,7 +25,6 @@ pub(crate) fn print(reply: ControlReply, output: Output) -> u8 {
         ControlReply::Done { message, .. } => println!("{message}"),
         ControlReply::Status(report) => print!("{}", human_status(&report)),
         ControlReply::Settings { settings } => print!("{}", human_settings(&settings)),
-        ControlReply::Models { models } => print!("{}", human_models(&models)),
         ControlReply::Vocabulary { entries } => print!("{}", human_vocabulary(&entries)),
         ControlReply::Transcript { text } => println!("{text}"),
         ControlReply::Error { message, .. } => eprintln!("hex: {message}"),
@@ -81,42 +80,6 @@ pub(super) fn human_settings(settings: &[SettingValue]) -> String {
         .collect()
 }
 
-pub(super) fn human_models(models: &[ModelInfo]) -> String {
-    let width = models.iter().map(|model| model.id.len()).max().unwrap_or(0);
-    let name_width = models
-        .iter()
-        .map(|model| model.name.len())
-        .max()
-        .unwrap_or(0);
-    models
-        .iter()
-        .map(|model| {
-            let languages = if model.languages.len() > 6 {
-                format!("{} languages", model.languages.len())
-            } else {
-                model.languages.join(", ")
-            };
-            format!(
-                "{} {:width$}  {:name_width$}  {:>8}  {:13}  {languages}{}\n",
-                if model.selected { "*" } else { " " },
-                model.id,
-                model.name,
-                model.size,
-                if model.installed {
-                    "installed"
-                } else {
-                    "not installed"
-                },
-                if model.source.is_empty() {
-                    String::new()
-                } else {
-                    format!("  ({})", model.source)
-                },
-            )
-        })
-        .collect()
-}
-
 pub(super) fn human_vocabulary(entries: &[VocabularyEntry]) -> String {
     if entries.is_empty() {
         return "The vocabulary is empty; `hex vocabulary add <term>` adds one\n".into();
@@ -156,40 +119,16 @@ pub(super) fn human_status(report: &StatusReport) -> String {
         0 => String::new(),
         jobs => format!(" ({jobs} pending)"),
     };
-    let model = &report.model;
-    let mut model_line = format!(
-        "{} ({}){}",
-        model.name,
-        model.language,
-        if model.installed {
-            ""
-        } else {
-            ", not installed"
-        }
-    );
-    if let Some(preparing) = &model.preparing {
-        model_line.push_str(&format!(
-            "; preparing {preparing} ({} MB)",
-            model.downloaded_bytes / 1_000_000
-        ));
-    }
-    if let Some(error) = &model.error {
-        model_line.push_str(&format!("; error: {error}"));
-    }
+    let transcription = &report.transcription;
+    let transcription_line = format!("{} ({})", transcription.provider, transcription.language);
     let features = &report.features;
     let permissions = &report.permissions;
     let permission_line = if permissions.ready {
         "ready".to_string()
     } else {
         format!(
-            "microphone {}, accessibility {}, model {}",
-            permissions.microphone,
-            permissions.accessibility,
-            if permissions.transcription_model {
-                "ready"
-            } else {
-                "missing"
-            }
+            "microphone {}, accessibility {}",
+            permissions.microphone, permissions.accessibility,
         )
     };
     let window = match (&report.window.pane, report.window.open) {
@@ -201,7 +140,7 @@ pub(super) fn human_status(report: &StatusReport) -> String {
         "Hex {} (pid {}{memory})\n\
          Listener     {}\n\
          Capture      {capture}{pending}\n\
-         Model        {model_line}\n\
+         Transcription {transcription_line}\n\
          Features     release mic while idle {}, history {}\n\
          Permissions  {permission_line}\n\
          Window       {window}\n\

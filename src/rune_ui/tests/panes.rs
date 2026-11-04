@@ -930,7 +930,7 @@ fn the_explainer_restarts_when_reduce_motion_turns_off() {
 }
 
 #[test]
-fn the_explainer_picker_and_shortcut_recording_never_share_the_window() {
+fn the_explainer_and_shortcut_recording_never_share_the_window() {
     let mut rt = runtime("mac-settings", true, PANE_SIZE);
     tap(&mut rt, "dictation-hotkey");
     assert!(matches!(
@@ -941,18 +941,9 @@ fn the_explainer_picker_and_shortcut_recording_never_share_the_window() {
     assert!(matches!(rt.state.capture, settings::Capture::Idle));
     assert!(sent(&rt).contains(&Request::CancelShortcut));
 
-    picker::open(&mut rt.state);
-    assert!(!rt.state.explainer.open, "the picker closes the explainer");
-    explainer::open(&mut rt.state);
-    assert!(!rt.state.picker.open, "and the explainer the picker");
-
     rt.state
         .select_pane(Pane::History, &mut rune::Tx::default());
     assert!(!rt.state.explainer.open);
-    picker::open(&mut rt.state);
-    rt.state
-        .select_pane(Pane::General, &mut rune::Tx::default());
-    assert!(!rt.state.picker.open);
 }
 
 #[test]
@@ -997,10 +988,6 @@ fn a_staged_dev_build_lists_its_first_changes_under_the_update() {
 fn the_mac_first_run_asks_each_permission_then_practices() {
     let mut rt = runtime("mac-onboarding-permissions", true, PANE_SIZE);
     assert_eq!(rt.state.tour.as_ref().unwrap().flow.step(), Step::Setup);
-    assert!(
-        matches!(sent(&rt), [Request::ChooseModel { .. }]),
-        "the model downloads behind the permissions"
-    );
     tap(&mut rt, "mic-pill-allow");
     assert_eq!(
         asked(&rt),
@@ -1008,11 +995,10 @@ fn the_mac_first_run_asks_each_permission_then_practices() {
             PermissionAction::RequestMicrophone
         )]
     );
-    // macOS grants everything and the model lands: the practice follows.
+    // macOS grants everything: the practice follows (cloud needs no model).
     use crate::desktop::onboarding::PermissionState::Ready;
     rt.state.platform.permissions.microphone = Ready;
     rt.state.platform.permissions.accessibility = Ready;
-    rt.state.picker.installed = Some(vec![rt.state.settings.transcription.model]);
     refresh(&mut rt);
     rt.update(|ui, _| onboarding_kit::live::fixture_resume(ui, Page::Try));
     settle(&mut rt);
@@ -1090,7 +1076,6 @@ fn windows_onboarding_asks_only_for_the_microphone_switch() {
     );
     // Switched on in Settings: the practice follows.
     rt.state.platform.permissions.microphone = crate::desktop::onboarding::PermissionState::Ready;
-    rt.state.picker.installed = Some(vec![rt.state.settings.transcription.model]);
     refresh(&mut rt);
     rt.update(|ui, _| onboarding_kit::live::fixture_resume(ui, Page::Try));
     settle(&mut rt);
@@ -1357,7 +1342,6 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
         ("lab-voice-filter", settings.experimental.hex_microphone),
         ("lab-playground", settings.labs.playground),
         ("lab-live-text", settings.labs.live_text),
-        ("lab-vocabulary-biasing", settings.labs.vocabulary_biasing),
     ] {
         assert!(rt.find(row).is_some(), "Labs lacks {row}");
         assert!(!on, "{row} is on");
@@ -1372,8 +1356,6 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
     );
     tap(&mut rt, "lab-live-text");
     assert!(rt.state.settings.labs.live_text);
-    tap(&mut rt, "lab-vocabulary-biasing");
-    assert!(rt.state.settings.labs.vocabulary_biasing);
     tap(&mut rt, "lab-voice-filter");
     assert!(rt.find("nav-voice-filter").is_none(), "hidden while off");
 
@@ -1394,13 +1376,13 @@ fn labs_is_one_flat_list_of_toggles_off_by_default() {
 fn a_labs_link_opens_labs_pulses_its_row_and_leaves_it_off() {
     use crate::labs::Feature;
     let mut rt = runtime("mac-settings", true, (980.0, 2000.0));
-    let feature = Feature::VocabularyBiasing;
+    let feature = Feature::LiveText;
     assert!(!feature.on(&rt.state.settings));
     rt.update(|ui, tx| super::super::labs::reveal(ui, Some(feature.name()), tx));
     settle(&mut rt);
     assert!(rt.state.labs_open);
     assert_eq!(rt.state.lab_flash.map(|(f, _)| f), Some(feature));
-    assert!(rt.find("lab-vocabulary-biasing").is_some());
+    assert!(rt.find("lab-live-text").is_some());
     assert!(!feature.on(&rt.state.settings), "a link never flips it");
     let later = std::time::Instant::now() + std::time::Duration::from_secs(5);
     assert!(super::super::labs::poll_flash(&mut rt.state, later));

@@ -5,21 +5,15 @@
 //! the macOS host apply. A command the OS can't carry out answers
 //! `unsupported` here, at runtime, instead of being left out of the CLI.
 
-use std::time::{Duration, Instant};
-
 use super::{
     CaptureAction, CaptureReport, CaptureSnapshot, CaptureState, ControlCommand, ControlError,
-    ControlReply, ControlRequest, ControlResponse, FeatureReport, ListenerReport, ModelReport,
-    Pane, PermissionReport, PrintReply, StatusReport, WindowReport, settings,
+    ControlReply, ControlRequest, ControlResponse, FeatureReport, ListenerReport, Pane,
+    PermissionReport, PrintReply, StatusReport, TranscriptionReport, WindowReport, settings,
 };
 use crate::app_settings::AppSettings;
 use crate::desktop::host::{
     DesktopListenerSnapshot, DesktopTranscriptionSnapshot, DesktopUpdateStatus,
 };
-use crate::transcription::models::TranscriptionSelection;
-
-/// How long `model use` waits to confirm, inside the transport's deadline.
-const CONFIRM_WAIT: Duration = Duration::from_secs(8);
 
 /// What the running Hex published last.
 pub(crate) struct HostState {
@@ -53,10 +47,6 @@ pub(crate) trait Host {
     /// Closes the window; false when it wasn't open.
     fn hide_window(&self) -> bool;
     fn onboarding_reset(&self) -> ControlReply;
-    /// Prepares `selection` (downloading it when missing) and switches to
-    /// it once it is ready.
-    fn choose_model(&self, selection: TranscriptionSelection) -> Result<(), ControlError>;
-    fn cancel_model(&self);
     fn check_for_updates(&self) -> Result<(), ControlError>;
     /// Launch at login, after setting it when `enabled` is given; `None`
     /// when this OS has no login item.
@@ -153,30 +143,6 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
         })),
         ControlCommand::SettingsSet { key, value } => reply(set_setting(host, &key, &value)),
         ControlCommand::SettingsApply { values } => reply(apply_settings(host, &values)),
-        ControlCommand::ModelList => reply(load().map(|settings| ControlReply::Models {
-            models: super::model_infos(&settings.transcription),
-        })),
-        ControlCommand::ModelUse { model, language } => {
-            reply(use_model(host, &model, language.as_deref(), false))
-        }
-        ControlCommand::ModelInstall { model, language } => {
-            reply(use_model(host, &model, language.as_deref(), true))
-        }
-        ControlCommand::ModelCancel => {
-            reply(
-                host.state()
-                    .map(|state| match state.transcription.preparing {
-                        None => ControlReply::unchanged("No model is downloading or loading"),
-                        Some(model) => {
-                            host.cancel_model();
-                            ControlReply::done(format!(
-                                "Stopped preparing {}",
-                                crate::transcription::models::definition(model).name
-                            ))
-                        }
-                    }),
-            )
-        }
         ControlCommand::WindowShow { pane } => reply(
             host.show_window(pane)
                 .map(|()| ControlReply::done("Opened the window")),
@@ -298,86 +264,6 @@ fn commit(
     Ok(ControlReply::done(change.message))
 }
 
-/// `hex model use` (installed only) and `hex model install` (downloads
-/// first). Both switch once the model is ready.
-fn use_model(
-    host: &dyn Host,
-    model: &str,
-    language: Option<&str>,
-    install: bool,
-) -> Result<ControlReply, ControlError> {
-    let selection = super::model_selection(&load()?, model, language)?;
-    let definition = crate::transcription::models::definition(selection.model);
-    let installed = crate::transcription::models::is_installed(definition, &selection.language);
-    let state = host.state()?;
-    if same_model(&state.settings.transcription, &selection) && installed {
-        return Ok(ControlReply::unchanged(format!(
-            "{} ({}) is already in use",
-            definition.name, selection.language
-        )));
-    }
-    if !installed && !install {
-        return Err(ControlError::new(
-            "not-installed",
-            format!(
-                "{} isn't installed; `hex model install {}` downloads it ({})",
-                definition.name,
-                selection.model.as_str(),
-                definition.size_label()
-            ),
-        ));
-    }
-    host.choose_model(selection.clone())?;
-    if !installed {
-        return Ok(ControlReply::done(format!(
-            "Downloading {} ({}); Hex switches to it once it's ready. \
-             `hex status` shows progress, `hex model cancel` stops it",
-            definition.name,
-            definition.size_label()
-        )));
-    }
-    wait_for_model(host, &selection)
-}
-
-fn same_model(current: &TranscriptionSelection, wanted: &TranscriptionSelection) -> bool {
-    current.model == wanted.model && current.language == wanted.language
-}
-
-fn wait_for_model(
-    host: &dyn Host,
-    selection: &TranscriptionSelection,
-) -> Result<ControlReply, ControlError> {
-    let name = crate::transcription::models::definition(selection.model).name;
-    let started = Instant::now();
-    let mut seen_preparing = false;
-    while started.elapsed() < CONFIRM_WAIT {
-        std::thread::sleep(Duration::from_millis(100));
-        let state = host.state()?;
-        let preparing = state.transcription.preparing.is_some();
-        seen_preparing |= preparing;
-        if preparing {
-            continue;
-        }
-        if same_model(&state.settings.transcription, selection) {
-            return Ok(ControlReply::done(format!(
-                "Switched to {name} ({})",
-                selection.language
-            )));
-        }
-        if let Some(error) = &state.transcription.error
-            && (seen_preparing || started.elapsed() > Duration::from_secs(1))
-        {
-            return Err(ControlError::new(
-                "failed",
-                format!("couldn't switch to {name}: {error}"),
-            ));
-        }
-    }
-    Ok(ControlReply::done(format!(
-        "Loading {name}; `hex status` shows when it's ready"
-    )))
-}
-
 fn clear_history(host: &dyn Host) -> Result<ControlReply, ControlError> {
     let history = host
         .history()
@@ -435,8 +321,6 @@ fn status(host: &dyn Host) -> Result<ControlReply, ControlError> {
     let state = host.state()?;
     let settings = &state.settings;
     let selection = &settings.transcription;
-    let definition = crate::transcription::models::definition(selection.model);
-    let installed = crate::transcription::models::is_installed(definition, &selection.language);
     let capture = if state.listener.running {
         CaptureReport::from(state.capture)
     } else {
@@ -467,17 +351,12 @@ fn status(host: &dyn Host) -> Result<ControlReply, ControlError> {
             },
         },
         capture,
-        model: ModelReport {
-            id: selection.model.as_str().into(),
-            name: definition.name.into(),
+        transcription: TranscriptionReport {
+            provider: serde_json::to_value(selection.provider)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_default(),
             language: selection.language.clone(),
-            installed,
-            preparing: state
-                .transcription
-                .preparing
-                .map(|model| model.as_str().into()),
-            downloaded_bytes: state.transcription.downloaded_bytes,
-            error: state.transcription.error.clone(),
         },
         features: FeatureReport {
             release_microphone_while_idle: settings.release_microphone_while_idle,
@@ -486,12 +365,12 @@ fn status(host: &dyn Host) -> Result<ControlReply, ControlError> {
                 .and_then(|value| value.as_str().map(str::to_owned))
                 .unwrap_or_default(),
         },
-        // Linux and Windows gate dictation on no privacy permission.
+        // Linux and Windows gate dictation only on the cloud sign-in, checked
+        // at transcription time, not on a local permission.
         permissions: PermissionReport {
-            ready: installed,
+            ready: true,
             microphone: "ready".into(),
             accessibility: "ready".into(),
-            transcription_model: installed,
         },
         window: WindowReport {
             open: state.window_open,
@@ -527,13 +406,7 @@ mod tests {
                     shortcuts: Default::default(),
                     shortcuts_configurable: false,
                 },
-                transcription: DesktopTranscriptionSnapshot {
-                    downloaded_bytes: 0,
-                    error: None,
-                    preparation_stage: None,
-                    selection: Default::default(),
-                    preparing: None,
-                },
+                transcription: DesktopTranscriptionSnapshot::default(),
                 update: DesktopUpdateStatus::Current,
                 capture: capture_from_state(
                     self.recording
@@ -572,10 +445,6 @@ mod tests {
         fn onboarding_reset(&self) -> ControlReply {
             ControlReply::done("Opened onboarding")
         }
-        fn choose_model(&self, _: TranscriptionSelection) -> Result<(), ControlError> {
-            Ok(())
-        }
-        fn cancel_model(&self) {}
         fn check_for_updates(&self) -> Result<(), ControlError> {
             Ok(())
         }

@@ -90,10 +90,9 @@ fn sounding(what: Audition, ms: f64) -> Option<Cue> {
 }
 
 /// Opens the sheet over General, alone: it ends a shortcut recording and
-/// closes the model picker, the shortcut explainer and any menu.
+/// closes the shortcut explainer and any menu.
 pub(super) fn open(ui: &mut Ui) {
     super::settings::cancel_capture(ui);
-    super::picker::close(ui);
     super::explainer::close(ui);
     super::vocabulary::close(ui);
     ui.open = None;

@@ -369,7 +369,6 @@ fn live_pill(
                     .font(k.ty.small_medium)
                     .color(p.muted()),
             ),
-        ItemStatus::Downloading(_) | ItemStatus::Failed => el().key(format!("{key}-none")),
     }
 }
 

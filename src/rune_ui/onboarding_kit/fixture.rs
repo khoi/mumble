@@ -1,63 +1,5 @@
-//! Stand-ins for what the running app reports: model bytes from
-//! `transcription_preparation`, the microphone's `Meter { average, peak }`,
-//! and a recognizer's partial transcripts.
-
-use crate::transcription::models::{TranscriptionModelId, definition};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Language {
-    English,
-    Other,
-}
-
-impl Language {
-    pub(crate) fn model(self) -> TranscriptionModelId {
-        match self {
-            Self::English => TranscriptionModelId::ParakeetUnifiedEnglish,
-            Self::Other => TranscriptionModelId::ParakeetV3,
-        }
-    }
-
-    pub(crate) fn bytes(self) -> u64 {
-        definition(self.model()).download_bytes().unwrap_or(0)
-    }
-
-    pub(crate) fn streams(self) -> bool {
-        definition(self.model()).streams
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Speech {
-    Apple,
-    AfterDownload,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Download {
-    pub(crate) language: Language,
-    pub(crate) downloaded: u64,
-    pub(crate) total: u64,
-}
-
-impl Download {
-    pub(crate) fn fraction(self) -> f32 {
-        if self.total == 0 {
-            return 1.0;
-        }
-        (self.downloaded as f64 / self.total as f64).clamp(0.0, 1.0) as f32
-    }
-
-    pub(crate) fn done(self) -> bool {
-        self.downloaded >= self.total
-    }
-}
-
-pub(crate) fn downloaded(total: u64, elapsed: f64, seconds: f64) -> u64 {
-    let u = (elapsed / seconds).clamp(0.0, 1.0);
-    let eased = u + 0.06 * (u * std::f64::consts::TAU).sin();
-    (total as f64 * eased.clamp(0.0, 1.0)).round() as u64
-}
+//! Stand-ins for what the running app reports: the microphone's
+//! `Meter { average, peak }` and a recognizer's partial transcripts.
 
 pub(crate) struct Take {
     pub(crate) updates: &'static [(f64, &'static str)],
@@ -128,31 +70,9 @@ pub(crate) const ANSWER_TRY: Take = Take {
     release: 2.4,
 };
 
-pub(crate) const EXAMPLE_REPLIES: [&str; 2] = ["Yes, call me after this.", "Give me five minutes."];
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_download_runs_from_nothing_to_its_size() {
-        let total = Language::English.bytes();
-        assert!(total > 700_000_000);
-        assert_eq!(downloaded(total, 0.0, 9.0), 0);
-        assert_eq!(downloaded(total, 9.0, 9.0), total);
-        let mut last = 0;
-        for step in 0..=90 {
-            let now = downloaded(total, f64::from(step) / 10.0, 9.0);
-            assert!(now >= last, "bytes never go backwards");
-            last = now;
-        }
-    }
-
-    #[test]
-    fn only_english_streams_while_you_speak() {
-        assert!(Language::English.streams());
-        assert!(!Language::Other.streams());
-    }
 
     #[test]
     fn a_take_reports_its_newest_partial_in_one_and_a_half_seconds() {

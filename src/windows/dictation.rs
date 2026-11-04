@@ -14,8 +14,6 @@ use crate::desktop::events::{
 };
 use crate::dictation::{DictationCapture, Finish, ReleaseWait};
 use crate::transcription::engine::{PendingTranscript, TranscriptionEngine};
-use crate::transcription::local_transcriber::LocalTranscriber;
-use crate::transcription::models::TranscriptionSelection;
 use crate::windows::input::WindowsHotkey;
 use crate::windows::input::{HotkeyAction, WindowsHotkeyMonitor};
 use crate::windows::paste::WindowsPaster;
@@ -25,8 +23,6 @@ const UPDATE_INTERVAL: Duration = Duration::from_millis(5);
 struct Job {
     transcript: PendingTranscript,
     audio_ms: u64,
-    /// The clip, kept for History while Labs › Keep recordings is on.
-    recording: Option<crate::history::Recording>,
     /// Dictate without processing: paste the transcript as heard.
     raw: bool,
     /// `hex dictation stop --print`: the text goes here, never pasted.
@@ -83,8 +79,6 @@ pub struct WindowsDictationConfig {
     pub fallback_to_default_device: bool,
     /// Terminal paste: Ctrl+Shift+V instead of Ctrl+V.
     pub paste_with_shift: bool,
-    /// Where the listener reports a model change that failed to load.
-    pub swap_failures: Option<mpsc::Sender<crate::transcription::local_transcriber::SwapFailed>>,
     /// What the tray asks of the listener.
     pub commands: Option<mpsc::Receiver<ListenerCommand>>,
 }
@@ -137,7 +131,6 @@ impl WindowsDictationConfig {
             transformations: Arc::new(crate::personal_commands::TransformationClient::default()),
             fallback_to_default_device: true,
             paste_with_shift: settings.paste_with_shift,
-            swap_failures: None,
             commands: None,
         }
     }
@@ -147,12 +140,10 @@ impl WindowsDictationConfig {
 /// place while no dictation records, so changing one never stops listening.
 pub fn run(
     event_path: &Path,
-    selection: &TranscriptionSelection,
     config: WindowsDictationConfig,
     updates: mpsc::Receiver<Box<crate::app_settings::AppSettings>>,
     shutdown: &AtomicBool,
 ) -> Result<()> {
-    let transcriber = LocalTranscriber::load(selection)?;
     let WindowsDictationConfig {
         device,
         hotkey,
@@ -174,7 +165,6 @@ pub fn run(
         transformations,
         fallback_to_default_device,
         paste_with_shift,
-        swap_failures,
         commands,
     } = config;
     // Read by the output worker at each paste, so a change applies in place.
@@ -236,10 +226,7 @@ pub fn run(
     let mut while_dictating = while_dictating;
     let mut audio_suppressor =
         crate::windows::audio_control::AudioSuppressor::start(while_dictating);
-    let mut model = crate::transcription::local_transcriber::ModelSwap::new(selection);
-    let mut engine = Arc::new(TranscriptionEngine::start(transcriber)?);
-    // History's Transcribe again runs on this engine's model.
-    engine.share();
+    let engine = Arc::new(TranscriptionEngine::start()?);
     let mut finishing: Option<Finishing> = None;
     let (jobs, job_receiver) = mpsc::sync_channel::<OutputJob>(2);
     let (result_sender, results) = mpsc::channel();
@@ -288,12 +275,6 @@ pub fn run(
     );
 
     while !shutdown.load(Ordering::Relaxed) {
-        if let Some(failed) = model.poll() {
-            fail(&events, failed.error.clone())?;
-            if let Some(swap_failures) = &swap_failures {
-                let _ = swap_failures.send(failed);
-            }
-        }
         // Only the newest saved settings matter; they wait for a moment
         // without a recording.
         if let Some(next) = updates.try_iter().last()
@@ -351,21 +332,6 @@ pub fn run(
                     device.clone().unwrap_or_else(|| "System default".into())
                 };
                 emit_current_state(&mut events, recording, pending, &device_label)?;
-            }
-            model.want(&next.transcription);
-        }
-        if !recording
-            && !start_pending
-            && finishing.is_none()
-            && pending == 0
-            && let Some(next) = model.take_ready()
-        {
-            let old = std::mem::replace(&mut engine, Arc::new(TranscriptionEngine::start(next)?));
-            engine.share();
-            // A request on the local API still transcribing holds the old
-            // engine a moment.
-            if let Ok(old) = Arc::try_unwrap(old) {
-                old.retire();
             }
         }
         if let Ok(error) = hotkey.errors.try_recv() {
@@ -720,7 +686,6 @@ fn process_dictation_job(
     let inference_started = Instant::now();
     let transcription = job.transcript.wait().map(|transcribed| {
         tracing::info!(
-            source = transcribed.source.label(),
             finish_ms = transcribed.finish_ms,
             audio_ms = job.audio_ms,
             "transcribed Windows dictation"
@@ -766,7 +731,6 @@ fn process_dictation_job(
                 job.audio_ms,
                 inference_ms,
                 started.elapsed().as_millis() as u64,
-                job.recording.take(),
             );
             if printed {
                 draft.kind = crate::history::HistoryKind::Printed;
@@ -995,11 +959,9 @@ fn submit_capture(
             let audio_ms = clip.duration_ms();
             let stream = clip.take_stream();
             let samples = clip.into_transcription_samples();
-            let recording = crate::history::Recording::keep(&samples);
             let job = OutputJob::Dictation(Job {
                 transcript: engine.finish(stream, samples)?,
                 audio_ms,
-                recording,
                 print,
                 raw,
             });

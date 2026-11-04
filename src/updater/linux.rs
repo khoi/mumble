@@ -123,7 +123,30 @@ pub fn updates_disabled_by_policy() -> bool {
 /// The Linux targets are the bare executable, so this build is the file
 /// whose SHA-256 it has.
 pub fn running_sha256() -> Option<String> {
-    crate::transcription::models::sha256_hex(&std::env::current_exe().ok()?, None).ok()
+    sha256_hex(&std::env::current_exe().ok()?)
+}
+
+/// The lowercase hex SHA-256 of the file at `path`.
+fn sha256_hex(path: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Some(
+        digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
 }
 
 /// The support directory and this executable's version directory, when it

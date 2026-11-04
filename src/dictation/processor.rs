@@ -305,11 +305,6 @@ impl Profiles {
         selected.map_or(&self.default, |selected| &selected.profile)
     }
 
-    /// The selected mode's own vocabulary.
-    pub(crate) fn vocabulary_for(&self, context: &ContextSnapshot) -> Vec<VocabularyEntry> {
-        self.select(context).vocabulary.clone()
-    }
-
     pub fn processes(&self, context: &ContextSnapshot) -> bool {
         let profile = self.select(context);
         profile.ai_enabled || !profile.transformations.is_empty()

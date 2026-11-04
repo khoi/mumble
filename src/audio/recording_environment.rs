@@ -323,12 +323,6 @@ impl Drop for CaptureMarker {
     }
 }
 
-/// Whether a dictation capture has started, intentional or not, and its clip
-/// is not yet submitted.
-pub fn capture_active() -> bool {
-    CAPTURES.load(std::sync::atomic::Ordering::Acquire) > 0
-}
-
 enum AudioBehaviorGuard {
     Ducked(crate::audio::output_ducking::Guard),
     Muted {

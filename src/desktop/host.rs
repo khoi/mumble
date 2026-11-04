@@ -1,7 +1,5 @@
 use crate::desktop::activity::DesktopActivity;
-use crate::transcription::models::{
-    ModelPreparationStage, TranscriptionModelId, TranscriptionSelection,
-};
+use crate::transcription::TranscriptionSelection;
 
 /// The Linux service's snapshot; Windows and macOS publish their own
 /// in-process.
@@ -18,13 +16,9 @@ pub(crate) struct DesktopSnapshot {
     pub(crate) update_notes: Option<UpdateNotes>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopTranscriptionSnapshot {
-    pub(crate) downloaded_bytes: u64,
-    pub(crate) error: Option<String>,
-    pub(crate) preparation_stage: Option<ModelPreparationStage>,
     pub(crate) selection: TranscriptionSelection,
-    pub(crate) preparing: Option<TranscriptionModelId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]

@@ -1,67 +1,40 @@
-//! The thread that owns the loaded GGUF model and runs all of its inference.
-//!
-//! A capture that the model can stream is fed while the shortcut is held, so
-//! release only decodes the last second or two of audio. Every finish carries
-//! the complete clip: a stream that failed, stalled, or produced no text is
-//! replaced by an offline transcription of that clip, and a model or device
-//! that cannot stream always takes the offline path. Commands are handled in
-//! order on one thread, because a live stream holds the model's compute lease.
+//! The dictation coordinator. It owns no model: a capture streams to the
+//! cloud service while the shortcut is held (`begin`), and on release the
+//! clip and the stream's released answer are handed to the engine thread,
+//! which runs the transcription in submission order (`finish`). Finishes run
+//! one at a time on one thread, with a per-job deadline, cancellation, and
+//! submission-order replies. There is no local fallback: a dictation the
+//! service can't transcribe fails with its reason.
 
-mod streaming;
-
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use color_eyre::eyre::{Result, eyre};
-use transcribe_cpp::CancelToken;
 
-/// The model the engine owns: macOS keeps its warm, switchable transcriber
-use streaming::*;
+use crate::transcription::CancelToken;
+use crate::transcription::cloud::CloudAnswer;
 
-/// (GGUF or Apple Speech); Linux and Windows load one GGUF model.
-#[cfg(target_os = "macos")]
-pub(crate) type Model = crate::transcription::WarmTranscriber;
-#[cfg(not(target_os = "macos"))]
-pub(crate) type Model = crate::transcription::local_transcriber::LocalTranscriber;
-
-/// Transcribes a complete 16 kHz clip offline on the engine thread.
-pub(crate) type Offline = Box<dyn FnOnce(&mut Model, Vec<f32>) -> Result<String, String> + Send>;
-
-/// Low-priority work on the model, such as History's Transcribe again. It
-/// receives `None` instead of the model when dictation claimed the engine
-/// first.
-pub(crate) type Background = Box<dyn FnOnce(Option<&mut Model>) + Send>;
-
-/// A healthy finish decodes at most a couple of seconds of buffered audio.
-/// Past this the stream is aborted and the clip is transcribed offline.
-const STREAM_FINISH_DEADLINE: Duration = Duration::from_millis(1_500);
-/// Audio fed past the clip's trimmed end (a release handled late) that the
-/// stream may still keep. Beyond it, the offline clip is authoritative.
-const MAX_OVERFED_SAMPLES: usize = 16_000 / 4;
 /// How long a job may run once the engine starts it, before the clip's own
-/// share. It covers activating and prewarming the largest model inside the
-/// job (macOS loads a new selection there). Time queued behind other work is
-/// never counted: the deadline only catches a wedged engine, never a slow one.
+/// share. Time queued behind other work is never counted: the deadline only
+/// catches a wedged engine, never a slow one.
 const JOB_DEADLINE: Duration = Duration::from_secs(180);
-/// Run time allowed per second of audio: two passes (voice-delimited
-/// dictation retranscribes without its control phrase) on a CPU-only device
-/// up to four times slower than real time.
+/// Run time allowed per second of audio, so a long clip gets proportionally
+/// longer before its job is declared stuck.
 const JOB_SECONDS_PER_AUDIO_SECOND: u32 = 8;
 /// How often a waiter whose job has not started checks whether the job ahead
 /// of it timed out, leaving the engine wedged.
 const QUEUE_POLL: Duration = Duration::from_millis(250);
-/// How often an idle engine looks again at Labs › Unload model when idle.
-const IDLE_RECHECK: Duration = Duration::from_secs(30);
-/// How long dropping the engine waits for its thread. A native run that cannot
-/// be aborted is left to finish on its own.
+/// How long dropping the engine waits for its thread.
 const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(10);
+/// Audio fed past the clip's trimmed end (a release handled late) the stream
+/// may still keep. Beyond it, the whole clip is sent instead.
+const MAX_OVERFED_SAMPLES: usize = 16_000 / 4;
 
 #[derive(Clone, Copy)]
 struct Deadlines {
-    stream_finish: Duration,
     job: Duration,
     job_seconds_per_audio_second: u32,
     shutdown: Duration,
@@ -69,7 +42,6 @@ struct Deadlines {
 
 impl Deadlines {
     const PRODUCTION: Self = Self {
-        stream_finish: STREAM_FINISH_DEADLINE,
         job: JOB_DEADLINE,
         job_seconds_per_audio_second: JOB_SECONDS_PER_AUDIO_SECOND,
         shutdown: SHUTDOWN_DEADLINE,
@@ -82,51 +54,26 @@ impl Deadlines {
 }
 
 pub(crate) enum Command {
-    Begin {
-        stream: u64,
-        /// Aborts this stream only.
-        cancel: CancelToken,
-        /// Where the stream publishes its text after each feed, when live
-        /// text is on (Labs).
-        partials: Option<Partials>,
-    },
-    Feed {
-        stream: u64,
-        samples: Vec<f32>,
-    },
-    Cancel {
-        stream: u64,
-    },
     Finish {
-        stream: Option<u64>,
         clip: Vec<f32>,
-        offline: Offline,
         job: Job,
-        /// The capture's released cloud stream, whose answer comes before
-        /// the model (Labs › Cloud transcription).
-        cloud: Option<crate::transcription::cloud::CloudAnswer>,
-    },
-    /// Work that needs the model itself, such as loading or switching it.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    Run(Box<dyn FnOnce(&mut Model) + Send>),
-    Background {
-        /// The dictation generation when the work was submitted.
-        generation: u64,
-        work: Background,
+        /// The capture's released cloud stream, whose answer comes first;
+        /// `None` when no stream was open (its service refused one).
+        cloud: Option<CloudAnswer>,
     },
     Shutdown,
 }
 
-/// A live stream's text so far, as the model reports it after each feed.
+/// A live stream's text so far, as the service reports it after each feed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Partial {
-    /// The prefix the model has committed; it only grows within one stream.
+    /// The prefix the service has committed; it only grows within one stream.
     pub stable: String,
-    /// The model's volatile hypothesis after `stable`.
+    /// The service's volatile hypothesis after `stable`.
     pub tentative: String,
 }
 
-/// One stream's latest partial text, shared between the worker that
+/// One stream's latest partial text, shared between the stream's thread that
 /// publishes it and the stream's owner. Each stream has its own, so a new
 /// capture never reads an older one's text.
 #[derive(Clone, Default)]
@@ -188,34 +135,12 @@ enum Reply {
 #[derive(Debug)]
 pub struct Transcribed {
     pub text: String,
-    pub source: Source,
     /// Time from the finish request to the final text.
     pub finish_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Source {
-    Stream,
-    Offline,
-    /// Labs › Cloud transcription's service.
-    Cloud,
-    /// The stream could not be used; the reason is logged with the result.
-    Fallback(String),
-}
-
-impl Source {
-    pub fn label(&self) -> &str {
-        match self {
-            Self::Stream => "stream",
-            Self::Offline => "offline",
-            Self::Cloud => "cloud",
-            Self::Fallback(_) => "fallback",
-        }
-    }
-}
-
-/// The token of the job or stream the worker is running, so dropping the
-/// engine aborts it. Work entered after the engine stops starts cancelled.
+/// The token of the job the worker is running, so dropping the engine aborts
+/// it. Work entered after the engine stops starts cancelled.
 #[derive(Clone, Default)]
 struct Running(Arc<Mutex<RunningState>>);
 
@@ -249,53 +174,23 @@ pub struct TranscriptionEngine {
     /// Set when a job misses its deadline and cleared when the worker starts
     /// another: jobs queued behind a wedged run fail instead of waiting.
     stalled: Arc<AtomicBool>,
-    /// Dictation requests sent so far. Background work submitted before a
-    /// newer request yields to it.
-    requests: Arc<AtomicU64>,
-    /// Whether the loaded model can stream on its device.
-    streams: Arc<AtomicBool>,
     /// Whether dictation streams publish their text as they go, asked as
     /// each stream begins: Labs › Live text, or a
     /// [`crate::dictation::live_text::Demand`].
     live_text: fn() -> bool,
-    /// Whether the worker is running a dictation stream or finish.
-    dictating: Arc<AtomicBool>,
-    next_stream: AtomicU64,
     deadlines: Deadlines,
     thread: Option<JoinHandle<()>>,
 }
 
-/// A live stream for one capture: the model's, or Labs › Cloud
-/// transcription's service. Feed it the capture's 16 kHz audio in order,
-/// then either [`TranscriptionEngine::finish`] or drop it to cancel.
+/// A live stream for one capture: a connection to the cloud service. Feed it
+/// the capture's 16 kHz audio in order, then either
+/// [`TranscriptionEngine::finish`] or drop it to cancel.
 pub struct LiveStream {
     fed: usize,
     /// The stream's text so far, with live text on, and the last version
     /// [`Self::take_partial`] returned.
     partials: Option<(Partials, u64)>,
-    feeds: Feeds,
-}
-
-/// Where a live stream's audio goes.
-enum Feeds {
-    Model(ModelFeed),
-    Cloud(crate::transcription::cloud::CloudStream),
-}
-
-/// A stream on the engine's model, cancelled when dropped unfinished.
-struct ModelFeed {
-    id: u64,
-    cancel: CancelToken,
-    finished: bool,
-    commands: Sender<Command>,
-}
-
-impl Drop for ModelFeed {
-    fn drop(&mut self) {
-        if !self.finished {
-            let _ = self.commands.send(Command::Cancel { stream: self.id });
-        }
-    }
+    cloud: crate::transcription::cloud::CloudStream,
 }
 
 impl LiveStream {
@@ -304,16 +199,10 @@ impl LiveStream {
         self.fed
     }
 
-    /// Whether the engine was told to abandon this model stream.
-    #[cfg(test)]
-    fn cancelled(&self) -> bool {
-        matches!(&self.feeds, Feeds::Model(feed) if feed.cancel.is_cancelled())
-    }
-
-    /// The model's text for the audio fed so far, when it changed since the
+    /// The service's text for the audio fed so far, when it changed since the
     /// last call. Always `None` without live text. It is provisional: the
-    /// finish may replace it entirely, so it is only ever shown, never
-    /// pasted or kept.
+    /// finish may replace it entirely, so it is only ever shown, never pasted
+    /// or kept.
     pub fn take_partial(&mut self) -> Option<Partial> {
         let (partials, seen) = self.partials.as_mut()?;
         partials.newer_than(seen)
@@ -324,47 +213,28 @@ impl LiveStream {
             return;
         }
         self.fed += samples.len();
-        match &mut self.feeds {
-            Feeds::Model(feed) => {
-                let _ = feed.commands.send(Command::Feed {
-                    stream: feed.id,
-                    samples: samples.to_vec(),
-                });
-            }
-            Feeds::Cloud(cloud) => cloud.feed(samples),
-        }
+        self.cloud.feed(samples);
     }
 }
 
-/// A finish in flight. Waiting enforces the stream deadline from the caller's
-/// side, so a stalled native stream cannot hold the paste forever, then bounds
-/// the job once the engine starts it, so a wedged run fails instead.
+/// A finish in flight. Waiting bounds the job once the engine starts it, so a
+/// wedged run fails instead of holding the paste forever.
 pub struct PendingTranscript {
     reply: Receiver<Reply>,
     cancel: CancelToken,
-    stream_cancel: Option<CancelToken>,
     stalled: Arc<AtomicBool>,
     /// How long the job may run once started: its allowance plus the clip's.
     job: Duration,
-    stream_finish: Duration,
 }
 
 impl PendingTranscript {
     pub fn wait(self) -> Result<Transcribed, String> {
-        let mut stream_deadline = self
-            .stream_cancel
-            .as_ref()
-            .map(|_| Instant::now() + self.stream_finish);
         let mut job_deadline: Option<Instant> = None;
         loop {
             let now = Instant::now();
-            let timeout = [stream_deadline, job_deadline]
-                .into_iter()
-                .flatten()
-                .min()
-                .map_or(QUEUE_POLL, |deadline| {
-                    deadline.saturating_duration_since(now).min(QUEUE_POLL)
-                });
+            let timeout = job_deadline.map_or(QUEUE_POLL, |deadline| {
+                deadline.saturating_duration_since(now).min(QUEUE_POLL)
+            });
             match self.reply.recv_timeout(timeout) {
                 Ok(Reply::Done(result)) => return result,
                 Ok(Reply::Started) => job_deadline = Some(Instant::now() + self.job),
@@ -373,58 +243,34 @@ impl PendingTranscript {
                 }
                 Err(RecvTimeoutError::Timeout) => {
                     let now = Instant::now();
-                    if let (Some(deadline), Some(stream)) = (stream_deadline, &self.stream_cancel)
-                        && now >= deadline
-                    {
-                        tracing::warn!("live stream missed its finish deadline; aborting it");
-                        stream.cancel();
-                        stream_deadline = None;
-                    }
                     if job_deadline.is_some_and(|deadline| now >= deadline) {
                         tracing::error!(
                             deadline_ms = self.job.as_millis() as u64,
                             "transcription missed its deadline; failing the job"
                         );
                         self.stalled.store(true, Ordering::Release);
-                        self.abandon();
+                        self.cancel.cancel();
                         return Err("transcription timed out".into());
                     }
                     if job_deadline.is_none() && self.stalled.load(Ordering::Acquire) {
                         tracing::error!("transcription engine is stuck; failing a queued job");
-                        self.abandon();
+                        self.cancel.cancel();
                         return Err("transcription engine is stuck".into());
                     }
                 }
             }
         }
     }
-
-    /// Aborts this job's run, or skips it if the engine has not reached it.
-    fn abandon(&self) {
-        self.cancel.cancel();
-        if let Some(stream) = &self.stream_cancel {
-            stream.cancel();
-        }
-    }
 }
 
 impl TranscriptionEngine {
-    pub fn start(model: Model) -> Result<Self> {
-        let streams = Arc::new(AtomicBool::new(model.stream_options().is_some()));
+    pub fn start() -> Result<Self> {
         let (commands, receiver) = mpsc::channel();
-        let requests = Arc::new(AtomicU64::new(0));
         let running = Running::default();
         let stalled = Arc::new(AtomicBool::new(false));
-        let dictating = Arc::new(AtomicBool::new(false));
         let worker = Worker {
-            model: Some(model),
-            parked: None,
-            idle_since: Instant::now(),
             running: running.clone(),
             stalled: stalled.clone(),
-            streams: streams.clone(),
-            requests: requests.clone(),
-            dictating: dictating.clone(),
         };
         let thread = thread::Builder::new()
             .name("transcription-engine".into())
@@ -433,18 +279,13 @@ impl TranscriptionEngine {
             commands,
             running,
             stalled,
-            requests,
-            streams,
             live_text: || crate::labs::live_text() || crate::dictation::live_text::demanded(),
-            dictating,
-            next_stream: AtomicU64::new(0),
             deadlines: Deadlines::PRODUCTION,
             thread: Some(thread),
         })
     }
 
-    /// An engine without a worker whose model always streams; tests read the
-    /// commands it would have handled.
+    /// An engine without a worker; tests read the commands it would handle.
     #[cfg(test)]
     pub(crate) fn for_test() -> (Self, Receiver<Command>) {
         let (commands, receiver) = mpsc::channel();
@@ -452,136 +293,48 @@ impl TranscriptionEngine {
             commands,
             running: Running::default(),
             stalled: Arc::default(),
-            requests: Arc::default(),
-            streams: Arc::new(AtomicBool::new(true)),
             live_text: || false,
-            dictating: Arc::default(),
-            next_stream: AtomicU64::new(0),
             deadlines: Deadlines::PRODUCTION,
             thread: None,
         };
         (engine, receiver)
     }
 
-    /// Like [`Self::for_test`] for a model that cannot stream.
-    #[cfg(test)]
-    pub(crate) fn for_test_without_streaming() -> (Self, Receiver<Command>) {
-        let (engine, receiver) = Self::for_test();
-        engine.streams.store(false, Ordering::Release);
-        (engine, receiver)
-    }
-
-    #[cfg(test)]
-    fn with_deadlines(mut self, deadlines: Deadlines) -> Self {
-        self.deadlines = deadlines;
-        self
-    }
-
-    /// Turns live text on, as Labs does.
-    #[cfg(test)]
-    pub(crate) fn with_live_text(mut self) -> Self {
-        self.live_text = || true;
-        self
-    }
-
-    /// Opens a live stream: to Labs › Cloud transcription's service while it
-    /// is on (none while that service refuses streams), else on the loaded
-    /// model when it can stream on this device.
+    /// Opens a live stream to the selected provider's service, or `None` when
+    /// a stream can't open (its service is refusing streams for this account).
     pub fn begin(&self) -> Option<LiveStream> {
         let partials = (self.live_text)().then(Partials::default);
-        if let Some(provider) = crate::labs::cloud_transcription() {
-            let cloud = crate::transcription::cloud::CloudStream::open(provider, partials.clone())?;
-            return Some(LiveStream {
-                fed: 0,
-                partials: partials.map(|partials| (partials, 0)),
-                feeds: Feeds::Cloud(cloud),
-            });
-        }
-        if !self.streams.load(Ordering::Acquire) {
-            return None;
-        }
-        let id = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
-        let cancel = CancelToken::new();
-        self.requests.fetch_add(1, Ordering::AcqRel);
-        self.commands
-            .send(Command::Begin {
-                stream: id,
-                cancel: cancel.clone(),
-                partials: partials.clone(),
-            })
-            .ok()?;
+        let provider = crate::app_settings::transcription_selection().1.provider;
+        let cloud = crate::transcription::cloud::CloudStream::open(provider, partials.clone())?;
         Some(LiveStream {
             fed: 0,
             partials: partials.map(|partials| (partials, 0)),
-            feeds: Feeds::Model(ModelFeed {
-                id,
-                cancel,
-                finished: false,
-                commands: self.commands.clone(),
-            }),
-        })
-    }
-
-    /// Finishes a capture with its complete 16 kHz clip. Without a stream,
-    /// or when the stream is unusable, the clip is transcribed offline.
-    #[cfg(not(target_os = "macos"))]
-    pub fn finish(&self, stream: Option<LiveStream>, clip: Vec<f32>) -> Result<PendingTranscript> {
-        self.finish_with(
-            stream,
-            clip,
-            Box::new(|model, clip| {
-                // Labs › Skip long pauses, asked as the run starts.
-                let mut clip = whole_clip(clip, crate::labs::skip_pauses());
-                crate::dictation::pad_for_parakeet(&mut clip);
-                model
-                    .transcribe(&clip)
-                    .map_err(|error| format!("{error:#}"))
-            }),
-        )
-    }
-
-    /// Like `finish`, with the caller's offline transcription of the clip.
-    /// Labs › Cloud transcription's service tries a clip without a usable
-    /// stream before it.
-    pub fn finish_with(
-        &self,
-        stream: Option<LiveStream>,
-        clip: Vec<f32>,
-        offline: Offline,
-    ) -> Result<PendingTranscript> {
-        let fed = stream.as_ref().map_or(0, |stream| stream.fed);
-        let (stream, stream_cancel, cloud) = match stream.map(|stream| stream.feeds) {
-            // Released at once, so the service finishes while earlier work runs.
-            Some(Feeds::Cloud(cloud)) => {
-                let overfed = fed > clip.len() + MAX_OVERFED_SAMPLES;
-                let tail = &clip[fed.min(clip.len())..];
-                (None, None, Some(cloud.end(tail, overfed)))
-            }
-            Some(Feeds::Model(mut feed)) => {
-                feed.finished = true;
-                (Some(feed.id), Some(feed.cancel.clone()), None)
-            }
-            None => (None, None, None),
-        };
-        self.request(clip.len(), stream_cancel, |job| Command::Finish {
-            stream,
-            clip,
-            offline,
-            job,
             cloud,
         })
+    }
+
+    /// Finishes a capture with its complete 16 kHz clip. A stream's released
+    /// answer is waited for first; without a stream, or when it heard past the
+    /// clip, the whole clip is sent to the service.
+    pub fn finish(&self, stream: Option<LiveStream>, clip: Vec<f32>) -> Result<PendingTranscript> {
+        let fed = stream.as_ref().map_or(0, |stream| stream.fed);
+        // Released at once, so the service finishes while earlier work runs.
+        let cloud = stream.map(|stream| {
+            let overfed = fed > clip.len() + MAX_OVERFED_SAMPLES;
+            let tail = &clip[fed.min(clip.len())..];
+            stream.cloud.end(tail, overfed)
+        });
+        self.request(clip.len(), |job| Command::Finish { clip, job, cloud })
     }
 
     fn request(
         &self,
         samples: usize,
-        stream_cancel: Option<CancelToken>,
         command: impl FnOnce(Job) -> Command,
     ) -> Result<PendingTranscript> {
         let (reply, receiver) = mpsc::channel();
         let cancel = CancelToken::new();
         let job = self.deadlines.job_for(samples);
-        self.requests.fetch_add(1, Ordering::AcqRel);
         self.commands
             .send(command(Job {
                 cancel: cancel.clone(),
@@ -591,134 +344,10 @@ impl TranscriptionEngine {
         Ok(PendingTranscript {
             reply: receiver,
             cancel,
-            stream_cancel,
             stalled: self.stalled.clone(),
             job,
-            stream_finish: self.deadlines.stream_finish,
         })
     }
-
-    /// Runs `work` with the model, after every command already sent. A live
-    /// stream is closed first; its finish then takes the offline path.
-    #[cfg(target_os = "macos")]
-    pub fn run(&self, work: impl FnOnce(&mut Model) + Send + 'static) -> Result<()> {
-        self.commands
-            .send(Command::Run(Box::new(work)))
-            .map_err(|_| eyre!("transcription engine stopped"))
-    }
-
-    /// Runs `work` with the model unless a dictation request was sent first or
-    /// a live stream is open, and returns `None` when one was. A request sent
-    /// while `work` runs waits for it: transcribe.cpp cannot abort a Metal run.
-    pub fn background<R: Send + 'static>(
-        &self,
-        work: impl FnOnce(&mut Model) -> R + Send + 'static,
-    ) -> Result<Option<R>> {
-        let (reply, receiver) = mpsc::channel();
-        let generation = self.requests.load(Ordering::Acquire);
-        self.commands
-            .send(Command::Background {
-                generation,
-                work: Box::new(move |model| {
-                    let _ = reply.send(model.map(work));
-                }),
-            })
-            .map_err(|_| eyre!("transcription engine stopped"))?;
-        receiver
-            .recv()
-            .map_err(|_| eyre!("transcription engine stopped"))
-    }
-
-    /// Drops the engine on its own thread, so replacing the model from the
-    /// hotkey loop never waits on a run still in flight.
-    #[cfg_attr(target_os = "macos", allow(dead_code))]
-    pub fn retire(self) {
-        let spawned = thread::Builder::new()
-            .name("transcription-engine-retire".into())
-            .spawn(move || drop(self));
-        if let Err(error) = spawned {
-            tracing::warn!(%error, "could not retire the old transcription engine in the background");
-        }
-    }
-
-    /// Makes this the running app's engine, which [`dictation_busy`] and
-    /// History's Transcribe again read.
-    pub fn share(self: &Arc<Self>) {
-        *SHARED.lock().unwrap_or_else(|error| error.into_inner()) = Arc::downgrade(self);
-    }
-
-    /// The running app's engine, when one is shared.
-    pub fn shared() -> Option<Arc<Self>> {
-        SHARED
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .upgrade()
-    }
-}
-
-/// Whether a dictation records, so an idle model stays loaded: it holds
-/// idle-sleep prevention while it records, and a macOS capture counts from
-/// its press.
-fn recording() -> bool {
-    crate::audio::idle_sleep::held() || dictation_busy()
-}
-
-/// The model `selection` loads into, prewarmed, as the engine held it.
-#[cfg(target_os = "macos")]
-fn reload(selection: &crate::transcription::models::TranscriptionSelection) -> Result<Model> {
-    let mut model = Model::default();
-    model.activate(selection)?;
-    Ok(model)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn reload(selection: &crate::transcription::models::TranscriptionSelection) -> Result<Model> {
-    Model::load(selection)
-}
-
-static SHARED: std::sync::Mutex<std::sync::Weak<TranscriptionEngine>> =
-    std::sync::Mutex::new(std::sync::Weak::new());
-
-/// Whether dictation is capturing or transcribing, so background work gives
-/// way to it and an idle model stays loaded. macOS counts a capture from its press;
-/// Linux and Windows count the shared engine's dictation streams and finishes.
-pub(crate) fn dictation_busy() -> bool {
-    #[cfg(target_os = "macos")]
-    let capturing = crate::parakeet::dictation_busy();
-    #[cfg(not(target_os = "macos"))]
-    let capturing = false;
-    capturing
-        || TranscriptionEngine::shared()
-            .is_some_and(|engine| engine.dictating.load(Ordering::Acquire))
-}
-
-/// A model the engine can hold: the GGUF transcriber on macOS, the one local
-/// GGUF model on Linux and Windows.
-#[cfg(target_os = "macos")]
-pub(crate) type HeldModel = crate::transcription::Transcriber;
-#[cfg(not(target_os = "macos"))]
-pub(crate) type HeldModel = crate::transcription::local_transcriber::LocalTranscriber;
-
-/// The engine's model when it is the GGUF `selection`, never loading or
-/// switching one.
-pub(crate) fn held<'a>(
-    model: &'a mut Model,
-    selection: &crate::transcription::models::TranscriptionSelection,
-) -> Option<&'a mut HeldModel> {
-    #[cfg(target_os = "macos")]
-    let model = model
-        .active()
-        .filter(|model| matches!(model, crate::transcription::Transcriber::Gguf(_)))?;
-    model.matches_selection(selection).then_some(model)
-}
-
-/// Transcribes a complete 16 kHz clip with a held model, padded as a
-/// dictation's clip is.
-pub(crate) fn transcribe_clip(model: &mut HeldModel, samples: Vec<f32>) -> Result<String> {
-    #[cfg(target_os = "macos")]
-    return model.transcribe(samples);
-    #[cfg(not(target_os = "macos"))]
-    model.transcribe_clip(samples)
 }
 
 impl Drop for TranscriptionEngine {
@@ -742,193 +371,36 @@ impl Drop for TranscriptionEngine {
 }
 
 struct Worker {
-    /// `None` while unloaded for idleness (Labs › Unload model when idle) or
-    /// after its reload failed.
-    model: Option<Model>,
-    /// What an unloaded model reloads, before the next command that needs it.
-    parked: Option<crate::transcription::models::TranscriptionSelection>,
-    /// When the last command ended.
-    idle_since: Instant,
     running: Running,
     stalled: Arc<AtomicBool>,
-    streams: Arc<AtomicBool>,
-    requests: Arc<AtomicU64>,
-    dictating: Arc<AtomicBool>,
-}
-
-/// How a live stream ended inside the worker.
-enum StreamEnd {
-    /// A finish for this stream: the final text, or why the stream is unusable.
-    Finished {
-        result: Result<String, String>,
-        clip: Vec<f32>,
-        offline: Offline,
-        job: Job,
-        started: Instant,
-    },
-    Cancelled,
-    /// Another command arrived first; it is handled after the stream closes.
-    Interrupted(Command),
-    Disconnected,
 }
 
 impl Worker {
-    fn run(mut self, commands: Receiver<Command>) {
-        // The command that interrupted a stream, handled before new ones.
-        let mut next = None;
-        loop {
-            let Some(command) = next.take().or_else(|| self.wait(&commands)) else {
-                return;
-            };
+    fn run(self, commands: Receiver<Command>) {
+        while let Ok(command) = commands.recv() {
             match command {
-                Command::Begin {
-                    stream,
-                    cancel,
-                    partials,
-                } => {
-                    self.dictating.store(true, Ordering::Release);
-                    next = crate::dictation::vocabulary::for_dictation(|| {
-                        self.stream(stream, &cancel, partials.as_ref(), &commands)
-                    });
-                    self.dictating.store(false, Ordering::Release);
-                }
-                Command::Finish {
-                    stream,
-                    clip,
-                    offline,
-                    job,
-                    cloud,
-                } => {
-                    let source = match stream {
-                        // The stream was already closed: its begin failed or
-                        // another command interrupted it.
-                        Some(_) => Source::Fallback("the live stream was not available".into()),
-                        None => Source::Offline,
-                    };
-                    self.dictating.store(true, Ordering::Release);
-                    crate::dictation::vocabulary::for_dictation(|| {
-                        self.run_dictation(clip, offline, source, job, cloud);
-                    });
-                    self.dictating.store(false, Ordering::Release);
-                }
-                Command::Run(work) => {
-                    if let Some(model) = self.model() {
-                        work(model);
-                    }
-                    self.publish_streams();
-                }
-                Command::Background { generation, work } => {
-                    let current = self.requests.load(Ordering::Acquire) == generation;
-                    work(if current { self.model() } else { None });
+                Command::Finish { clip, job, cloud } => {
+                    self.run_dictation(clip, job, cloud);
                 }
                 Command::Shutdown => return,
-                // Stale input for a stream that already ended.
-                Command::Feed { .. } | Command::Cancel { .. } => {}
-            }
-            self.idle_since = Instant::now();
-        }
-    }
-
-    /// The next command. With Labs › Unload model when idle on, it unloads
-    /// the model once nothing has used it for the chosen time and nothing
-    /// records; between commands no request runs.
-    fn wait(&mut self, commands: &Receiver<Command>) -> Option<Command> {
-        loop {
-            let Some(after) = crate::labs::unload_idle() else {
-                // Settings may turn it on meanwhile.
-                match commands.recv_timeout(IDLE_RECHECK) {
-                    Ok(command) => return Some(command),
-                    Err(RecvTimeoutError::Timeout) => continue,
-                    Err(RecvTimeoutError::Disconnected) => return None,
-                }
-            };
-            let idle = self.idle_since.elapsed();
-            let wait = after
-                .saturating_sub(idle)
-                .clamp(Duration::from_millis(1), IDLE_RECHECK);
-            match commands.recv_timeout(wait) {
-                Ok(command) => return Some(command),
-                Err(RecvTimeoutError::Disconnected) => return None,
-                Err(RecvTimeoutError::Timeout) => {
-                    if self.idle_since.elapsed() >= after && !recording() {
-                        self.park();
-                    }
-                }
             }
         }
     }
 
-    /// Unloads a loaded GGUF model, freeing its memory, and keeps its
-    /// selection to reload. Apple Speech stays: it holds no model of Hex's.
-    fn park(&mut self) {
-        let Some(selection) = self
-            .model
-            .as_ref()
-            .and_then(|model| model.gguf_selection())
-            .cloned()
-        else {
-            return;
-        };
-        self.model = None;
-        tracing::info!(model = ?selection.model, "unloaded the idle speech model");
-        self.parked = Some(selection);
-    }
-
-    /// The model, reloading an unloaded one first. Audio sent meanwhile waits
-    /// in the queue, so nothing recorded is lost.
-    fn model(&mut self) -> Option<&mut Model> {
-        if self.model.is_none()
-            && let Some(selection) = self.parked.clone()
-        {
-            let started = Instant::now();
-            match reload(&selection) {
-                Ok(model) => {
-                    tracing::info!(
-                        model = ?selection.model,
-                        load_ms = started.elapsed().as_millis(),
-                        "reloaded the speech model"
-                    );
-                    self.model = Some(model);
-                    self.parked = None;
-                }
-                Err(error) => tracing::warn!(%error, "could not reload the speech model"),
-            }
-        }
-        self.model.as_mut()
-    }
-
-    /// Whether the model can stream, kept as it was while it is unloaded so
-    /// the next capture still opens a stream (which reloads it).
-    fn publish_streams(&self) {
-        if let Some(model) = &self.model {
-            self.streams
-                .store(model.stream_options().is_some(), Ordering::Release);
-        }
-    }
-
-    /// A finished dictation without a usable model stream: Labs › Cloud
-    /// transcription's service first (its stream's answer, or the whole
-    /// clip), then the model, which a cloud answer never loads.
-    fn run_dictation(
-        &mut self,
-        clip: Vec<f32>,
-        offline: Offline,
-        source: Source,
-        job: Job,
-        cloud: Option<crate::transcription::cloud::CloudAnswer>,
-    ) {
+    /// Transcribes a finished dictation through the cloud service, in order.
+    fn run_dictation(&self, clip: Vec<f32>, job: Job, cloud: Option<CloudAnswer>) {
         let Some((job, started)) = self.admit(job) else {
             return;
         };
         self.running.enter(&job.cancel);
-        match crate::transcription::cloud::dictation(&clip, &job.cancel, cloud) {
-            Some(text) => job.finish(Ok(Transcribed {
-                text,
-                source: Source::Cloud,
-                finish_ms: started.elapsed().as_millis() as u64,
-            })),
-            None => self.offline(clip, offline, source, started, job),
-        }
+        let result =
+            crate::transcription::cloud::dictation(&clip, &job.cancel, cloud).map(|text| {
+                Transcribed {
+                    text: text.trim().to_string(),
+                    finish_ms: started.elapsed().as_millis() as u64,
+                }
+            });
+        job.finish(result);
     }
 
     /// Starts `job` and its clock, unless its waiter already gave up on it.
@@ -938,117 +410,10 @@ impl Worker {
             return None;
         }
         let started = Instant::now();
-        self.start(&job);
-        Some((job, started))
-    }
-
-    /// Starts a job's clock. The engine is evidently moving again.
-    fn start(&self, job: &Job) {
+        // The engine is evidently moving again.
         self.stalled.store(false, Ordering::Release);
         job.start();
-    }
-
-    /// Drives one live stream until it finishes, is cancelled, or another
-    /// command interrupts it; returns that command, to handle next.
-    fn stream(
-        &mut self,
-        id: u64,
-        cancel: &CancelToken,
-        partials: Option<&Partials>,
-        commands: &Receiver<Command>,
-    ) -> Option<Command> {
-        let options = self
-            .model()
-            .and_then(|model| model.stream_options().cloned())?;
-        self.running.enter(cancel);
-        let begun = Instant::now();
-        let mut stats = FeedStats::default();
-        let stalled = &self.stalled;
-        let model = self.model.as_mut()?;
-        let trailing_silence = stream_trailing_silence(model);
-        let ended = model.with_stream(&options, cancel, |stream| {
-            let mut capped = PauseCap::new(stream, trailing_silence);
-            let ended = drive_stream(id, &mut capped, commands, stalled, partials, &mut stats);
-            stats.pauses_dropped_ms = capped.dropped / 16;
-            ended
-        });
-        let FeedStats {
-            feed_ms,
-            feeds,
-            partials: changes,
-            pauses_dropped_ms,
-        } = stats;
-        match ended {
-            Ok(StreamEnd::Finished {
-                result,
-                clip,
-                offline,
-                job,
-                started,
-            }) => {
-                tracing::info!(
-                    audio_ms = clip.len() / 16,
-                    stream_ms = begun.elapsed().as_millis(),
-                    feeds,
-                    feed_ms,
-                    partials = changes,
-                    pauses_dropped_ms,
-                    finish_ms = started.elapsed().as_millis(),
-                    "finished live stream"
-                );
-                match result {
-                    Ok(text) => job.finish(Ok(Transcribed {
-                        text,
-                        source: Source::Stream,
-                        finish_ms: started.elapsed().as_millis() as u64,
-                    })),
-                    Err(_) if job.cancel.is_cancelled() => {
-                        job.finish(Err("transcription was abandoned".into()));
-                    }
-                    Err(reason) => {
-                        tracing::warn!(%reason, "live stream unusable; transcribing the full clip");
-                        self.offline(clip, offline, Source::Fallback(reason), started, job);
-                    }
-                }
-            }
-            Ok(StreamEnd::Cancelled) | Ok(StreamEnd::Disconnected) => {}
-            Ok(StreamEnd::Interrupted(command)) => {
-                // The capture goes on without its stream (a model switch):
-                // its text stops, so the plate hides.
-                if let Some(partials) = partials {
-                    partials.publish(Partial::default());
-                }
-                return Some(command);
-            }
-            Err(error) => tracing::warn!(%error, "could not begin a live stream"),
-        }
-        None
-    }
-
-    fn offline(
-        &mut self,
-        clip: Vec<f32>,
-        offline: Offline,
-        source: Source,
-        started: Instant,
-        job: Job,
-    ) {
-        self.running.enter(&job.cancel);
-        let Some(model) = self.model() else {
-            job.finish(Err("the speech model could not be reloaded".into()));
-            return;
-        };
-        let result = crate::transcription::gguf_session::with_job_cancel(&job.cancel, || {
-            offline(model, clip)
-        })
-        .map(|text| Transcribed {
-            text: text.trim().to_string(),
-            source,
-            finish_ms: started.elapsed().as_millis() as u64,
-        });
-        // An offline run may switch the model (macOS activates a selection).
-        self.publish_streams();
-        job.finish(result);
+        Some((job, started))
     }
 }
 
@@ -1057,865 +422,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn source_labels_distinguish_fallbacks() {
-        assert_eq!(Source::Stream.label(), "stream");
-        assert_eq!(Source::Offline.label(), "offline");
-        assert_eq!(Source::Cloud.label(), "cloud");
-        assert_eq!(Source::Fallback("x".into()).label(), "fallback");
-    }
-
-    #[test]
-    fn streams_send_their_audio_in_order_and_cancel_when_dropped() {
+    fn finishing_hands_the_clip_to_the_worker() {
         let (engine, commands) = TranscriptionEngine::for_test();
-        let mut stream = engine.begin().expect("the test engine streams");
-        stream.feed(&[0.1; 3]);
-        stream.feed(&[]);
-        stream.feed(&[0.2; 2]);
-        assert_eq!(stream.fed(), 5);
-        drop(stream);
-        let finished = engine.begin().expect("the test engine streams");
-        let pending = engine
-            .finish_with(
-                Some(finished),
-                vec![0.0; 7],
-                Box::new(|_, _| Ok(String::new())),
-            )
-            .unwrap();
-        assert!(pending.stream_cancel.is_some());
+        let pending = engine.finish(None, vec![0.0; 7]).unwrap();
         let received = commands.try_iter().collect::<Vec<_>>();
         assert!(matches!(
             received.as_slice(),
-            [
-                Command::Begin { stream: 1, .. },
-                Command::Feed { stream: 1, samples: first },
-                Command::Feed { stream: 1, samples: second },
-                Command::Cancel { stream: 1 },
-                Command::Begin { stream: 2, .. },
-                Command::Finish { stream: Some(2), clip, .. },
-            ] if first.len() == 3 && second.len() == 2 && clip.len() == 7
+            [Command::Finish { clip, cloud: None, .. }] if clip.len() == 7
         ));
-    }
-
-    #[derive(Default)]
-    struct FakeStream {
-        fed: Vec<f32>,
-        /// Fail every feed once this many samples are in, as a native
-        /// stream error would.
-        fail_after: Option<usize>,
-        /// Where its finalized text ends, in milliseconds.
-        text_end_ms: Option<u64>,
-    }
-
-    impl StreamFeed for FakeStream {
-        fn feed(&mut self, samples: &[f32]) -> Result<(), String> {
-            if self.fail_after.is_some_and(|after| self.fed.len() >= after) {
-                return Err("native feed failed".into());
-            }
-            self.fed.extend_from_slice(samples);
-            Ok(())
-        }
-
-        fn finalize(&mut self) -> Result<String, String> {
-            Ok(format!("streamed {}", self.fed.len()))
-        }
-
-        fn partial(&self) -> Partial {
-            Partial {
-                stable: format!("heard {}", self.fed.len()),
-                tentative: String::new(),
-            }
-        }
-
-        fn text_end_ms(&self) -> Option<u64> {
-            self.text_end_ms
-        }
-    }
-
-    fn tone(samples: usize) -> Vec<f32> {
-        (0..samples)
-            .map(|i| 0.3 * (i as f32 * 0.05).sin())
-            .collect()
+        drop(pending);
     }
 
     #[test]
-    fn a_dictation_stream_hears_only_the_ends_of_long_pauses() {
-        // Quiet first, as the pre-roll is, so the noise floor starts low.
-        let mut clip = vec![0.0; 8_000];
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 16_000]);
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 160_000]);
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 80_000]);
-        let mut fake = FakeStream::default();
-        let mut capped = PauseCap::new(&mut fake, 0);
-        for chunk in clip.chunks(1_234) {
-            capped.feed(chunk).unwrap();
-        }
-        capped.finalize().unwrap();
-        let dropped = capped.dropped;
-        // A 1 s pause passes whole; the 10 s one keeps 2.5 s and 0.3 s, and
-        // the trailing 5 s one only its head.
-        let long = 160_000 - PAUSE_HEAD_SAMPLES - PAUSE_TAIL_SAMPLES;
-        let trailing = 80_000 - PAUSE_HEAD_SAMPLES;
-        assert_eq!(dropped, long + trailing);
-        assert_eq!(fake.fed.len(), clip.len() - dropped);
-        assert_eq!(fake.fed[..56_000], clip[..56_000]);
-        let resumed = 56_000 + PAUSE_HEAD_SAMPLES + PAUSE_TAIL_SAMPLES;
-        assert_eq!(fake.fed[resumed..resumed + 16_000], clip[216_000..232_000]);
-    }
-
-    #[test]
-    fn quiet_speech_over_steady_noise_is_never_cut_as_a_pause() {
-        // #458: -28 dBFS syllables over -35 dBFS noise, too close to the
-        // floor for the pause detector's 12 dB speech margin.
-        assert_quiet_speech_is_kept(-28.0, -35.0, 0.0);
-        // #841: a quiet built-in microphone, whose speech sits under
-        // -55 dBFS throughout.
-        assert_quiet_speech_is_kept(-62.0, -72.0, 0.0);
-        // #841: a built-in digital microphone whose DC offset (-26 dBFS) is
-        // far louder than its speech; only the speech moves the level.
-        assert_quiet_speech_is_kept(-50.0, -58.0, 0.05);
-    }
-
-    #[test]
-    fn a_stream_that_heard_only_quiet_audio_falls_back_to_the_whole_clip() {
-        use crate::transcription::pause_segmenter::tests::noise;
-        // #841: the cap took a whole dictation for one pause and the stream
-        // kept only its first 2.5 s; that stream must not be used.
-        let mut seed = 3;
-        let clip = noise(6_000, -80.0, &mut seed);
-        let mut fake = FakeStream::default();
-        let mut capped = PauseCap::new(&mut fake, 0);
-        let result = finish_stream(&mut capped, &clip, 0);
-        assert!(capped.dropped > 0);
-        assert!(result.is_err(), "{result:?}");
-    }
-
-    /// Quiet pre-roll, 2 s of speech, a 1 s pause, `phrase` samples of
-    /// speech, then the 200 ms tail after the stop.
-    fn speech_pause_phrase(phrase: usize) -> Vec<f32> {
-        let mut clip = vec![0.0; 8_000];
-        clip.extend(tone(32_000));
-        clip.extend(vec![0.0; 16_000]);
-        clip.extend(tone(phrase));
-        clip.extend(vec![0.0; 3_200]);
-        clip
-    }
-
-    fn finish_with_text_end(clip: &[f32], text_end_ms: u64) -> Result<String, String> {
-        let mut fake = FakeStream {
-            text_end_ms: Some(text_end_ms),
-            ..FakeStream::default()
-        };
-        let mut capped = PauseCap::new(&mut fake, 0);
-        for chunk in clip.chunks(1_600) {
-            capped.feed(chunk).unwrap();
-        }
-        let result = finish_stream(&mut capped, clip, clip.len());
-        assert_eq!(fake.fed, clip);
-        result
-    }
-
-    #[test]
-    fn a_stream_that_dropped_a_phrase_after_a_pause_falls_back_to_the_whole_clip() {
-        // #1101: speech, a 1 s pause, a short last phrase, then stop. The
-        // stream heard it all, but its text ended with the first speech.
-        let clip = speech_pause_phrase(12_800);
-        let result = finish_with_text_end(&clip, 2_500);
-        assert!(
-            result
-                .as_ref()
-                .is_err_and(|reason| reason.contains("speech follows")),
-            "{result:?}"
-        );
-        // Text that reaches the phrase is the stream's to keep.
-        assert_eq!(
-            finish_with_text_end(&clip, 4_200),
-            Ok(format!("streamed {}", clip.len()))
-        );
-    }
-
-    #[test]
-    fn a_closing_full_stop_at_the_clips_end_does_not_cover_a_dropped_phrase() {
-        // Nemotron 3.5 ASR puts its final full stop on the clip's last frame
-        // (apollo, FLEURS: the last word ended at 8.8 s, the stop at 10.16 s).
-        let token = |text: &str, t1_ms| transcribe_cpp::Token {
-            text: text.into(),
-            t1_ms,
-            ..Default::default()
-        };
-        let tokens = [
-            token(" channels", 2_480),
-            token(",", 2_500),
-            token(".", 4_400),
-            token(" ", 4_400),
-        ];
-        assert_eq!(spoken_text_end_ms(&tokens), Some(2_480));
-        assert_eq!(spoken_text_end_ms(&[token(".", 4_400)]), None);
-    }
-
-    #[test]
-    fn a_short_sound_after_the_text_does_not_discard_the_stream() {
-        // A key click or the stop tone in the tail is not a dropped phrase.
-        let clip = speech_pause_phrase(2_400);
-        assert_eq!(
-            finish_with_text_end(&clip, 2_500),
-            Ok(format!("streamed {}", clip.len()))
-        );
-    }
-
-    #[test]
-    fn skipping_pauses_cuts_a_whole_clips_long_pauses_to_their_ends() {
-        // #899: quiet pre-roll, speech, a 1 s pause, speech, a 10 s pause,
-        // speech, and a 5 s trailing pause.
-        let mut clip = vec![0.0; 8_000];
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 16_000]);
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 160_000]);
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 80_000]);
-        let (kept, dropped) = skip_long_pauses(&clip).expect("long pauses are cut");
-        let long = 160_000 - PAUSE_HEAD_SAMPLES - PAUSE_TAIL_SAMPLES;
-        let trailing = 80_000 - PAUSE_HEAD_SAMPLES;
-        assert_eq!(dropped, long + trailing);
-        assert_eq!(kept.len(), clip.len() - dropped);
-        // The short pause passes whole, and the speech after the long one
-        // follows its head and tail.
-        assert_eq!(kept[..56_000], clip[..56_000]);
-        let resumed = 56_000 + PAUSE_HEAD_SAMPLES + PAUSE_TAIL_SAMPLES;
-        assert_eq!(kept[resumed..resumed + 16_000], clip[216_000..232_000]);
-        // The trailing pause keeps its head.
-        assert_eq!(kept.len(), resumed + 16_000 + PAUSE_HEAD_SAMPLES);
-    }
-
-    #[test]
-    fn skipping_pauses_leaves_short_pauses_and_quiet_only_clips_whole() {
-        use crate::transcription::pause_segmenter::tests::noise;
-        let mut clip = vec![0.0; 8_000];
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 16_000]);
-        clip.extend(tone(16_000));
-        assert!(skip_long_pauses(&clip).is_none());
-        assert_eq!(whole_clip(clip.clone(), true), clip);
-        // #841: nothing above the floor, so nothing is taken for a pause.
-        let mut seed = 3;
-        let quiet = noise(6_000, -80.0, &mut seed);
-        assert!(skip_long_pauses(&quiet).is_none());
-        assert_eq!(whole_clip(quiet.clone(), true), quiet);
-    }
-
-    #[test]
-    fn with_skip_pauses_off_the_whole_clip_is_untouched() {
-        let mut clip = vec![0.0; 8_000];
-        clip.extend(tone(16_000));
-        clip.extend(vec![0.0; 160_000]);
-        clip.extend(tone(16_000));
-        let untouched = whole_clip(clip.clone(), false);
-        assert_eq!(
-            untouched.iter().map(|s| s.to_bits()).collect::<Vec<_>>(),
-            clip.iter().map(|s| s.to_bits()).collect::<Vec<_>>()
-        );
-        assert!(whole_clip(clip.clone(), true).len() < clip.len());
-    }
-
-    fn assert_quiet_speech_is_kept(speech_db: f32, noise_db: f32, dc_offset: f32) {
-        use crate::transcription::pause_segmenter::{FRAME_SAMPLES, SpeechFrames, tests::noise};
-        // 17 s of syllables over steady noise.
-        let mut seed = 11;
-        let mut clip = noise(17_000, noise_db, &mut seed);
-        let mut voice_seed = 5;
-        for start in (0..clip.len()).step_by(4_800) {
-            let burst = noise(240, speech_db, &mut voice_seed);
-            for (sample, voice) in clip[start..].iter_mut().zip(burst) {
-                *sample += voice;
-            }
-        }
-        for sample in &mut clip {
-            *sample += dc_offset;
-        }
-        let mut speech = SpeechFrames::default();
-        assert!(
-            !clip
-                .as_chunks::<FRAME_SAMPLES>()
-                .0
-                .iter()
-                .any(|frame| speech.is_speech(frame)),
-            "the speech margin misses this speech"
-        );
-        let mut fake = FakeStream::default();
-        let mut capped = PauseCap::new(&mut fake, 0);
-        for chunk in clip.chunks(1_234) {
-            capped.feed(chunk).unwrap();
-        }
-        capped.finalize().unwrap();
-        assert_eq!(capped.dropped, 0);
-        assert_eq!(fake.fed, clip);
-    }
-
-    #[test]
-    fn a_dictation_stream_hears_trailing_silence_before_it_finalizes() {
-        // #657: without trailing silence the stream dropped the closing
-        // full stop or question mark the whole clip kept.
-        let clip = tone(16_000);
-        let mut fake = FakeStream::default();
-        let mut capped = PauseCap::new(&mut fake, 6_400);
-        for chunk in clip.chunks(1_234) {
-            capped.feed(chunk).unwrap();
-        }
-        assert_eq!(
-            capped.finalize(),
-            Ok(format!("streamed {}", 16_000 + 6_400))
-        );
-        assert_eq!(capped.dropped, 0);
-        assert_eq!(fake.fed[..16_000], clip[..]);
-        assert!(fake.fed[16_000..].iter().all(|&sample| sample == 0.0));
-    }
-
-    fn heard(samples: usize) -> Partial {
-        Partial {
-            stable: format!("heard {samples}"),
+    fn a_partial_reads_once_until_it_changes() {
+        let partials = Partials::default();
+        let mut seen = 0;
+        assert_eq!(partials.newer_than(&mut seen), None);
+        assert!(partials.publish(Partial {
+            stable: "hello".into(),
             tentative: String::new(),
-        }
-    }
-
-    /// Where the worker publishes the text of the stream `commands` began.
-    fn begun_partials(commands: &Receiver<Command>) -> Option<Partials> {
-        match commands.try_recv() {
-            Ok(Command::Begin { partials, .. }) => partials,
-            _ => panic!("a stream began"),
-        }
-    }
-
-    /// Drives stream 1 through the commands queued so far, then a cancel.
-    fn drive_queued(
-        commands: &Receiver<Command>,
-        stream: &mut FakeStream,
-        partials: Option<&Partials>,
-    ) -> FeedStats {
-        let (relay, relayed) = mpsc::channel();
-        for command in commands.try_iter() {
-            relay.send(command).unwrap();
-        }
-        relay.send(Command::Cancel { stream: 1 }).unwrap();
-        let mut stats = FeedStats::default();
-        let ended = drive_stream(
-            1,
-            stream,
-            &relayed,
-            &AtomicBool::new(false),
-            partials,
-            &mut stats,
-        );
-        assert!(matches!(ended, StreamEnd::Cancelled));
-        stats
-    }
-
-    #[test]
-    fn a_dictation_stream_publishes_its_text_after_each_feed_with_live_text() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_live_text();
-        let mut stream = engine.begin().unwrap();
-        let partials = begun_partials(&commands).expect("live text gives the stream a slot");
+        }));
         assert_eq!(
-            stream.take_partial(),
-            None,
-            "nothing is published before a feed"
-        );
-        stream.feed(&[0.1; 4]);
-        stream.feed(&[0.2; 2]);
-
-        let stats = drive_queued(&commands, &mut FakeStream::default(), Some(&partials));
-        assert_eq!(stats.partials, 2);
-        // The owner reads the newest text once, then nothing until it changes.
-        assert_eq!(stream.take_partial(), Some(heard(6)));
-        assert_eq!(stream.take_partial(), None);
-        assert!(!partials.publish(heard(6)), "the same text is not a change");
-        assert_eq!(stream.take_partial(), None);
-        assert!(partials.publish(heard(7)));
-        assert_eq!(stream.take_partial(), Some(heard(7)));
-    }
-
-    #[test]
-    fn without_live_text_a_dictation_stream_publishes_nothing() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let mut stream = engine.begin().unwrap();
-        assert!(begun_partials(&commands).is_none());
-        stream.feed(&[0.1; 4]);
-        let stats = drive_queued(&commands, &mut FakeStream::default(), None);
-        assert_eq!(stats.partials, 0);
-        assert_eq!(stream.take_partial(), None);
-    }
-
-    #[test]
-    fn each_dictation_stream_has_its_own_text() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_live_text();
-        let mut first = engine.begin().unwrap();
-        let first_partials = begun_partials(&commands).unwrap();
-        // An older capture's stream is still finishing when a new one opens.
-        let mut second = engine.begin().unwrap();
-        let second_partials = begun_partials(&commands).unwrap();
-        assert!(first_partials.publish(heard(4)));
-        assert_eq!(
-            second.take_partial(),
-            None,
-            "the new capture shows no old text"
-        );
-        assert_eq!(first.take_partial(), Some(heard(4)));
-        assert!(second_partials.publish(heard(1)));
-        assert_eq!(second.take_partial(), Some(heard(1)));
-        assert_eq!(first.take_partial(), None);
-    }
-
-    #[test]
-    fn a_failed_feed_clears_the_text_and_stops_publishing() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_live_text();
-        let mut stream = engine.begin().unwrap();
-        let partials = begun_partials(&commands).unwrap();
-        stream.feed(&[0.1; 4]);
-        stream.feed(&[0.2; 4]);
-        stream.feed(&[0.3; 4]);
-        let mut failing = FakeStream {
-            fail_after: Some(4),
-            ..FakeStream::default()
-        };
-        let stats = drive_queued(&commands, &mut failing, Some(&partials));
-        assert_eq!(stats.partials, 1, "the first feed's text, then nothing");
-        assert_eq!(failing.fed.len(), 4, "a failed stream is fed no more");
-        // The plate hides instead of freezing on the last words.
-        assert_eq!(stream.take_partial(), Some(Partial::default()));
-    }
-
-    const SHORT: Deadlines = Deadlines {
-        stream_finish: Duration::from_millis(50),
-        job: Duration::from_millis(100),
-        job_seconds_per_audio_second: 0,
-        shutdown: Duration::from_millis(100),
-    };
-
-    fn silent() -> Offline {
-        Box::new(|_, _| Ok(String::new()))
-    }
-
-    /// Takes the next finish the test engine would have run.
-    fn next_job(commands: &Receiver<Command>) -> Job {
-        commands
-            .try_iter()
-            .find_map(|command| match command {
-                Command::Finish { job, .. } => Some(job),
-                _ => None,
+            partials.newer_than(&mut seen),
+            Some(Partial {
+                stable: "hello".into(),
+                tentative: String::new(),
             })
-            .expect("a finish was sent")
-    }
-
-    #[test]
-    fn a_started_job_that_never_ends_fails_instead_of_hanging() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_deadlines(SHORT);
-        for streamed in [false, true] {
-            let stream = streamed.then(|| engine.begin().expect("the test engine streams"));
-            let pending = engine
-                .finish_with(stream, vec![0.0; 1_600], silent())
-                .unwrap();
-            let job = next_job(&commands);
-            job.start();
-            let started = Instant::now();
-            assert_eq!(pending.wait().unwrap_err(), "transcription timed out");
-            assert!(started.elapsed() < Duration::from_secs(2));
-            assert!(job.cancel.is_cancelled(), "a timeout aborts the stuck run");
-            engine.stalled.store(false, Ordering::Release);
-        }
-    }
-
-    #[test]
-    fn the_job_clock_does_not_count_time_queued_behind_other_work() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_deadlines(SHORT);
-        let pending = engine.finish_with(None, Vec::new(), silent()).unwrap();
-        let job = next_job(&commands);
-        let worker = thread::spawn(move || {
-            // Three job deadlines pass before the engine reaches the job.
-            thread::sleep(SHORT.job * 3);
-            job.start();
-            job.finish(Ok(Transcribed {
-                text: "late but fine".into(),
-                source: Source::Offline,
-                finish_ms: 0,
-            }));
-        });
-        assert_eq!(pending.wait().unwrap().text, "late but fine");
-        worker.join().unwrap();
-    }
-
-    fn cloud_stream(
-        provider: crate::transcription::cloud::CloudProvider,
-        reply: Result<String, crate::transcription::cloud::CloudError>,
-    ) -> (LiveStream, Receiver<Vec<f32>>) {
-        let (cloud, heard) = crate::transcription::cloud::fake(provider, reply);
-        let stream = LiveStream {
-            fed: 0,
-            partials: None,
-            feeds: Feeds::Cloud(cloud),
-        };
-        (stream, heard)
-    }
-
-    /// The finish a released cloud stream hands the engine.
-    fn handed_over(
-        commands: &Receiver<Command>,
-    ) -> (Vec<f32>, crate::transcription::cloud::CloudAnswer) {
-        match commands.try_recv() {
-            Ok(Command::Finish {
-                stream: None,
-                clip,
-                cloud: Some(answer),
-                ..
-            }) => (clip, answer),
-            _ => panic!("the engine was handed the clip and the stream's answer"),
-        }
-    }
-
-    #[test]
-    fn a_released_cloud_stream_hears_the_rest_of_the_clip_at_once() {
-        use crate::transcription::cloud::CloudProvider;
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let (mut stream, heard) = cloud_stream(CloudProvider::Claude, Ok("hello there".into()));
-        stream.feed(&[0.1, 0.2]);
-        let _pending = engine
-            .finish_with(
-                Some(stream),
-                vec![0.1, 0.2, 0.3, 0.4],
-                Box::new(|_, _| panic!("a cloud answer never reaches the model")),
-            )
-            .unwrap();
-        // No worker runs here: the service hears the end before the engine
-        // reaches the finish.
-        assert_eq!(
-            heard.recv_timeout(Duration::from_secs(5)).unwrap(),
-            [0.1, 0.2, 0.3, 0.4]
         );
-        let (clip, answer) = handed_over(&commands);
-        assert_eq!(clip, [0.1, 0.2, 0.3, 0.4]);
-        assert_eq!(
-            answer.wait(&CancelToken::new()).as_deref(),
-            Ok("hello there")
-        );
-    }
-
-    #[test]
-    fn a_cloud_stream_that_heard_past_the_clip_is_dropped() {
-        use crate::transcription::cloud::CloudProvider;
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let (mut stream, heard) = cloud_stream(CloudProvider::Claude, Ok("and more".into()));
-        stream.feed(&[0.1; 16_000]);
-        let _pending = engine
-            .finish_with(Some(stream), vec![0.1; 8_000], silent())
-            .unwrap();
-        assert!(heard.recv_timeout(Duration::from_secs(5)).is_err());
-        let (clip, answer) = handed_over(&commands);
-        assert_eq!(clip.len(), 8_000, "the exact clip is transcribed");
-        assert!(answer.wait(&CancelToken::new()).is_err());
-    }
-
-    #[test]
-    fn a_timed_out_job_cancels_only_itself_not_the_next_capture() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_deadlines(SHORT);
-        let first = engine.finish_with(None, Vec::new(), silent()).unwrap();
-        let first_job = next_job(&commands);
-        first_job.start();
-        // Capture 2 begins while job 1 is still running.
-        let second = engine.begin().expect("the test engine streams");
-        assert_eq!(first.wait().unwrap_err(), "transcription timed out");
-        assert!(first_job.cancel.is_cancelled());
-        assert!(!second.cancelled(), "capture 2's stream survives");
-        let Some(Command::Begin { cancel, .. }) = commands.try_iter().next() else {
-            panic!("capture 2 began a stream");
-        };
-        assert!(!cancel.is_cancelled());
-        // A capture that begins after the timeout is untouched too.
-        let third = engine.begin().expect("the test engine streams");
-        assert!(!third.cancelled());
-    }
-
-    #[test]
-    fn jobs_queued_behind_a_wedged_run_fail_instead_of_waiting_forever() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        let engine = engine.with_deadlines(SHORT);
-        let wedged = engine.finish_with(None, Vec::new(), silent()).unwrap();
-        let queued = engine.finish_with(None, Vec::new(), silent()).unwrap();
-        let wedged_job = next_job(&commands);
-        let queued_job = next_job(&commands);
-        wedged_job.start();
-        assert_eq!(wedged.wait().unwrap_err(), "transcription timed out");
-        let started = Instant::now();
-        assert_eq!(queued.wait().unwrap_err(), "transcription engine is stuck");
-        assert!(started.elapsed() < Duration::from_secs(2));
-        assert!(
-            queued_job.cancel.is_cancelled(),
-            "the engine skips it later"
-        );
-    }
-
-    #[test]
-    fn the_job_deadline_grows_with_the_clip() {
-        let (engine, _commands) = TranscriptionEngine::for_test_without_streaming();
-        let pending = engine
-            .finish_with(None, vec![0.0; 16_000 * 30], silent())
-            .unwrap();
-        assert_eq!(
-            pending.job,
-            JOB_DEADLINE + Duration::from_secs(30 * u64::from(JOB_SECONDS_PER_AUDIO_SECOND))
-        );
-    }
-
-    /// A real engine thread over macOS's warm transcriber with no model
-    /// loaded: it cannot stream, so every finish runs the offline closure.
-    #[cfg(target_os = "macos")]
-    mod worker {
-        use super::*;
-
-        fn offline_text(text: &'static str) -> Offline {
-            Box::new(move |_, clip| Ok(format!("  {text} {} ", clip.len())))
-        }
-
-        #[test]
-        fn a_finish_without_a_stream_transcribes_the_clip_offline() {
-            let engine = TranscriptionEngine::start(Model::default()).unwrap();
-            assert!(engine.begin().is_none());
-            let transcribed = engine
-                .finish_with(None, vec![0.0; 5], offline_text("whole"))
-                .unwrap()
-                .wait()
-                .unwrap();
-            assert_eq!(transcribed.text, "whole 5");
-            assert_eq!(transcribed.source, Source::Offline);
-        }
-
-        #[test]
-        fn an_unusable_stream_falls_back_to_the_complete_clip() {
-            let engine = TranscriptionEngine::start(Model::default()).unwrap();
-            // Claim streaming so a stream opens that the model cannot serve.
-            engine.streams.store(true, Ordering::Release);
-            let mut stream = engine.begin().expect("streaming was claimed");
-            stream.feed(&[0.0; 3]);
-            let transcribed = engine
-                .finish_with(Some(stream), vec![0.0; 9], offline_text("fallback"))
-                .unwrap()
-                .wait()
-                .unwrap();
-            assert_eq!(transcribed.text, "fallback 9");
-            assert!(matches!(transcribed.source, Source::Fallback(_)));
-            assert!(!engine.streams.load(Ordering::Acquire));
-        }
-
-        #[test]
-        fn work_runs_in_order_and_failures_reach_the_caller() {
-            let engine = TranscriptionEngine::start(Model::default()).unwrap();
-            let (order, ran) = mpsc::channel();
-            let first = order.clone();
-            engine.run(move |_| first.send("run").unwrap()).unwrap();
-            let failed = engine
-                .finish_with(
-                    None,
-                    Vec::new(),
-                    Box::new(move |_, _| {
-                        order.send("finish").unwrap();
-                        Err("dictation was cancelled".into())
-                    }),
-                )
-                .unwrap();
-            assert_eq!(failed.wait().unwrap_err(), "dictation was cancelled");
-            assert_eq!(ran.try_iter().collect::<Vec<_>>(), ["run", "finish"]);
-        }
-
-        #[test]
-        fn background_work_yields_to_dictation_sent_before_it_runs() {
-            let engine = TranscriptionEngine::start(Model::default()).unwrap();
-            assert_eq!(engine.background(|_| 7).unwrap(), Some(7));
-
-            let generation = engine.requests.fetch_add(1, Ordering::AcqRel);
-            let (reply, ran) = mpsc::channel();
-            engine
-                .commands
-                .send(Command::Background {
-                    generation,
-                    work: Box::new(move |model| reply.send(model.is_some()).unwrap()),
-                })
-                .unwrap();
-            assert!(!ran.recv().unwrap(), "stale background work must not run");
-        }
-
-        #[test]
-        fn a_wedged_run_times_out_its_job_and_later_jobs_still_finish() {
-            let engine = TranscriptionEngine::start(Model::default())
-                .unwrap()
-                .with_deadlines(SHORT);
-            let (release, wedged) = mpsc::channel::<()>();
-            let stuck = engine
-                .finish_with(
-                    None,
-                    Vec::new(),
-                    Box::new(move |_, _| {
-                        let _ = wedged.recv();
-                        Ok("late".into())
-                    }),
-                )
-                .unwrap();
-            assert_eq!(stuck.wait().unwrap_err(), "transcription timed out");
-            let next = engine
-                .finish_with(None, vec![0.0; 2], offline_text("next"))
-                .unwrap();
-            release.send(()).unwrap();
-            assert_eq!(next.wait().unwrap().text, "next 2");
-        }
-
-        #[test]
-        fn dropping_a_wedged_engine_returns() {
-            let engine = TranscriptionEngine::start(Model::default())
-                .unwrap()
-                .with_deadlines(SHORT);
-            let (_release, wedged) = mpsc::channel::<()>();
-            let (entered, running) = mpsc::channel();
-            engine
-                .run(move |_| {
-                    entered.send(()).unwrap();
-                    let _ = wedged.recv();
-                })
-                .unwrap();
-            running.recv_timeout(Duration::from_secs(5)).unwrap();
-            let started = Instant::now();
-            drop(engine);
-            assert!(started.elapsed() < Duration::from_secs(2));
-        }
-
-        #[test]
-        fn a_job_queued_behind_slow_work_is_not_timed_out() {
-            let engine = TranscriptionEngine::start(Model::default())
-                .unwrap()
-                .with_deadlines(SHORT);
-            // A model load that outlasts the job deadline three times over.
-            engine.run(|_| thread::sleep(SHORT.job * 3)).unwrap();
-            let queued = engine
-                .finish_with(None, vec![0.0; 4], offline_text("queued"))
-                .unwrap();
-            assert_eq!(queued.wait().unwrap().text, "queued 4");
-        }
-
-        #[test]
-        fn a_timeout_aborts_the_offline_run_through_its_job_token() {
-            let engine = TranscriptionEngine::start(Model::default())
-                .unwrap()
-                .with_deadlines(SHORT);
-            let (aborted, saw_abort) = mpsc::channel();
-            let stuck = engine
-                .finish_with(
-                    None,
-                    Vec::new(),
-                    Box::new(move |_, _| {
-                        // What transcribe-cpp's abort callback polls.
-                        let cancel =
-                            crate::transcription::gguf_session::job_cancel().expect("installed");
-                        while !cancel.is_cancelled() {
-                            thread::sleep(Duration::from_millis(5));
-                        }
-                        aborted.send(()).unwrap();
-                        Err("aborted".into())
-                    }),
-                )
-                .unwrap();
-            assert_eq!(stuck.wait().unwrap_err(), "transcription timed out");
-            saw_abort.recv_timeout(Duration::from_secs(5)).unwrap();
-            let next = engine
-                .finish_with(None, vec![0.0; 2], offline_text("next"))
-                .unwrap();
-            assert_eq!(next.wait().unwrap().text, "next 2");
-        }
-
-        #[test]
-        fn retiring_a_wedged_engine_returns_at_once() {
-            let engine = TranscriptionEngine::start(Model::default()).unwrap();
-            let (release, wedged) = mpsc::channel::<()>();
-            let (entered, running) = mpsc::channel();
-            engine
-                .run(move |_| {
-                    entered.send(()).unwrap();
-                    let _ = wedged.recv();
-                })
-                .unwrap();
-            running.recv_timeout(Duration::from_secs(5)).unwrap();
-            let started = Instant::now();
-            engine.retire();
-            assert!(started.elapsed() < Duration::from_millis(500));
-            release.send(()).unwrap();
-        }
-
-        #[test]
-        fn dropping_the_engine_stops_despite_an_open_stream() {
-            let engine = TranscriptionEngine::start(Model::default()).unwrap();
-            engine.streams.store(true, Ordering::Release);
-            let stream = engine.begin().expect("streaming was claimed");
-            drop(engine);
-            drop(stream);
-        }
-
-        /// Quitting frees the model by dropping the engine; that must finish
-        /// work in flight and end the thread that owns the model before
-        /// returning, or ggml's Metal teardown at exit sees a live buffer.
-        #[test]
-        fn dropping_the_engine_ends_the_thread_that_owns_the_model_first() {
-            struct ThreadExit(Arc<AtomicBool>);
-            impl Drop for ThreadExit {
-                fn drop(&mut self) {
-                    self.0.store(true, Ordering::SeqCst);
-                }
-            }
-            thread_local! {
-                static EXIT: std::cell::RefCell<Option<ThreadExit>> =
-                    const { std::cell::RefCell::new(None) };
-            }
-
-            let engine = TranscriptionEngine::start(Model::default()).unwrap();
-            let exited = Arc::new(AtomicBool::new(false));
-            let finished = Arc::new(AtomicBool::new(false));
-            let (started, running) = mpsc::channel();
-            let (on_exit, done) = (exited.clone(), finished.clone());
-            engine
-                .run(move |_| {
-                    EXIT.with(|slot| *slot.borrow_mut() = Some(ThreadExit(on_exit)));
-                    started.send(()).unwrap();
-                    thread::sleep(Duration::from_millis(50));
-                    done.store(true, Ordering::SeqCst);
-                })
-                .unwrap();
-            running.recv().unwrap();
-            drop(engine);
-            assert!(
-                finished.load(Ordering::SeqCst),
-                "work in flight was abandoned"
-            );
-            assert!(
-                exited.load(Ordering::SeqCst),
-                "the engine thread outlived the engine"
-            );
-        }
-    }
-
-    #[test]
-    fn an_engine_whose_model_cannot_stream_opens_no_stream() {
-        let (engine, commands) = TranscriptionEngine::for_test();
-        engine.streams.store(false, Ordering::Release);
-        assert!(engine.begin().is_none());
-        let pending = engine
-            .finish_with(None, vec![0.0; 7], Box::new(|_, _| Ok(String::new())))
-            .unwrap();
-        assert!(pending.stream_cancel.is_none());
-        assert!(matches!(
-            commands.try_iter().collect::<Vec<_>>().as_slice(),
-            [Command::Finish { stream: None, .. }]
-        ));
+        assert_eq!(partials.newer_than(&mut seen), None);
+        assert!(!partials.publish(Partial {
+            stable: "hello".into(),
+            tentative: String::new(),
+        }));
+        assert_eq!(partials.newer_than(&mut seen), None);
     }
 }

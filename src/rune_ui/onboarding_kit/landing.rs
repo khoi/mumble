@@ -1,14 +1,15 @@
 //! Shared typography, motion transitions, and the `"Hex is ready"` finale.
 
 use rune::{El, Spring, SpringPair, TextStyle, Transition, col, el, row, text};
-use rune_kit::{Button, ButtonVariant};
 
 use crate::desktop::i18n::tr;
 
-use super::super::controls::{KeySize, Paint, PushSize, key_tray, keycap};
-use super::fixture::Language;
+use super::super::controls::{KeySize, Paint, key_tray, keycap};
 use super::hex_meter::{hex_meter, hex_meter_glowing};
-use super::pill::{FLY, PILL};
+
+/// Zero-bounce flight spring (`0.42 s / 0.0`) carrying the hexagon mark onto
+/// the `"Hex is ready"` landing.
+pub(crate) const FLY: Spring = Spring::new(0.42, 0.0);
 
 /// One display heading style across every onboarding step (`26 pt`, softened
 /// weight in dark mode so light ink on dark doesn't bloom).
@@ -81,55 +82,6 @@ pub(crate) fn arrives() -> Transition {
     Transition::scale(0.97)
         .combined(Transition::opacity())
         .springs(SpringPair::new(UI_SPRING, EXIT_SPRING))
-}
-
-/// Incoming words rise as outgoing words lift away, on one presence spring.
-pub(crate) fn step_replace() -> Transition {
-    Motion::default().roll(Motion::default().travel)
-}
-
-/// A heading and the line under it, centred on the column spine.
-pub(crate) fn heading(p: Paint, key: &str, title: &str, lead: &str) -> El {
-    col()
-        .key(key)
-        .gap(8.0)
-        .items_center()
-        .transition(step_replace())
-        .child(text(title).key("title").font(title_font(p)).color(p.text()))
-        .child(
-            text(lead)
-                .key("lead")
-                .font(LEAD)
-                .color(p.muted())
-                .align(rune::Align::Center)
-                .wrap()
-                .max_w(440.0),
-        )
-}
-
-/// Download English, or pick another language (used by the older option stories).
-pub(crate) fn language_pick<S: 'static>(p: Paint, pick: fn(&mut S, Language)) -> El {
-    row()
-        .key("language-pick")
-        .gap(10.0)
-        .center_y()
-        .child(
-            Button::new("Download English")
-                .variant(ButtonVariant::Contrast)
-                .on_press(move |s: &mut S| pick(s, Language::English))
-                .build_push(p.k)
-                .key(PILL)
-                .matched(PILL)
-                .motion(FLY)
-                .default_button(),
-        )
-        .child(
-            Button::new("Other language")
-                .variant(ButtonVariant::Neutral)
-                .on_press(move |s: &mut S| pick(s, Language::Other))
-                .build_push(p.k)
-                .key("other"),
-        )
 }
 
 /// The shortcut's keys in a recessed tray, `down` while held.

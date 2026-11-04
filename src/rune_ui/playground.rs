@@ -65,10 +65,6 @@ const PATHS: &[(&str, &str)] = &[
         "mac-settings-vocabulary-empty",
         "Window/General/Vocabulary · empty",
     ),
-    (
-        "vocabulary-unused",
-        "Window/General/Vocabulary · not used by the model",
-    ),
     ("shortcut-row", "Window/General/Shortcut/Left Option"),
     ("shortcut-row-right", "Window/General/Shortcut/Right Option"),
     (
@@ -101,36 +97,6 @@ const PATHS: &[(&str, &str)] = &[
     ),
     ("mac-local-build", "Window/General/Updates/Local build"),
     ("mac-test-build", "Window/General/Updates/Test build"),
-    ("picker", "Window/Transcription model/Picker"),
-    (
-        "picker-downloading",
-        "Window/Transcription model/Downloading",
-    ),
-    (
-        "picker-parakeet-ultra",
-        "Window/Transcription model/Parakeet Ultra details (Labs)",
-    ),
-    (
-        "picker-custom-models",
-        "Window/Transcription model/Add your own model",
-    ),
-    (
-        "picker-found",
-        "Window/Transcription model/Found on this computer",
-    ),
-    (
-        "picker-japanese",
-        "Window/Transcription model/Japanese saved",
-    ),
-    (
-        "picker-japanese-all",
-        "Window/Transcription model/Japanese, every model",
-    ),
-    ("language-menu", "Window/Transcription model/Language menu"),
-    (
-        "language-fallback",
-        "Window/Transcription model/Language fallback",
-    ),
     ("shortcut-mode", "Window/Shortcut mode/Modifier"),
     ("shortcut-mode-key", "Window/Shortcut mode/Key"),
     ("shortcut-mode-chord", "Window/Shortcut mode/Chord"),
@@ -152,10 +118,6 @@ const PATHS: &[(&str, &str)] = &[
         "modes-opencode-not-running",
         "Window/Modes/OpenCode not running",
     ),
-    (
-        "mac-input-source-models",
-        "Window/General/Input source models",
-    ),
     ("history", "Window/History/History"),
     ("history-empty", "Window/History/Empty"),
     ("mac-voice-filter", "Window/Voice Filter/Voice Filter"),
@@ -167,9 +129,7 @@ const PATHS: &[(&str, &str)] = &[
     ("mac-hud-lab", "Window/HUD Lab/HUD Lab"),
     ("mac-labs", "Window/General/Labs"),
     ("mac-labs-link", "Window/General/Labs link"),
-    ("mac-labs-cloud", "Window/General/Labs cloud transcription"),
     ("mac-activity", "Window/Activity/Activity"),
-    ("mac-onboarding", "Window/Onboarding/Setting up Hex"),
     (
         "mac-onboarding-permissions",
         "Window/Onboarding/Permissions",
@@ -206,35 +166,7 @@ const PATHS: &[(&str, &str)] = &[
         "Linux & Windows/Voice Filter unavailable",
     ),
     ("onboarding", "Linux & Windows/Onboarding"),
-    (
-        "onboarding-download-failed",
-        "Linux & Windows/Onboarding · download failed",
-    ),
-    (
-        "onboarding-no-model",
-        "Linux & Windows/Onboarding · continued without a model",
-    ),
-    (
-        "onboarding-model-found",
-        "Linux & Windows/Onboarding · models on this computer",
-    ),
-    (
-        "onboarding-model-found-downloading",
-        "Linux & Windows/Onboarding · recommended model downloading",
-    ),
-    (
-        "onboarding-model-found-recommended",
-        "Linux & Windows/Onboarding · recommended model on this computer",
-    ),
-    (
-        "onboarding-model-found-back",
-        "Linux & Windows/Onboarding · back to the models",
-    ),
     ("onboarding-demo", "Linux & Windows/Onboarding · demo"),
-    (
-        "onboarding-waiting",
-        "Linux & Windows/Onboarding · almost ready",
-    ),
     (
         "onboarding-paste",
         "Linux & Windows/Onboarding · paste permission",

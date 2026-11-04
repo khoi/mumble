@@ -1090,76 +1090,10 @@ mod tests {
     }
 
     #[test]
-    fn hotkey_captures_stream_once_intentional_and_others_do_not() {
-        use crate::transcription::engine::Command as EngineCommand;
-        for kind in [CaptureKind::Hotkey, CaptureKind::Programmatic] {
-            for cancel in [false, true] {
-                let hotkey = matches!(kind, CaptureKind::Hotkey);
-                let (engine, commands) = TranscriptionEngine::for_test();
-                let (mut owner, _input, _samples) = owner_for_test(true);
-                owner.engine = Some(Arc::new(engine));
-                let at = capture_time();
-                assert!(control(&mut owner, |reply| Command::Start {
-                    at,
-                    kind,
-                    reply
-                }));
-                let mut through = at;
-                let mut chunk = |owner: &mut Owner| {
-                    through = through + Duration::from_millis(10);
-                    owner.handle_input(RecoveringAudioInputEvent::Chunk {
-                        samples: vec![0.25; 480],
-                        captured_through: through,
-                    });
-                };
-                chunk(&mut owner);
-                // A short tap or chord never reaches the model.
-                assert!(commands.try_iter().next().is_none());
-                control(&mut owner, |reply| Command::BecomeIntentional {
-                    at: at + crate::dictation::MINIMUM_HOLD_DURATION,
-                    reply,
-                });
-                for _ in 0..100 {
-                    chunk(&mut owner);
-                }
-                let mut stream = None;
-                if cancel {
-                    control(&mut owner, |reply| Command::Cancel { reply });
-                } else {
-                    let Finish::Transcribe(mut clip) =
-                        control(&mut owner, |reply| Command::Finish {
-                            tail: Duration::ZERO,
-                            at: through,
-                            reply,
-                        })
-                    else {
-                        panic!("expected transcription");
-                    };
-                    stream = clip.take_stream();
-                }
-                let received = commands.try_iter().collect::<Vec<_>>();
-                let count = |matches: fn(&EngineCommand) -> bool| {
-                    received.iter().filter(|command| matches(command)).count()
-                };
-                let begun = count(|command| matches!(command, EngineCommand::Begin { .. }));
-                let feeds = count(|command| matches!(command, EngineCommand::Feed { .. }));
-                let cancels = count(|command| matches!(command, EngineCommand::Cancel { .. }));
-                assert_eq!(begun, usize::from(hotkey), "{cancel}");
-                assert_eq!(feeds > 0, hotkey, "{cancel}");
-                assert_eq!(cancels, usize::from(hotkey && cancel), "{cancel}");
-                assert_eq!(stream.is_some(), hotkey && !cancel, "{cancel}");
-            }
-        }
-    }
-
-    #[test]
     fn marked_captures_are_intentional_without_a_hold() {
-        use crate::transcription::engine::Command as EngineCommand;
-        // Open microphone: intentional at once, so it streams and a stop
-        // shorter than the hold threshold still transcribes.
-        let (engine, commands) = TranscriptionEngine::for_test();
+        // Open microphone: intentional at once, so a stop shorter than the
+        // hold threshold still transcribes.
         let (mut owner, _input, _samples) = owner_for_test(true);
-        owner.engine = Some(Arc::new(engine));
         let at = capture_time();
         start(&mut owner, at);
         assert!(control(&mut owner, |reply| Command::MarkIntentional {
@@ -1173,11 +1107,6 @@ mod tests {
             samples: vec![0.25; 2_400],
             captured_through: through,
         });
-        assert!(
-            commands
-                .try_iter()
-                .any(|command| matches!(command, EngineCommand::Begin { .. }))
-        );
         assert!(matches!(
             control(&mut owner, |reply| Command::Finish {
                 tail: Duration::ZERO,

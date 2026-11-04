@@ -40,13 +40,11 @@ pub(super) mod live;
 mod mic;
 mod mic_line;
 mod permissions;
-mod pill;
 mod sfx;
 mod sparks;
 mod stories;
 mod typing;
 mod versus;
-mod words;
 
 pub(crate) use game::add as game;
 pub(super) use stories::Onboard;

@@ -110,7 +110,7 @@ pub(super) fn stream(
 /// The language Claude transcribes in: Auto is English, as in Claude Code.
 fn spoken_language(language: &str) -> Result<&str, CloudError> {
     match language {
-        super::super::models::AUTO_LANGUAGE | "" => Ok("en"),
+        crate::transcription::AUTO_LANGUAGE | "" => Ok("en"),
         language if LANGUAGES.contains(&language) => Ok(language),
         language => Err(CloudError::Language(language.into())),
     }

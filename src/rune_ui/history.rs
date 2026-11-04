@@ -1,12 +1,8 @@
 //! The History pane: retained dictations (newest first) with search, the
 //! retention choice, two-step Clear all, and a detail view with Copy and
 //! Delete. It shares the host's store, which the listener records into.
-//! With Labs › Keep recordings on, an entry that kept its audio offers
-//! Transcribe again with any installed model, run on a worker.
 
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
-
-use rune::{El, TextEdit, Tx, col, row, text};
+use rune::{El, TextEdit, Tx, col, text};
 use rune_kit::{Select, SelectAppearance, TextInput};
 
 use super::controls::{ButtonKind, Paint, button};
@@ -16,7 +12,6 @@ use super::{Menu, Ui};
 use crate::desktop::i18n::{event_age, tr, tr_fill, tr_named};
 use crate::history::stats::HistoryStats;
 use crate::history::{History, HistoryEntry, HistoryKind, HistoryRetention};
-use crate::transcription::models::TranscriptionModelId;
 
 #[derive(Default)]
 pub(super) struct HistoryPane {
@@ -31,46 +26,6 @@ pub(super) struct HistoryPane {
     error: Option<String>,
     /// Labs › Dictation stats: every retained entry summed up, while on.
     pub(super) stats: Option<HistoryStats>,
-    /// Labs › Keep recordings: the installed models Transcribe again
-    /// offers, read when its menu opens.
-    models: Vec<(TranscriptionModelId, &'static str)>,
-    /// The latest Transcribe again, for one entry.
-    pub(super) again: Option<Again>,
-    /// A model chosen for Transcribe again that takes a language hint,
-    /// waiting for its language and Transcribe.
-    pub(super) pending: Option<Pending>,
-}
-
-/// Transcribe again's chosen model and the language for this one run.
-pub(super) struct Pending {
-    pub(super) id: u64,
-    model: TranscriptionModelId,
-    name: &'static str,
-    pub(super) language: String,
-}
-
-/// One entry's recording transcribed again with another model.
-pub(super) struct Again {
-    pub(super) id: u64,
-    /// The model's name.
-    pub(super) model: String,
-    worker: Option<Receiver<Result<String, String>>>,
-    pub(super) result: Option<Result<String, String>>,
-    pub(super) copied: bool,
-}
-
-impl Again {
-    /// A finished run, as if its worker had answered.
-    #[cfg(all(test, target_os = "linux"))]
-    pub(super) fn finished(id: u64, model: &str, result: Result<String, String>) -> Self {
-        Self {
-            id,
-            model: model.into(),
-            worker: None,
-            result: Some(result),
-            copied: false,
-        }
-    }
 }
 
 impl HistoryPane {
@@ -117,9 +72,8 @@ impl HistoryPane {
     /// While the pane shows, picks up new dictations and search edits. The
     /// stats are summed again only when the entries or the toggle changed.
     pub(super) fn poll(&mut self, visible: bool) -> bool {
-        let answered = self.poll_again();
         if !visible || self.store.is_none() {
-            return answered;
+            return false;
         }
         let previous = std::mem::take(&mut self.entries);
         self.reload_entries();
@@ -128,22 +82,7 @@ impl HistoryPane {
             self.reload_stats();
             return true;
         }
-        answered
-    }
-
-    /// Takes Transcribe again's answer once its worker sends it.
-    fn poll_again(&mut self) -> bool {
-        let Some(again) = &mut self.again else {
-            return false;
-        };
-        let result = match again.worker.as_ref().map(Receiver::try_recv) {
-            Some(Ok(result)) => result,
-            Some(Err(TryRecvError::Disconnected)) => Err(tr("Transcription stopped.").into()),
-            Some(Err(TryRecvError::Empty)) | None => return false,
-        };
-        again.worker = None;
-        again.result = Some(result);
-        true
+        false
     }
 
     fn entry(&self, id: u64) -> Option<&HistoryEntry> {
@@ -165,7 +104,6 @@ impl HistoryPane {
                     audio_ms: 4200,
                     inference_ms: 180,
                     total_ms: 640,
-                    recording_bytes: 0,
                 }
             };
         let mut rewritten = entry(
@@ -241,140 +179,6 @@ fn clear(ui: &mut Ui) {
     } else {
         ui.history.entries.clear();
         ui.history.selected = None;
-    }
-}
-
-/// The models Transcribe again can use: every available one that is
-/// installed for the language it would run in.
-fn installed_models(ui: &Ui) -> Vec<(TranscriptionModelId, &'static str)> {
-    crate::transcription::models::all_models()
-        .into_iter()
-        .filter(|model| model.available())
-        .filter(|model| {
-            let selection = ui.settings.transcription_for_model(model.id);
-            crate::transcription::models::is_installed(model, &selection.language)
-        })
-        .map(|model| (model.id, model.name))
-        .collect()
-}
-
-/// The languages Transcribe again offers for `model`: Auto when it detects
-/// the language, then the ones it supports. `None` when it takes no hint, or
-/// has only one, so there is nothing to choose.
-pub(super) fn language_choices(model: TranscriptionModelId) -> Option<Vec<&'static str>> {
-    let model = crate::transcription::models::definition(model);
-    let choices = model.language_choices();
-    (model.accepts_language_hint && choices.len() > 1).then_some(choices)
-}
-
-/// A model chosen from Transcribe again's menu: one that takes a language
-/// waits for it, starting at the saved language; any other runs at once.
-pub(super) fn choose_model(ui: &mut Ui, id: u64, model: TranscriptionModelId, name: &'static str) {
-    ui.open = None;
-    let Some(choices) = language_choices(model) else {
-        ui.history.pending = None;
-        transcribe_again(ui, id, model, name, None);
-        return;
-    };
-    let saved = &ui.settings.transcription.language;
-    let language = if choices.contains(&saved.as_str()) {
-        saved.clone()
-    } else {
-        ui.settings.transcription_for_model(model).language
-    };
-    ui.history.pending = Some(Pending {
-        id,
-        model,
-        name,
-        language,
-    });
-}
-
-/// Runs the pending model with its chosen language.
-fn transcribe_pending(ui: &mut Ui) {
-    if let Some(pending) = ui.history.pending.take() {
-        transcribe_again(
-            ui,
-            pending.id,
-            pending.model,
-            pending.name,
-            Some(&pending.language),
-        );
-    }
-}
-
-/// Starts transcribing entry `id`'s recording again with `model`, in
-/// `language` for this run only, or the model's usual language.
-fn transcribe_again(
-    ui: &mut Ui,
-    id: u64,
-    model: TranscriptionModelId,
-    name: &str,
-    language: Option<&str>,
-) {
-    ui.open = None;
-    if ui
-        .history
-        .again
-        .as_ref()
-        .is_some_and(|again| again.worker.is_some())
-    {
-        return;
-    }
-    let Some(path) = ui
-        .history
-        .store
-        .as_ref()
-        .and_then(|store| store.recording_path(id))
-    else {
-        return;
-    };
-    let mut selection = ui.settings.transcription_for_model(model);
-    if let Some(language) = language {
-        selection.language = language.into();
-    }
-    let (sender, receiver) = channel();
-    let waker = ui.modes.waker.clone();
-    let started = std::thread::Builder::new()
-        .name("hex-transcribe-again".into())
-        .spawn(move || {
-            let _ = sender.send(crate::history::recordings::retranscribe(&path, selection));
-            if let Some(waker) = &waker {
-                waker();
-            }
-        });
-    ui.history.again = Some(Again {
-        id,
-        model: name.into(),
-        worker: started.is_ok().then_some(receiver),
-        result: started.err().map(|error| Err(error.to_string())),
-        copied: false,
-    });
-}
-
-/// Replaces entry `id`'s text with what Transcribe again found.
-fn replace(ui: &mut Ui, id: u64) {
-    let Some(Ok(text)) = ui
-        .history
-        .again
-        .as_ref()
-        .filter(|again| again.id == id)
-        .and_then(|again| again.result.clone())
-    else {
-        return;
-    };
-    if let Some(store) = &ui.history.store {
-        if let Err(error) = store.replace_text(id, &text) {
-            ui.history.error = Some(error.to_string());
-            return;
-        }
-        ui.history.again = None;
-        ui.history.reload();
-    } else if let Some(entry) = ui.history.entries.iter_mut().find(|entry| entry.id == id) {
-        entry.raw_text.clone_from(&text);
-        entry.final_text = text;
-        entry.processing = None;
-        ui.history.again = None;
     }
 }
 
@@ -622,7 +426,7 @@ fn empty(ui: &Ui, p: Paint) -> Option<El> {
     })
 }
 
-fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
+fn detail(ui: &Ui, p: Paint, _layer: &mut Vec<El>) -> El {
     let pane = &ui.history;
     let Some(entry) = pane.selected.and_then(|id| pane.entry(id)) else {
         return empty(ui, p).unwrap_or_else(|| {
@@ -684,9 +488,6 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
         );
     }
     body = body.child(ld::facts(p, facts));
-    if ui.settings.labs.keep_recordings && entry.has_recording() {
-        body = body.child(again_section(ui, p, id, layer));
-    }
     col()
         .key("history-detail")
         .grow(1.0)
@@ -706,161 +507,4 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
             ],
         ))
         .child(ld::card_scroll("detail-scroll", body))
-}
-
-/// Labs › Keep recordings: Transcribe again's menu of installed models, and
-/// the latest run for this entry with Copy and Replace.
-fn again_section(ui: &Ui, p: Paint, id: u64, layer: &mut Vec<El>) -> El {
-    let again = ui.history.again.as_ref().filter(|again| again.id == id);
-    let running = again.is_some_and(|again| again.worker.is_some());
-    let labels: Vec<&str> = ui.history.models.iter().map(|(_, name)| *name).collect();
-    let current = match again {
-        Some(again) if running => tr_fill("Transcribing with {}…", &again.model),
-        _ => tr("Transcribe again").to_string(),
-    };
-    let menu = Select::new("history-again", &labels)
-        .appearance(SelectAppearance::Inline)
-        .current(Some(&current))
-        .open(!running && ui.open == Some(Menu::HistoryAgain))
-        .on_toggle(|ui: &mut Ui| {
-            if ui.open == Some(Menu::HistoryAgain) {
-                ui.open = None;
-            } else {
-                ui.history.models = installed_models(ui);
-                ui.open = Some(Menu::HistoryAgain);
-            }
-        })
-        .on_close(|ui: &mut Ui| ui.open = None)
-        .on_choose(move |ui: &mut Ui, choice: &str, _: &mut Tx| {
-            if let Some(&(model, name)) = ui.history.models.iter().find(|(_, name)| *name == choice)
-            {
-                choose_model(ui, id, model, name);
-            }
-        })
-        .build(p.k, layer);
-    let mut section = col()
-        .key("again")
-        .gap(6.0)
-        .child(section_label(p, "label", tr("Saved recording")))
-        .child(menu);
-    if let Some(pending) = ui
-        .history
-        .pending
-        .as_ref()
-        .filter(|pending| pending.id == id && !running)
-    {
-        section = section.child(language_row(ui, p, pending, layer));
-    }
-    match again.and_then(|again| again.result.as_ref().map(|result| (again, result))) {
-        Some((again, Ok(found))) => {
-            section = section
-                .child(section_label(
-                    p,
-                    "again-label",
-                    &tr_fill("Transcribed again with {}", &again.model),
-                ))
-                .child(
-                    text(if found.is_empty() {
-                        tr("No speech was found.").to_string()
-                    } else {
-                        found.clone()
-                    })
-                    .key("again-text")
-                    .font(p.k.ty.body)
-                    .color(p.text())
-                    .wrap(),
-                );
-            if !found.is_empty() {
-                section = section.child(
-                    row()
-                        .key("again-actions")
-                        .gap(8.0)
-                        .child(button(
-                            p,
-                            "again-copy",
-                            if again.copied {
-                                tr("Copied")
-                            } else {
-                                tr("Copy")
-                            },
-                            ButtonKind::Secondary,
-                            move |ui: &mut Ui, tx: &mut Tx| {
-                                if let Some(again) =
-                                    ui.history.again.as_mut().filter(|again| again.id == id)
-                                    && let Some(Ok(text)) = &again.result
-                                {
-                                    tx.copy(text.clone());
-                                    again.copied = true;
-                                }
-                            },
-                        ))
-                        .child(button(
-                            p,
-                            "again-replace",
-                            tr("Replace"),
-                            ButtonKind::Secondary,
-                            move |ui: &mut Ui, _| replace(ui, id),
-                        )),
-                );
-            }
-        }
-        Some((_, Err(error))) => {
-            section = section.child(
-                text(tr_fill("Could not transcribe again: {}", tr(error)))
-                    .key("again-error")
-                    .font(super::controls::DESCRIPTION)
-                    .color(p.muted())
-                    .wrap(),
-            );
-        }
-        None => {}
-    }
-    section
-}
-
-/// The chosen model's language for this run, and Transcribe.
-fn language_row(ui: &Ui, p: Paint, pending: &Pending, layer: &mut Vec<El>) -> El {
-    use crate::transcription::models::language_name;
-    let choices = language_choices(pending.model).unwrap_or_default();
-    let labels: Vec<&str> = choices.iter().map(|code| language_name(code)).collect();
-    let current = tr_named(
-        "{model} · Language: {language}",
-        &[
-            ("model", pending.name),
-            ("language", language_name(&pending.language)),
-        ],
-    );
-    let languages = Select::new("again-language", &labels)
-        .appearance(SelectAppearance::Inline)
-        .current(Some(&current))
-        .open(ui.open == Some(Menu::HistoryAgainLanguage))
-        .on_toggle(|ui: &mut Ui| {
-            ui.open =
-                (ui.open != Some(Menu::HistoryAgainLanguage)).then_some(Menu::HistoryAgainLanguage);
-        })
-        .on_close(|ui: &mut Ui| ui.open = None)
-        .on_choose(|ui: &mut Ui, choice: &str, _: &mut Tx| {
-            ui.open = None;
-            if let Some(pending) = &mut ui.history.pending
-                && let Some(code) = language_choices(pending.model).and_then(|choices| {
-                    choices
-                        .into_iter()
-                        .find(|code| crate::transcription::models::language_name(code) == choice)
-                })
-            {
-                pending.language = code.into();
-            }
-        })
-        .build(p.k, layer);
-    row()
-        .key("again-pending")
-        .gap(8.0)
-        .child(languages)
-        .child(button(
-            p,
-            "again-start",
-            tr("Transcribe"),
-            ButtonKind::Secondary,
-            |ui: &mut Ui, _| transcribe_pending(ui),
-        ))
 }

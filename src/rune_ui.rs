@@ -14,8 +14,6 @@ mod controls;
 #[cfg(target_os = "macos")]
 pub(crate) mod deep_link;
 mod explainer;
-mod found;
-mod found_choice;
 mod fun;
 mod general;
 mod history;
@@ -31,15 +29,12 @@ mod labs;
 mod list_detail;
 mod lists;
 pub(crate) mod live_text;
-mod model_details;
-mod model_import;
 mod models;
 mod modes;
 mod onboarding;
 mod onboarding_kit;
 mod output;
 mod paste_access;
-mod picker;
 mod platform;
 mod platform_settings;
 pub(crate) mod playground;
@@ -66,11 +61,10 @@ use crate::desktop::host::{
     DesktopTranscriptionSnapshot, DesktopUpdateStatus,
 };
 use crate::desktop::i18n::{tr, tr_fill};
-use crate::transcription::models::TranscriptionModelId;
 use controls::{METRICS, Paint};
 use host::{Backend, Request, ShortcutTarget};
 use onboarding_kit::live::Page;
-use scenes::{SCENES, Scene, fixture, mac_fixture, portal_fixture};
+use scenes::{SCENES, Scene, fixture, mac_fixture};
 use settings::Capture;
 use sidebar::{BuildKind, Pane, sidebar, title_bar};
 
@@ -316,7 +310,6 @@ fn on_close(ui: &mut Ui, _: &mut Tx) {
     settings::cancel_capture(ui);
     ui.open = None;
     models::close(ui);
-    picker::close(ui);
     explainer::close(ui);
     sound_sets::close(ui);
     vocabulary::close(ui);
@@ -337,7 +330,7 @@ fn on_close(ui: &mut Ui, _: &mut Tx) {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Destination {
     Settings,
-    /// Settings with the transcription picker open.
+    /// Settings with the transcription controls; General now, with no picker.
     Models,
     Modes,
     History,
@@ -362,15 +355,11 @@ pub(crate) fn show(ui: &mut Ui, destination: Destination, tx: &mut Tx) {
         Destination::Modes => Pane::Output,
         Destination::History => Pane::History,
     };
-    picker::close(ui);
     explainer::close(ui);
     sound_sets::close(ui);
     vocabulary::close(ui);
     if pane.shown(ui) {
         ui.select_pane(pane, tx);
-    }
-    if destination == Destination::Models {
-        picker::open(ui);
     }
 }
 
@@ -546,16 +535,8 @@ struct ServiceView {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Menu {
     Microphone,
-    /// An input source's model in keyboard model switching.
-    InputSourceModel(usize),
-    /// An input source's language in keyboard model switching.
-    InputSourceLanguage(usize),
     /// How long History keeps dictations.
     HistoryRetention,
-    /// The installed models History's Transcribe again offers.
-    HistoryAgain,
-    /// The language of Transcribe again's chosen model, for that run.
-    HistoryAgainLanguage,
     /// The OpenCode thinking variant.
     Variant,
     /// The transformations a mode can add (the Modes pane).
@@ -586,10 +567,6 @@ pub(crate) struct Ui {
     microphones_route: Option<u64>,
     /// The poll clock `microphones` was last listed at.
     microphones_listed_at: f64,
-    /// When Windows and Linux last listed keyboard input sources; macOS's
-    /// native host lists them.
-    #[cfg_attr(target_os = "macos", allow(dead_code))]
-    input_sources_listed_at: f64,
     /// A listing in flight. Listing reads CoreAudio or COM endpoint
     /// properties, which can block, so it runs off the UI thread.
     microphones_listing:
@@ -605,8 +582,6 @@ pub(crate) struct Ui {
     build_preview: Option<BuildKind>,
     capture: Capture,
     vocabulary: vocabulary::VocabularyEditor,
-    /// The model the service was last seen preparing, and since when.
-    preparing: Option<(TranscriptionModelId, Instant)>,
     /// When a text field last changed without being saved.
     draft_since: Option<Instant>,
     duck_volume_drag: Option<f32>,
@@ -614,9 +589,6 @@ pub(crate) struct Ui {
     history: history::HistoryPane,
     modes: modes::ModesPane,
     output: output::OutputPane,
-    picker: picker::Picker,
-    /// Speech models already on this computer, and choosing one.
-    found: found::FoundState,
     explainer: explainer::Explainer,
     sound_sets: sound_sets::SoundSets,
     tour: Option<onboarding::Tour>,
@@ -708,7 +680,6 @@ impl Ui {
             microphones: Ok(Default::default()),
             microphones_route: None,
             microphones_listed_at: 0.0,
-            input_sources_listed_at: f64::NEG_INFINITY,
             microphones_listing: None,
             mic_level: general::MicLevel::default(),
             advanced: Vec::new(),
@@ -717,15 +688,12 @@ impl Ui {
             build_preview: None,
             capture: Capture::Idle,
             vocabulary,
-            preparing: None,
             draft_since: None,
             duck_volume_drag: None,
             models: models::Models::default(),
             history: history::HistoryPane::default(),
             modes,
             output: output::OutputPane::default(),
-            picker: picker::Picker::default(),
-            found: found::FoundState::default(),
             explainer: explainer::Explainer::default(),
             sound_sets: sound_sets::SoundSets::default(),
             tour: None,
@@ -963,7 +931,6 @@ impl Ui {
         settings::cancel_capture(self);
         self.open = None;
         models::close(self);
-        picker::close(self);
         explainer::close(self);
         sound_sets::close(self);
         vocabulary::close(self);
@@ -1001,7 +968,6 @@ fn on_key(ui: &mut Ui, event: &rune::KeyEvent, tx: &mut Tx) -> bool {
     }
     if let rune::Key::Command(digit @ '1'..='9') = event.key
         && !event.mods.alt
-        && !ui.picker.open
         && !ui.explainer.open
         && !ui.sound_sets.open
         && !ui.vocabulary.open
@@ -1025,9 +991,6 @@ fn on_key(ui: &mut Ui, event: &rune::KeyEvent, tx: &mut Tx) -> bool {
         true
     } else if ui.vocabulary.open {
         vocabulary::close(ui);
-        true
-    } else if ui.picker.open {
-        picker::close(ui);
         true
     } else if ui.open.is_some() {
         ui.open = None;
@@ -1090,8 +1053,6 @@ fn poll(ui: &mut Ui, clock: f64, tx: &mut Tx) -> bool {
     }
     changed |= ui.modes.poll(ui.live());
     changed |= modes::poll_chooser(ui);
-    changed |= model_import::poll(ui);
-    changed |= found::poll(ui);
     let login_unknown = ui.platform.login_item.is_none();
     changed |= settings::poll_microphones(ui);
     // General names the input in use; list again when the OS reports an
@@ -1109,9 +1070,7 @@ fn poll(ui: &mut Ui, clock: f64, tx: &mut Tx) -> bool {
     platform_settings::update_shown_permissions(ui);
     changed |= ui.host.poll(&mut ui.platform);
     #[cfg(not(target_os = "macos"))]
-    {
-        changed |= settings::poll_input_sources(ui, clock);
-    }
+    {}
     // macOS reports the login item moments after launch; its switch replaces
     // "Checking…" at once instead of fading in and reflowing the row.
     if login_unknown && ui.platform.login_item.is_some() {
@@ -1145,14 +1104,6 @@ fn poll(ui: &mut Ui, clock: f64, tx: &mut Tx) -> bool {
                 changed = true;
             }
         }
-    }
-    let preparing = ui
-        .view
-        .as_ref()
-        .and_then(|view| view.transcription.preparing);
-    if preparing != ui.preparing.map(|(model, _)| model) {
-        ui.preparing = preparing.map(|model| (model, now));
-        changed = true;
     }
     changed |= onboarding::poll(ui);
     changed |= onboarding_kit::live::poll(ui, tx);
@@ -1214,9 +1165,6 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
         .hover_motion_within(Anim::INSTANT, Anim::INSTANT)
         .child(sidebar(ui, p))
         .child(panel);
-    if let Some(modal) = picker::modal(ui, p) {
-        layer.extend(modal);
-    }
     if let Some(modal) = explainer::modal(ui, cx, p) {
         layer.extend(modal);
     }
@@ -1294,9 +1242,6 @@ mod offscreen;
 
 #[cfg(test)]
 mod snap_isolation;
-
-#[cfg(test)]
-mod keyboard_model_tests;
 
 #[cfg(test)]
 mod dmg_keycap;

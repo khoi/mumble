@@ -85,15 +85,6 @@ line_icon!(
     ]
 );
 line_icon!(
-    TIMER,
-    "hex-row-timer",
-    [
-        "M10 2h4",
-        "m12 14 3-3",
-        "M4 14a8 8 0 1 0 16 0a8 8 0 1 0-16 0",
-    ]
-);
-line_icon!(
     ZAP,
     "hex-row-zap",
     [

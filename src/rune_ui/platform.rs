@@ -51,9 +51,6 @@ pub(super) struct Capabilities {
     /// Modifier-only shortcuts can require the left or right key (macOS,
     /// Windows; X11 grabs and the Wayland portal see no sides).
     pub(super) modifier_sides: bool,
-    /// Input-source changes can operate the installed-model picker (macOS,
-    /// Windows, and Linux on X11; Wayland has no general layout protocol).
-    pub(super) keyboard_model_switching: bool,
 }
 
 impl Capabilities {
@@ -69,7 +66,6 @@ impl Capabilities {
         practice_dictation: true,
         fun: true,
         modifier_sides: false,
-        keyboard_model_switching: true,
     };
 
     pub(super) const MACOS: Self = Self {
@@ -84,7 +80,6 @@ impl Capabilities {
         practice_dictation: true,
         fun: true,
         modifier_sides: true,
-        keyboard_model_switching: true,
     };
 
     pub(super) const WINDOWS: Self = Self {
@@ -99,7 +94,6 @@ impl Capabilities {
         practice_dictation: true,
         fun: false,
         modifier_sides: true,
-        keyboard_model_switching: true,
     };
 
     /// This OS's capabilities, with the rows its window host decides.
@@ -113,8 +107,6 @@ impl Capabilities {
         };
         Self {
             terminal_paste: super::host::TERMINAL_PASTE,
-            keyboard_model_switching: os.keyboard_model_switching
-                && crate::keyboard_input_sources::available(),
             ..os
         }
     }
@@ -124,10 +116,8 @@ impl Capabilities {
 #[derive(Clone, Debug)]
 pub(super) struct PlatformState {
     pub(super) caps: Capabilities,
-    pub(super) input_sources: Vec<crate::transcription::keyboard_model_switching::InputSource>,
-    /// Microphone, Accessibility, and whether the selected
-    /// speech model is installed. Every permission is ready where the OS has
-    /// none.
+    /// Microphone and Accessibility (macOS). Every permission is ready where
+    /// the OS has none.
     pub(super) permissions: SetupStatus,
     /// Permissions whose Allow was pressed since they were last granted.
     pub(super) permissions_asked: Vec<PermissionKind>,
@@ -210,8 +200,7 @@ impl PlatformState {
     pub(super) fn new(caps: Capabilities) -> Self {
         Self {
             caps,
-            input_sources: Vec::new(),
-            permissions: crate::desktop::onboarding::status_with_transcription_model(false),
+            permissions: crate::desktop::onboarding::status(),
             permissions_asked: Vec::new(),
             permissions_stale: Vec::new(),
             permissions_shown: Vec::new(),
@@ -233,18 +222,13 @@ impl PlatformState {
         }
     }
 
-    /// The permission state with `transcription_model` from the caller,
-    /// which knows the selected model.
-    pub(super) fn setup_status(&self, transcription_model: bool) -> SetupStatus {
+    /// The permission state; every permission reads ready where the OS has
+    /// none, or in a preview.
+    pub(super) fn setup_status(&self) -> SetupStatus {
         if !self.caps.permissions && !self.preview {
-            return crate::desktop::onboarding::status_with_transcription_model(
-                transcription_model,
-            );
+            return crate::desktop::onboarding::status();
         }
-        SetupStatus {
-            transcription_model,
-            ..self.permissions
-        }
+        self.permissions
     }
 
     /// Adopts what the window host's login item reported: `None` where the
@@ -358,7 +342,6 @@ impl PlatformState {
         state.permissions = SetupStatus {
             microphone: ready,
             accessibility: ready,
-            transcription_model: true,
         };
         state.system_audio = true;
         state.login_item = caps.launch_at_login.then_some(LoginItemStatus::Disabled);
@@ -619,7 +602,7 @@ const DIFFERENCES: &[(&str, Difference)] = &[
 impl Capabilities {
     /// Every capability by name. Destructuring makes a new capability a
     /// compile error here until it is named.
-    pub(super) fn fields(self) -> [(&'static str, bool); 11] {
+    pub(super) fn fields(self) -> [(&'static str, bool); 10] {
         let Self {
             os: _,
             permissions,
@@ -632,7 +615,6 @@ impl Capabilities {
             practice_dictation,
             fun,
             modifier_sides,
-            keyboard_model_switching,
         } = self;
         [
             ("permissions", permissions),
@@ -645,7 +627,6 @@ impl Capabilities {
             ("practice_dictation", practice_dictation),
             ("fun", fun),
             ("modifier_sides", modifier_sides),
-            ("keyboard_model_switching", keyboard_model_switching),
         ]
     }
 }

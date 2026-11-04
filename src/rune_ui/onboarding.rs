@@ -1,21 +1,18 @@
 //! The first run's state machine in the window: [`Tour`] feeds
-//! `onboarding::Flow` the permissions and the model download, starts the
-//! download, asks for permissions, relaunches when macOS needs it, watches
-//! the practice dictation, and records completion. The first run the person
-//! sees is the onboarding story over it ([`onboarding_kit::live`]), the one
-//! onboarding on every OS.
+//! `onboarding::Flow` the permission state, asks for permissions, relaunches
+//! when macOS needs it, watches the practice dictation, and records
+//! completion. The first run the person sees is the onboarding story over it
+//! ([`onboarding_kit::live`]), the one onboarding on every OS. Transcription
+//! is cloud-only, so there is no model step to download or install.
 //!
 //! [`onboarding_kit::live`]: super::onboarding_kit::live
 
 use std::time::{Duration, Instant};
 
-use super::Request;
 use super::Ui;
 use super::platform::{PlatformRequest, PlatformState};
 use crate::app_settings::AppSettings;
-use crate::desktop::onboarding::{
-    Effect, Flow, Input, ItemStatus, ModelProgress, PermissionState, SetupItem, Step,
-};
+use crate::desktop::onboarding::{Effect, Flow, Input, PermissionState, SetupItem, Step};
 
 /// How long the ready check shows before setup moves on.
 const ADVANCE_BEAT: Duration = Duration::from_millis(700);
@@ -36,12 +33,11 @@ impl Tour {
     }
 
     /// The tour from Welcome, as on a new install: Run setup again.
-    pub(super) fn replay(settings: &AppSettings, platform: &PlatformState) -> Tour {
-        let installed = super::picker::Picker::default().selected_installed(settings);
+    pub(super) fn replay(_settings: &AppSettings, platform: &PlatformState) -> Tour {
         Tour::new(
             Flow::new(
                 Step::Welcome,
-                platform.setup_status(installed),
+                platform.setup_status(),
                 platform.caps.permissions,
                 platform.caps.practice_dictation,
             ),
@@ -50,9 +46,8 @@ impl Tour {
     }
 
     /// The tour when this run still needs it.
-    pub(super) fn start(settings: &AppSettings, platform: &PlatformState) -> Option<Tour> {
-        let installed = super::picker::Picker::default().selected_installed(settings);
-        let status = platform.setup_status(installed);
+    pub(super) fn start(_settings: &AppSettings, platform: &PlatformState) -> Option<Tour> {
+        let status = platform.setup_status();
         let completed = crate::desktop::onboarding::completion_recorded();
         let resume = crate::desktop::onboarding::take_resume();
         let saved = (!completed)
@@ -72,57 +67,9 @@ impl Tour {
     }
 }
 
-pub(super) fn progress(ui: &Ui) -> (bool, ModelProgress) {
-    let installed = ui.picker.selected_installed(&ui.settings);
-    let selected = crate::transcription::models::validate(&ui.settings.transcription).ok();
-    let transcription = ui.view.as_ref().map(|view| &view.transcription);
-    let downloading = selected.and_then(|model| {
-        (transcription.and_then(|t| t.preparing) == Some(model.id)).then(|| {
-            model.download_bytes().map_or(0.0, |bytes| {
-                (transcription.map_or(0, |t| t.downloaded_bytes) as f32 / bytes as f32)
-                    .clamp(0.0, 1.0)
-            })
-        })
-    });
-    (
-        installed,
-        ModelProgress {
-            installed,
-            downloading,
-            failed: downloading.is_none() && transcription.is_some_and(|t| t.error.is_some()),
-        },
-    )
-}
-
-/// Feeds the flow fresh permission and model state; true when the tour
-/// changed.
+/// Feeds the flow fresh permission state; true when the tour changed.
 pub(super) fn poll(ui: &mut Ui) -> bool {
-    // Onboarding looks for models already on this computer once, and holds
-    // its own download until the scan answers; with one found, the model
-    // list (`found_choice`) starts the row the person picks.
-    if ui.tour.is_some() {
-        super::found::scan_for_setup(ui);
-        // Only until setup: past it, the recommended model downloads.
-        let held = (ui.found.scanning() || !ui.found.models.is_empty())
-            && ui
-                .tour
-                .as_ref()
-                .is_some_and(|tour| matches!(tour.flow.step(), Step::Welcome | Step::Setup));
-        let choosing = super::found_choice::offered(
-            ui,
-            ui.tour
-                .as_ref()
-                .map_or(ItemStatus::Todo, |tour| tour.flow.view().model),
-        );
-        if choosing && ui.found.recommended.is_none() {
-            ui.found.recommended = Some(ui.settings.transcription.clone());
-        }
-        if let Some(tour) = &mut ui.tour {
-            tour.flow.hold_download(held);
-        }
-    }
-    let (installed, model) = progress(ui);
-    let status = ui.platform.setup_status(installed);
+    let status = ui.platform.setup_status();
     let accessibility_stale = ui
         .platform
         .stale(crate::desktop::onboarding::PermissionKind::Accessibility);
@@ -132,7 +79,7 @@ pub(super) fn poll(ui: &mut Ui) -> bool {
     };
     let before = tour.flow.view();
     let step = before.step;
-    let mut effect = tour.flow.on(Input::Status(status, model));
+    let mut effect = tour.flow.on(Input::Status(status));
     tour.flow.set_accessibility_stale(accessibility_stale);
     if tour
         .advance_at
@@ -184,20 +131,6 @@ fn remember_step(ui: &Ui, before: Step) {
 
 fn apply(ui: &mut Ui, effect: Effect) {
     match effect {
-        Effect::DownloadModel => {
-            // The model onboarding's choice picked, else the recommended one.
-            let selection = ui
-                .found
-                .choice
-                .take()
-                .unwrap_or_else(|| ui.settings.transcription.clone());
-            if crate::transcription::models::validate(&selection).is_ok() {
-                ui.send(Request::ChooseModel {
-                    model: selection.model,
-                    language: selection.language,
-                });
-            }
-        }
         Effect::AdvanceSoon => {
             if let Some(tour) = &mut ui.tour {
                 tour.advance_at = Some(Instant::now());
@@ -221,37 +154,20 @@ fn apply(ui: &mut Ui, effect: Effect) {
     }
 }
 
-/// A first run at `step`, with the selected model not yet installed.
-pub(super) fn fixture(ui: &mut Ui, step: Step, downloading: bool) {
-    ui.picker.installed = Some(Vec::new());
-    let status = ui.platform.setup_status(false);
+/// A first run at `step`.
+pub(super) fn fixture(ui: &mut Ui, step: Step) {
+    let status = ui.platform.setup_status();
     let mut flow = Flow::new(
         Step::Welcome,
         status,
         ui.platform.caps.permissions,
         ui.platform.caps.practice_dictation,
     );
-    flow.hold_download(!ui.found.models.is_empty());
     if step != Step::Welcome {
         flow.on(Input::Continue);
     }
     ui.tour = Some(Tour::new(flow, false));
-    if downloading {
-        input(ui, Input::Grant(SetupItem::Model));
-        set_downloaded(ui, 62);
-        poll(ui);
-    }
-}
-
-pub(super) fn set_downloaded(ui: &mut Ui, percent: u64) {
-    if let Some(view) = &mut ui.view {
-        let model = ui.settings.transcription.model;
-        let bytes = crate::transcription::models::definition(model)
-            .download_bytes()
-            .unwrap_or(0);
-        view.transcription.preparing = Some(model);
-        view.transcription.downloaded_bytes = bytes * percent / 100;
-    }
+    poll(ui);
 }
 
 /// The macOS tour's states, walked as a person would.
@@ -275,9 +191,7 @@ pub(super) fn mac_fixture(ui: &mut Ui, state: MacStep) {
     let fresh = crate::desktop::onboarding::SetupStatus {
         microphone: NeedsRequest,
         accessibility: NeedsSettings,
-        transcription_model: false,
     };
-    let installed = matches!(state, MacStep::TryIt | MacStep::TryItReopen | MacStep::Done);
     let permissions = match state {
         MacStep::Setup => fresh,
         MacStep::SetupStale => crate::desktop::onboarding::SetupStatus {
@@ -291,21 +205,17 @@ pub(super) fn mac_fixture(ui: &mut Ui, state: MacStep) {
         MacStep::SetupRestart => crate::desktop::onboarding::SetupStatus {
             microphone: Ready,
             accessibility: NeedsRestart,
-            ..fresh
         },
         _ => crate::desktop::onboarding::SetupStatus {
             microphone: Ready,
             accessibility: Ready,
-            transcription_model: true,
         },
     };
     ui.platform.permissions = fresh;
-    ui.picker.installed = Some(Vec::new());
     ui.tour = Some(Tour::new(
         Flow::new(Step::Welcome, fresh, true, true),
         false,
     ));
-    // The tour starts the download as soon as it sees no model.
     poll(ui);
     input(ui, Input::Continue);
     if state == MacStep::SetupStale {
@@ -316,16 +226,8 @@ pub(super) fn mac_fixture(ui: &mut Ui, state: MacStep) {
             .note_stale(crate::desktop::onboarding::PermissionKind::Accessibility);
     }
     ui.platform.permissions = permissions;
-    if installed {
-        ui.picker.installed = Some(vec![ui.settings.transcription.model]);
-        if let Some(view) = &mut ui.view {
-            view.transcription.preparing = None;
-        }
-    } else {
-        set_downloaded(ui, 31);
-    }
     poll(ui);
-    if installed {
+    if permissions.ready() {
         input(ui, Input::Continue);
     }
     if let Some(tour) = &mut ui.tour {
@@ -347,6 +249,7 @@ pub(super) fn mac_fixture(ui: &mut Ui, state: MacStep) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::desktop::onboarding::ItemStatus;
 
     #[test]
     fn mac_stale_fixture_marks_accessibility_stale_and_dispatches_reset() {

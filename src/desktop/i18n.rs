@@ -128,21 +128,6 @@ fn is_traditional_chinese(tag: &str) -> bool {
     false
 }
 
-pub(crate) fn system_language() -> String {
-    #[cfg(target_os = "windows")]
-    {
-        windows_user_language()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        language_from_env(
-            std::env::var("LC_ALL").ok().as_deref(),
-            std::env::var("LC_MESSAGES").ok().as_deref(),
-            std::env::var("LANG").ok().as_deref(),
-        )
-    }
-}
-
 /// The system locale with its script and region, for the interface
 /// language: the Windows user locale or the POSIX locale variables.
 fn system_locale() -> String {
@@ -170,22 +155,6 @@ fn preferred_locale() -> String {
     system_locale()
 }
 
-/// The person's first preferred language, for choosing a speech model. On
-/// macOS this is the system's language list, which apps opened from Finder
-/// see without `LANG`.
-pub(crate) fn preferred_language() -> String {
-    #[cfg(target_os = "macos")]
-    if let Some(language) = macos_preferred_language() {
-        return language;
-    }
-    system_language()
-}
-
-#[cfg(target_os = "macos")]
-fn macos_preferred_language() -> Option<String> {
-    primary_subtag(&macos_preferred_locale()?)
-}
-
 /// The first entry of `NSLocale.preferredLanguages`, such as `zh-Hant-TW`.
 #[cfg(target_os = "macos")]
 fn macos_preferred_locale() -> Option<String> {
@@ -206,16 +175,6 @@ fn primary_subtag(tag: &str) -> Option<String> {
     (!subtag.is_empty()).then_some(subtag)
 }
 
-/// The primary subtag of the Windows user locale: `pl-PL` yields `pl`.
-#[cfg(target_os = "windows")]
-fn windows_user_language() -> String {
-    windows_user_locale()
-        .split(['-', '_'])
-        .next()
-        .unwrap_or("en")
-        .to_ascii_lowercase()
-}
-
 /// The Windows user locale name in full, such as `zh-TW`; `en` if unread.
 #[cfg(target_os = "windows")]
 fn windows_user_locale() -> String {
@@ -229,31 +188,8 @@ fn windows_user_locale() -> String {
     String::from_utf16_lossy(&buffer[..length as usize - 1])
 }
 
-/// The primary language subtag from POSIX locale variables, in their
-/// standard precedence: `pl_PL.UTF-8` yields `pl`.
-#[cfg_attr(target_os = "windows", allow(dead_code))]
-fn language_from_env(
-    lc_all: Option<&str>,
-    lc_messages: Option<&str>,
-    lang: Option<&str>,
-) -> String {
-    [lc_all, lc_messages, lang]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .find(|value| !value.is_empty() && *value != "C" && *value != "POSIX")
-        .map(|value| {
-            value
-                .chars()
-                .take_while(|character| character.is_ascii_alphabetic())
-                .collect::<String>()
-                .to_lowercase()
-        })
-        .unwrap_or_default()
-}
-
-/// The first set POSIX locale variable in full, in the same precedence as
-/// [`language_from_env`]: `zh_TW.UTF-8` stays `zh_TW.UTF-8`.
+/// The first set POSIX locale variable in full, in POSIX precedence:
+/// `zh_TW.UTF-8` stays `zh_TW.UTF-8`.
 #[cfg_attr(target_os = "windows", allow(dead_code))]
 fn locale_from_env(lc_all: Option<&str>, lc_messages: Option<&str>, lang: Option<&str>) -> String {
     [lc_all, lc_messages, lang]
@@ -1157,7 +1093,7 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
 #[cfg(test)]
 mod tests {
     use super::TRANSLATIONS;
-    use super::{language_from_env, primary_subtag};
+    use super::primary_subtag;
 
     #[test]
     fn system_language_tags_choose_their_interface_column() {
@@ -1255,19 +1191,6 @@ mod tests {
     }
 
     #[test]
-    fn posix_locale_variables_resolve_in_precedence_order() {
-        assert_eq!(language_from_env(Some("pl_PL.UTF-8"), None, None), "pl");
-        assert_eq!(
-            language_from_env(None, Some("de_DE"), Some("es_ES.UTF-8")),
-            "de"
-        );
-        assert_eq!(language_from_env(None, None, Some("ja_JP.UTF-8")), "ja");
-        assert_eq!(language_from_env(Some("C"), None, Some("pl_PL")), "pl");
-        assert_eq!(language_from_env(None, None, Some("POSIX")), "");
-        assert_eq!(language_from_env(None, None, None), "");
-    }
-
-    #[test]
     fn templates_keep_their_placeholder_in_every_language() {
         for (english, translated) in TRANSLATIONS {
             if english.contains("{}") {
@@ -1297,10 +1220,6 @@ mod tests {
         include_str!("../rune_ui/lists.rs"),
         include_str!("../rune_ui/macos_host.rs"),
         include_str!("../rune_ui/models.rs"),
-        include_str!("../rune_ui/found.rs"),
-        include_str!("../rune_ui/found_choice.rs"),
-        include_str!("../rune_ui/model_details.rs"),
-        include_str!("../rune_ui/model_import.rs"),
         include_str!("../rune_ui/modes.rs"),
         include_str!("../rune_ui/onboarding_kit/first_run.rs"),
         include_str!("../rune_ui/onboarding_kit/flows.rs"),
@@ -1308,14 +1227,9 @@ mod tests {
         include_str!("../rune_ui/onboarding_kit/landing.rs"),
         include_str!("../rune_ui/onboarding_kit/live.rs"),
         include_str!("../rune_ui/onboarding_kit/permissions.rs"),
-        include_str!("../rune_ui/onboarding_kit/pill.rs"),
         include_str!("../rune_ui/onboarding_kit/stories.rs"),
         include_str!("../rune_ui/onboarding_kit/versus.rs"),
         include_str!("../rune_ui/output.rs"),
-        include_str!("../rune_ui/picker.rs"),
-        include_str!("../rune_ui/picker/compare.rs"),
-        include_str!("../rune_ui/picker/facts.rs"),
-        include_str!("../rune_ui/picker/list.rs"),
         include_str!("../rune_ui/platform_settings.rs"),
         include_str!("../rune_ui/settings.rs"),
         include_str!("../rune_ui/shortcut_mode.rs"),

@@ -2,13 +2,8 @@
 //! each behind its own switch, off by default. There is no master switch:
 //! Settings › Labs lists every feature as a row with a toggle. A feature
 //! with its own pane (Voice Filter, Playground) joins the sidebar as a
-//! normal item while on and is hidden while off; a behaviour-only feature
-//! (Live text, Vocabulary biasing, keyboard-language
-//! model switching, mouse shortcuts, pausing the browser, restoring Paste
-//! last dictation's default shortcut, keeping the dictation on the
-//! clipboard or only copying it (macOS), a second dictation shortcut
-//! (macOS), Toggle's tap or hold (macOS, Linux), and Terminal paste and
-//! shortcut sharing on Windows) is just its toggle.
+//! normal item while on and is hidden while off; a behaviour-only feature is
+//! just its toggle.
 //!
 //! Each feature has an audience (`Feature::audience`): `Everyone` ships in
 //! every build; `Dev` exists only in dev builds (`dev_build::is_dev_build`:
@@ -61,13 +56,10 @@ pub enum Feature {
     VoiceFilter,
     Playground,
     LiveText,
-    VocabularyBiasing,
     TerminalPaste,
-    KeyboardModelSwitching,
     MouseShortcuts,
     PauseBrowser,
     ShareShortcut,
-    UnloadIdle,
     RestoreShortcutDefault,
     KeepOnClipboard,
     CopyOnly,
@@ -76,38 +68,26 @@ pub enum Feature {
     SecondDictationShortcut,
     SmartSpacing,
     SpokenSymbols,
-    PickerSortFilter,
     SidedChords,
     TapOrHold,
-    BenchmarkDetails,
-    ParakeetUltra,
     StandaloneSpecialKeys,
     HistoryStats,
     RecentDictations,
-    SkipPauses,
     OutputFixes,
-    PickerActiveFirst,
-    ModelInPlace,
-    PickerDownloaded,
     SectionKeyAlone,
-    KeepRecordings,
     HideMenuBarIcon,
     GnomeClipboardRestore,
-    CloudTranscription,
 }
 
 impl Feature {
-    pub const ALL: [Self; 36] = [
+    pub const ALL: [Self; 24] = [
         Self::VoiceFilter,
         Self::Playground,
         Self::LiveText,
-        Self::VocabularyBiasing,
         Self::TerminalPaste,
-        Self::KeyboardModelSwitching,
         Self::MouseShortcuts,
         Self::PauseBrowser,
         Self::ShareShortcut,
-        Self::UnloadIdle,
         Self::RestoreShortcutDefault,
         Self::KeepOnClipboard,
         Self::CopyOnly,
@@ -116,24 +96,15 @@ impl Feature {
         Self::SecondDictationShortcut,
         Self::SmartSpacing,
         Self::SpokenSymbols,
-        Self::PickerSortFilter,
         Self::SidedChords,
         Self::TapOrHold,
-        Self::BenchmarkDetails,
-        Self::ParakeetUltra,
         Self::StandaloneSpecialKeys,
         Self::HistoryStats,
         Self::RecentDictations,
-        Self::SkipPauses,
         Self::OutputFixes,
-        Self::PickerActiveFirst,
-        Self::ModelInPlace,
-        Self::PickerDownloaded,
         Self::SectionKeyAlone,
-        Self::KeepRecordings,
         Self::HideMenuBarIcon,
         Self::GnomeClipboardRestore,
-        Self::CloudTranscription,
     ];
 
     /// The features this OS and build have.
@@ -160,13 +131,10 @@ impl Feature {
             Self::VoiceFilter
             | Self::Playground
             | Self::LiveText
-            | Self::VocabularyBiasing
             | Self::TerminalPaste
-            | Self::KeyboardModelSwitching
             | Self::MouseShortcuts
             | Self::PauseBrowser
             | Self::ShareShortcut
-            | Self::UnloadIdle
             | Self::RestoreShortcutDefault
             | Self::KeepOnClipboard
             | Self::CopyOnly
@@ -175,46 +143,20 @@ impl Feature {
             | Self::SecondDictationShortcut
             | Self::SmartSpacing
             | Self::SpokenSymbols
-            | Self::PickerSortFilter
             | Self::SidedChords
             | Self::TapOrHold
-            | Self::BenchmarkDetails
-            | Self::ParakeetUltra
             | Self::StandaloneSpecialKeys
             | Self::HistoryStats
             | Self::RecentDictations
-            | Self::SkipPauses
             | Self::OutputFixes
-            | Self::PickerActiveFirst
-            | Self::ModelInPlace
-            | Self::PickerDownloaded
             | Self::SectionKeyAlone
-            | Self::KeepRecordings
             | Self::HideMenuBarIcon
-            | Self::GnomeClipboardRestore
-            | Self::CloudTranscription => Audience::Everyone,
+            | Self::GnomeClipboardRestore => Audience::Everyone,
         }
     }
 
-    /// Why turning this feature off is refused now: Parakeet Ultra stays on
-    /// while it is the dictation model, until a switch to another succeeds.
-    pub fn off_refusal(self, settings: &AppSettings) -> Option<&'static str> {
-        (self == Self::ParakeetUltra
-            && settings.transcription.model
-                == crate::transcription::models::TranscriptionModelId::ParakeetUltra)
-            .then_some(
-                "Parakeet Ultra is the dictation model; choose another model before turning it off",
-            )
-    }
-
-    /// The feature `hex settings` key `key` switches (its toggle, Unload
-    /// when idle's minutes, or Cloud transcription's provider).
+    /// The feature `hex settings` key `key` switches.
     pub fn for_settings_key(key: &str) -> Option<Self> {
-        match key {
-            "labs.unload_idle_minutes" => return Some(Self::UnloadIdle),
-            "labs.cloud_transcription_provider" => return Some(Self::CloudTranscription),
-            _ => {}
-        }
         Self::ALL
             .into_iter()
             .find(|feature| feature.settings_key() == key)
@@ -225,7 +167,7 @@ impl Feature {
             Self::VoiceFilter => cfg!(any(target_os = "macos", target_os = "linux")),
             Self::TerminalPaste | Self::ShareShortcut => cfg!(target_os = "windows"),
             Self::SectionKeyAlone | Self::GnomeClipboardRestore => cfg!(target_os = "linux"),
-            Self::StandaloneSpecialKeys | Self::SkipPauses => {
+            Self::StandaloneSpecialKeys => {
                 cfg!(any(target_os = "linux", target_os = "windows"))
             }
             Self::MouseShortcuts
@@ -238,24 +180,13 @@ impl Feature {
             | Self::RecentDictations
             | Self::HideMenuBarIcon => cfg!(target_os = "macos"),
             Self::TapOrHold => cfg!(any(target_os = "macos", target_os = "linux")),
-            Self::KeyboardModelSwitching => crate::keyboard_input_sources::available(),
             Self::Playground
             | Self::LiveText
-            | Self::VocabularyBiasing
-            | Self::UnloadIdle
             | Self::RestoreShortcutDefault
             | Self::SpokenFormatting
             | Self::SpokenSymbols
-            | Self::PickerSortFilter
-            | Self::BenchmarkDetails
-            | Self::ParakeetUltra
             | Self::HistoryStats
             | Self::OutputFixes
-            | Self::PickerActiveFirst
-            | Self::ModelInPlace
-            | Self::PickerDownloaded
-            | Self::KeepRecordings
-            | Self::CloudTranscription
             | Self::FillerWords => true,
         }
     }
@@ -266,13 +197,10 @@ impl Feature {
             Self::VoiceFilter => "voice-filter",
             Self::Playground => "playground",
             Self::LiveText => "live-text",
-            Self::VocabularyBiasing => "vocabulary-biasing",
             Self::TerminalPaste => "terminal-paste",
-            Self::KeyboardModelSwitching => "keyboard-model-switching",
             Self::MouseShortcuts => "mouse-shortcuts",
             Self::PauseBrowser => "pause-browser",
             Self::ShareShortcut => "share-shortcut",
-            Self::UnloadIdle => "unload-idle",
             Self::RestoreShortcutDefault => "restore-shortcut-default",
             Self::KeepOnClipboard => "keep-on-clipboard",
             Self::CopyOnly => "copy-only",
@@ -281,24 +209,15 @@ impl Feature {
             Self::SecondDictationShortcut => "second-dictation-shortcut",
             Self::SmartSpacing => "smart-spacing",
             Self::SpokenSymbols => "spoken-symbols",
-            Self::PickerSortFilter => "picker-sort-filter",
             Self::SidedChords => "sided-modifier-chords",
             Self::TapOrHold => "tap-or-hold",
-            Self::BenchmarkDetails => "benchmark-details",
-            Self::ParakeetUltra => "parakeet-ultra",
             Self::StandaloneSpecialKeys => "special-keys",
             Self::HistoryStats => "history-stats",
             Self::RecentDictations => "recent-dictations",
-            Self::SkipPauses => "skip-pauses",
             Self::OutputFixes => "output-fixes",
-            Self::PickerActiveFirst => "picker-active-first",
-            Self::ModelInPlace => "model-in-place",
-            Self::PickerDownloaded => "picker-downloaded",
             Self::SectionKeyAlone => "section-key",
-            Self::KeepRecordings => "keep-recordings",
             Self::HideMenuBarIcon => "hide-menu-bar-icon",
             Self::GnomeClipboardRestore => "gnome-clipboard-restore",
-            Self::CloudTranscription => "cloud-transcription",
         }
     }
 
@@ -308,13 +227,10 @@ impl Feature {
             Self::VoiceFilter => "experimental.hex_microphone",
             Self::Playground => "labs.playground",
             Self::LiveText => "labs.live_text",
-            Self::VocabularyBiasing => "labs.vocabulary_biasing",
             Self::TerminalPaste => "paste_with_shift",
-            Self::KeyboardModelSwitching => "keyboard_model_switching.enabled",
             Self::MouseShortcuts => "labs.mouse_shortcuts",
             Self::PauseBrowser => "pause_browser_media",
             Self::ShareShortcut => "share_dictation_shortcut",
-            Self::UnloadIdle => "labs.unload_idle",
             Self::RestoreShortcutDefault => "labs.restore_shortcut_default",
             Self::KeepOnClipboard => "labs.keep_on_clipboard",
             Self::CopyOnly => "labs.copy_only",
@@ -323,24 +239,15 @@ impl Feature {
             Self::SecondDictationShortcut => "labs.second_dictation_shortcut",
             Self::SmartSpacing => "labs.smart_spacing",
             Self::SpokenSymbols => "labs.spoken_symbols",
-            Self::PickerSortFilter => "labs.picker_sort_filter",
             Self::SidedChords => "labs.sided_modifier_chords",
             Self::TapOrHold => "labs.tap_or_hold",
-            Self::BenchmarkDetails => "labs.benchmark_details",
-            Self::ParakeetUltra => "labs.parakeet_ultra",
             Self::StandaloneSpecialKeys => "labs.standalone_special_keys",
             Self::HistoryStats => "labs.history_stats",
             Self::RecentDictations => "labs.recent_dictations",
-            Self::SkipPauses => "labs.skip_pauses",
             Self::OutputFixes => "labs.output_fixes",
-            Self::PickerActiveFirst => "labs.picker_active_first",
-            Self::ModelInPlace => "labs.model_in_place",
-            Self::PickerDownloaded => "labs.picker_downloaded",
             Self::SectionKeyAlone => "labs.section_key_alone",
-            Self::KeepRecordings => "labs.keep_recordings",
             Self::HideMenuBarIcon => "labs.hide_menu_bar_icon",
             Self::GnomeClipboardRestore => "labs.gnome_clipboard_restore",
-            Self::CloudTranscription => "labs.cloud_transcription",
         }
     }
 
@@ -353,19 +260,10 @@ impl Feature {
             }
             Self::Playground => "Scene and story browser in the window",
             Self::LiveText => "Show provisional words beside the HUD while dictating",
-            Self::VocabularyBiasing => {
-                "Bias Parakeet transcription toward your vocabulary; rewriting and search use it either way"
-            }
             Self::TerminalPaste => "Paste with Ctrl+Shift+V, for apps that ignore Ctrl+V",
-            Self::KeyboardModelSwitching => {
-                "Changing the keyboard language switches the speech model and language"
-            }
             Self::MouseShortcuts => "Record mouse buttons as shortcuts",
             Self::PauseBrowser => "Also pause the browser while dictating, with Pause media",
             Self::ShareShortcut => "Let apps such as Discord see the dictation shortcut too",
-            Self::UnloadIdle => {
-                "Free the speech model's memory after a while unused (labs.unload_idle_minutes); the next dictation reloads it"
-            }
             Self::RestoreShortcutDefault => {
                 "Offer Restore default next to Paste last dictation's shortcut"
             }
@@ -386,20 +284,11 @@ impl Feature {
             Self::SpokenSymbols => {
                 "Turn spoken \"comma\", \"colon\", \"hashtag\", \"underscore\", and similar words into symbols joined to their words"
             }
-            Self::PickerSortFilter => {
-                "Sort the Local transcription picker by size or name and show only models for the saved language"
-            }
             Self::SidedChords => {
                 "Record which side each modifier of a shortcut is on, such as Right Command + Right Option"
             }
             Self::TapOrHold => {
                 "In Toggle mode, hold the shortcut to dictate until you let go; a short tap still starts and stops"
-            }
-            Self::BenchmarkDetails => {
-                "Show each model's raw error rate, benchmark, and source in the Local transcription picker"
-            }
-            Self::ParakeetUltra => {
-                "Offer Parakeet Ultra, Moondream's post-trained Parakeet v3, in the Local transcription picker"
             }
             Self::StandaloneSpecialKeys if cfg!(target_os = "windows") => {
                 "Use Insert, Home, End, Page Up, or Page Down alone as a shortcut"
@@ -413,33 +302,17 @@ impl Feature {
             Self::RecentDictations => {
                 "Copy one of your last five dictations from the menu bar, under Paste Last Dictation"
             }
-            Self::SkipPauses => {
-                "Shorten long pauses before a whole dictation goes to the model, so slow computers paste sooner"
-            }
             Self::OutputFixes => {
                 "Offer Vocabulary and Fix this beside Output's Try result, to correct a wrong result"
             }
-            Self::PickerActiveFirst => "The speech model picker lists the model you're using first",
-            Self::ModelInPlace => {
-                "Add a speech model file and use it where it is, without copying it, so several accounts can share one file"
-            }
-            Self::PickerDownloaded => {
-                "Show only downloaded speech models in the picker, with the space they take"
-            }
             Self::SectionKeyAlone => {
                 "Use the § key, left of 1 on ISO keyboards, alone as a shortcut; Hex takes § from every app while it's bound"
-            }
-            Self::KeepRecordings => {
-                "Keep the audio of dictations saved to History, so you can transcribe them again with another model"
             }
             Self::HideMenuBarIcon => {
                 "Hide Hex's menu bar icon; shortcuts keep working, and opening Hex again shows Settings"
             }
             Self::GnomeClipboardRestore => {
                 "Put the previous clipboard back after a paste on GNOME Wayland, through the XWayland clipboard while XWayland is running"
-            }
-            Self::CloudTranscription => {
-                "Transcribe dictations with Claude or Codex through the app you're signed in to (labs.cloud_transcription_provider); the audio leaves this computer, and Hex's own model takes over when the service can't answer"
             }
         }
     }
@@ -454,13 +327,10 @@ impl Feature {
             Self::VoiceFilter => settings.experimental.hex_microphone,
             Self::Playground => settings.labs.playground,
             Self::LiveText => settings.labs.live_text,
-            Self::VocabularyBiasing => settings.labs.vocabulary_biasing,
             Self::TerminalPaste => settings.paste_with_shift,
-            Self::KeyboardModelSwitching => settings.keyboard_model_switching.enabled,
             Self::MouseShortcuts => settings.labs.mouse_shortcuts,
             Self::PauseBrowser => settings.pause_browser_media,
             Self::ShareShortcut => settings.share_dictation_shortcut,
-            Self::UnloadIdle => settings.labs.unload_idle,
             Self::RestoreShortcutDefault => settings.labs.restore_shortcut_default,
             Self::KeepOnClipboard => settings.labs.keep_on_clipboard,
             Self::CopyOnly => settings.labs.copy_only,
@@ -469,24 +339,15 @@ impl Feature {
             Self::SecondDictationShortcut => settings.labs.second_dictation_shortcut,
             Self::SmartSpacing => settings.labs.smart_spacing,
             Self::SpokenSymbols => settings.labs.spoken_symbols,
-            Self::PickerSortFilter => settings.labs.picker_sort_filter,
             Self::SidedChords => settings.labs.sided_modifier_chords,
             Self::TapOrHold => settings.labs.tap_or_hold,
-            Self::BenchmarkDetails => settings.labs.benchmark_details,
-            Self::ParakeetUltra => settings.labs.parakeet_ultra,
             Self::StandaloneSpecialKeys => settings.labs.standalone_special_keys,
             Self::HistoryStats => settings.labs.history_stats,
             Self::RecentDictations => settings.labs.recent_dictations,
-            Self::SkipPauses => settings.labs.skip_pauses,
             Self::OutputFixes => settings.labs.output_fixes,
-            Self::PickerActiveFirst => settings.labs.picker_active_first,
-            Self::ModelInPlace => settings.labs.model_in_place,
-            Self::PickerDownloaded => settings.labs.picker_downloaded,
             Self::SectionKeyAlone => settings.labs.section_key_alone,
-            Self::KeepRecordings => settings.labs.keep_recordings,
             Self::HideMenuBarIcon => settings.labs.hide_menu_bar_icon,
             Self::GnomeClipboardRestore => settings.labs.gnome_clipboard_restore,
-            Self::CloudTranscription => settings.labs.cloud_transcription,
         }
     }
 
@@ -497,14 +358,11 @@ impl Feature {
         vec![
             &mut settings.experimental.hex_microphone,
             &mut settings.paste_with_shift,
-            &mut settings.keyboard_model_switching.enabled,
             &mut settings.pause_browser_media,
             &mut settings.share_dictation_shortcut,
             &mut labs.playground,
             &mut labs.live_text,
-            &mut labs.vocabulary_biasing,
             &mut labs.mouse_shortcuts,
-            &mut labs.unload_idle,
             &mut labs.restore_shortcut_default,
             &mut labs.keep_on_clipboard,
             &mut labs.copy_only,
@@ -513,24 +371,15 @@ impl Feature {
             &mut labs.second_dictation_shortcut,
             &mut labs.smart_spacing,
             &mut labs.spoken_symbols,
-            &mut labs.picker_sort_filter,
             &mut labs.sided_modifier_chords,
             &mut labs.tap_or_hold,
-            &mut labs.benchmark_details,
-            &mut labs.parakeet_ultra,
             &mut labs.standalone_special_keys,
             &mut labs.history_stats,
             &mut labs.recent_dictations,
-            &mut labs.skip_pauses,
             &mut labs.output_fixes,
-            &mut labs.picker_active_first,
-            &mut labs.model_in_place,
-            &mut labs.picker_downloaded,
             &mut labs.section_key_alone,
-            &mut labs.keep_recordings,
             &mut labs.hide_menu_bar_icon,
             &mut labs.gnome_clipboard_restore,
-            &mut labs.cloud_transcription,
         ]
     }
 
@@ -544,13 +393,10 @@ impl Feature {
             Self::VoiceFilter => settings.experimental.hex_microphone = on,
             Self::Playground => settings.labs.playground = on,
             Self::LiveText => settings.labs.live_text = on,
-            Self::VocabularyBiasing => settings.labs.vocabulary_biasing = on,
             Self::TerminalPaste => settings.paste_with_shift = on,
-            Self::KeyboardModelSwitching => settings.keyboard_model_switching.enabled = on,
             Self::MouseShortcuts => settings.labs.mouse_shortcuts = on,
             Self::PauseBrowser => settings.pause_browser_media = on,
             Self::ShareShortcut => settings.share_dictation_shortcut = on,
-            Self::UnloadIdle => settings.labs.unload_idle = on,
             Self::RestoreShortcutDefault => settings.labs.restore_shortcut_default = on,
             Self::KeepOnClipboard => settings.labs.keep_on_clipboard = on,
             Self::CopyOnly => settings.labs.copy_only = on,
@@ -559,22 +405,13 @@ impl Feature {
             Self::SecondDictationShortcut => settings.labs.second_dictation_shortcut = on,
             Self::SmartSpacing => settings.labs.smart_spacing = on,
             Self::SpokenSymbols => settings.labs.spoken_symbols = on,
-            Self::PickerSortFilter => settings.labs.picker_sort_filter = on,
             Self::SidedChords => settings.labs.sided_modifier_chords = on,
             Self::TapOrHold => settings.labs.tap_or_hold = on,
-            Self::BenchmarkDetails => settings.labs.benchmark_details = on,
-            Self::ParakeetUltra => settings.labs.parakeet_ultra = on,
             Self::HistoryStats => settings.labs.history_stats = on,
             Self::RecentDictations => settings.labs.recent_dictations = on,
-            Self::SkipPauses => settings.labs.skip_pauses = on,
             Self::OutputFixes => settings.labs.output_fixes = on,
-            Self::PickerActiveFirst => settings.labs.picker_active_first = on,
-            Self::ModelInPlace => settings.labs.model_in_place = on,
-            Self::PickerDownloaded => settings.labs.picker_downloaded = on,
-            Self::KeepRecordings => settings.labs.keep_recordings = on,
             Self::HideMenuBarIcon => settings.labs.hide_menu_bar_icon = on,
             Self::GnomeClipboardRestore => settings.labs.gnome_clipboard_restore = on,
-            Self::CloudTranscription => settings.labs.cloud_transcription = on,
             // Off, no shortcut keeps a key only the feature allows.
             Self::StandaloneSpecialKeys => {
                 settings.labs.standalone_special_keys = on;
@@ -592,9 +429,7 @@ impl Feature {
 const KNOWN: u64 = 1;
 const LIVE_TEXT: u64 = 1 << 1;
 const PLAYGROUND: u64 = 1 << 2;
-const VOCABULARY_BIASING: u64 = 1 << 3;
 const MOUSE_SHORTCUTS: u64 = 1 << 4;
-const UNLOAD_IDLE: u64 = 1 << 5;
 const KEEP_ON_CLIPBOARD: u64 = 1 << 6;
 const COPY_ONLY: u64 = 1 << 7;
 const SPOKEN_FORMATTING: u64 = 1 << 8;
@@ -603,18 +438,10 @@ const SMART_SPACING: u64 = 1 << 10;
 const SPOKEN_SYMBOLS: u64 = 1 << 11;
 const SIDED_CHORDS: u64 = 1 << 12;
 const TAP_OR_HOLD: u64 = 1 << 13;
-const SKIP_PAUSES: u64 = 1 << 14;
-const PARAKEET_ULTRA: u64 = 1 << 15;
 const HISTORY_STATS: u64 = 1 << 16;
 const RECENT_DICTATIONS: u64 = 1 << 17;
-const KEEP_RECORDINGS: u64 = 1 << 18;
 const HIDE_MENU_BAR_ICON: u64 = 1 << 19;
 const GNOME_CLIPBOARD_RESTORE: u64 = 1 << 20;
-const CLOUD_TRANSCRIPTION: u64 = 1 << 21;
-/// Cloud transcription's provider is Codex rather than Claude.
-const CLOUD_CODEX: u64 = 1 << 22;
-/// Unload-idle minutes (at most 1,440, 11 bits) sit above the switches.
-const MINUTES_SHIFT: u64 = 32;
 
 /// This process's `labs` switches: unknown until settings load or one is
 /// first read.
@@ -643,11 +470,6 @@ pub fn live_text() -> bool {
 /// The playground in the window.
 pub fn playground() -> bool {
     on(PLAYGROUND)
-}
-
-/// Transcription biased toward the vocabulary (Parakeet).
-pub fn vocabulary_biasing() -> bool {
-    on(VOCABULARY_BIASING)
 }
 
 /// Mouse buttons may be recorded as shortcuts (macOS).
@@ -710,12 +532,6 @@ pub fn tap_or_hold() -> bool {
     on(TAP_OR_HOLD)
 }
 
-/// Parakeet Ultra joins the catalog (read wherever a model is listed,
-/// chosen, or run).
-pub fn parakeet_ultra() -> bool {
-    on(PARAKEET_ULTRA)
-}
-
 /// History's summary of retained dictations and `hex history stats` (read
 /// when the History pane reloads and when the command starts).
 pub fn history_stats() -> bool {
@@ -727,20 +543,6 @@ pub fn history_stats() -> bool {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn recent_dictations() -> bool {
     on(RECENT_DICTATIONS)
-}
-
-/// A whole-clip dictation transcription hears only the head and tail of
-/// each long pause (Linux and Windows; read as each whole-clip run starts).
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-pub fn skip_pauses() -> bool {
-    on(SKIP_PAUSES) && Feature::SkipPauses.on_this_os()
-}
-
-/// A dictation saved to History keeps its 16 kHz audio, and History offers
-/// Transcribe again for it (read as each capture is handed to the engine;
-/// the History pane reads the saved setting).
-pub fn keep_recordings() -> bool {
-    on(KEEP_RECORDINGS)
 }
 
 /// The menu-bar icon is hidden while nothing records (macOS; read each
@@ -758,26 +560,6 @@ pub fn gnome_clipboard_restore() -> bool {
     on(GNOME_CLIPBOARD_RESTORE) && Feature::GnomeClipboardRestore.on_this_os()
 }
 
-/// The service a dictation goes to first, while Labs › Cloud transcription
-/// is on (read as each dictation's run starts).
-pub fn cloud_transcription() -> Option<crate::transcription::cloud::CloudProvider> {
-    use crate::transcription::cloud::CloudProvider;
-    let state = state();
-    (state & CLOUD_TRANSCRIPTION != 0).then_some(if state & CLOUD_CODEX != 0 {
-        CloudProvider::Codex
-    } else {
-        CloudProvider::Claude
-    })
-}
-
-/// How long the speech model may sit unused before the engine unloads it,
-/// while Labs › Unload model when idle is on.
-pub fn unload_idle() -> Option<std::time::Duration> {
-    let state = state();
-    (state & UNLOAD_IDLE != 0)
-        .then(|| std::time::Duration::from_secs((state >> MINUTES_SHIFT) * 60))
-}
-
 /// Records the switches the loaded or saved settings hold.
 pub(crate) fn apply(settings: &LabsSettings) {
     STATE.store(encode(settings), Ordering::Release);
@@ -793,25 +575,14 @@ fn encode(settings: &LabsSettings) -> u64 {
 /// The switches `settings` hold for the features `reaches` admits; the
 /// rest read off while their saved setting stays as it is.
 fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u64 {
-    let minutes = u64::from(settings.unload_idle_minutes.clamp(1, 24 * 60)) << MINUTES_SHIFT;
-    let codex = match settings.cloud_transcription_provider {
-        crate::transcription::cloud::CloudProvider::Claude => 0,
-        crate::transcription::cloud::CloudProvider::Codex => CLOUD_CODEX,
-    };
     [
         (Feature::LiveText, settings.live_text, LIVE_TEXT),
         (Feature::Playground, settings.playground, PLAYGROUND),
-        (
-            Feature::VocabularyBiasing,
-            settings.vocabulary_biasing,
-            VOCABULARY_BIASING,
-        ),
         (
             Feature::MouseShortcuts,
             settings.mouse_shortcuts,
             MOUSE_SHORTCUTS,
         ),
-        (Feature::UnloadIdle, settings.unload_idle, UNLOAD_IDLE),
         (
             Feature::KeepOnClipboard,
             settings.keep_on_clipboard,
@@ -836,22 +607,11 @@ fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u
             SIDED_CHORDS,
         ),
         (Feature::TapOrHold, settings.tap_or_hold, TAP_OR_HOLD),
-        (
-            Feature::ParakeetUltra,
-            settings.parakeet_ultra,
-            PARAKEET_ULTRA,
-        ),
         (Feature::HistoryStats, settings.history_stats, HISTORY_STATS),
         (
             Feature::RecentDictations,
             settings.recent_dictations,
             RECENT_DICTATIONS,
-        ),
-        (Feature::SkipPauses, settings.skip_pauses, SKIP_PAUSES),
-        (
-            Feature::KeepRecordings,
-            settings.keep_recordings,
-            KEEP_RECORDINGS,
         ),
         (
             Feature::HideMenuBarIcon,
@@ -863,15 +623,10 @@ fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u
             settings.gnome_clipboard_restore,
             GNOME_CLIPBOARD_RESTORE,
         ),
-        (
-            Feature::CloudTranscription,
-            settings.cloud_transcription,
-            CLOUD_TRANSCRIPTION,
-        ),
     ]
     .into_iter()
     .filter(|(feature, on, _)| *on && reaches(*feature))
-    .fold(KNOWN | minutes | codex, |state, (_, _, bit)| state | bit)
+    .fold(KNOWN, |state, (_, _, bit)| state | bit)
 }
 
 /// The names of the features on, for `hex status`.
@@ -884,12 +639,7 @@ pub fn active_names(settings: &AppSettings) -> Vec<String> {
 
 /// Logs the switches to process.log; call once logging is up in a long-lived Hex.
 pub fn log_launch() {
-    tracing::info!(
-        live_text = live_text(),
-        playground = playground(),
-        vocabulary_biasing = vocabulary_biasing(),
-        "labs"
-    );
+    tracing::info!(live_text = live_text(), playground = playground(), "labs");
 }
 
 #[derive(Debug, Subcommand)]
@@ -946,9 +696,6 @@ pub fn run(command: Option<&LabsCommand>) -> Result<()> {
         return Err(eyre!(
             "voice-filter stays on while the Hex Microphone driver is installed; uninstall the driver in its pane to turn it off"
         ));
-    }
-    if !on && let Some(why) = feature.off_refusal(&settings) {
-        return Err(eyre!(why));
     }
     let state = if on { "on" } else { "off" };
     // A running Hex saves and applies it at once, as its Labs row would.
@@ -1083,29 +830,6 @@ mod tests {
         assert!(!Audience::Dev.reaches(false));
     }
 
-    /// Stands in for a Dev feature in a stable build.
-    fn stable(feature: Feature) -> bool {
-        feature != Feature::LiveText
-    }
-
-    #[test]
-    fn a_dev_feature_in_a_stable_build_is_unlisted_refused_and_off() {
-        assert!(Feature::available_where(stable).all(|feature| feature != Feature::LiveText));
-        assert!(Feature::available_where(|_| true).any(|feature| feature == Feature::LiveText));
-        assert!(resolve("live-text", stable).is_err());
-        assert!(resolve("filler-words", stable).is_ok());
-        let labs = LabsSettings {
-            live_text: true,
-            filler_words: true,
-            ..LabsSettings::default()
-        };
-        let state = encode_where(&labs, stable);
-        assert_eq!(state & LIVE_TEXT, 0);
-        assert_ne!(state & FILLER_WORDS, 0);
-        assert_ne!(encode_where(&labs, |_| true) & LIVE_TEXT, 0);
-        assert!(labs.live_text, "the saved setting is kept");
-    }
-
     #[test]
     fn settings_keys_name_their_feature() {
         for feature in Feature::ALL {
@@ -1114,28 +838,7 @@ mod tests {
                 Some(feature)
             );
         }
-        assert_eq!(
-            Feature::for_settings_key("labs.unload_idle_minutes"),
-            Some(Feature::UnloadIdle)
-        );
-        assert_eq!(
-            Feature::for_settings_key("labs.cloud_transcription_provider"),
-            Some(Feature::CloudTranscription)
-        );
         assert_eq!(Feature::for_settings_key("dictation_hotkey"), None);
-    }
-
-    #[test]
-    fn unload_idle_carries_its_minutes() {
-        let mut labs = LabsSettings::default();
-        assert_eq!(labs.unload_idle_minutes, 15);
-        let state = encode(&labs);
-        assert_eq!(state & UNLOAD_IDLE, 0);
-        labs.unload_idle = true;
-        labs.unload_idle_minutes = 30;
-        let state = encode(&labs);
-        assert_ne!(state & UNLOAD_IDLE, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 30);
     }
 
     #[test]
@@ -1143,10 +846,7 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode(&labs) & SPOKEN_FORMATTING, 0);
         labs.spoken_formatting = true;
-        labs.unload_idle_minutes = 60;
-        let state = encode(&labs);
-        assert_ne!(state & SPOKEN_FORMATTING, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 60);
+        assert_ne!(encode(&labs) & SPOKEN_FORMATTING, 0);
     }
 
     #[test]
@@ -1154,11 +854,9 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode(&labs) & FILLER_WORDS, 0);
         labs.filler_words = true;
-        labs.unload_idle_minutes = 24 * 60;
         let state = encode(&labs);
         assert_ne!(state & FILLER_WORDS, 0);
         assert_eq!(state & SPOKEN_FORMATTING, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
     }
 
     #[test]
@@ -1166,11 +864,9 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode(&labs) & SMART_SPACING, 0);
         labs.smart_spacing = true;
-        labs.unload_idle_minutes = 24 * 60;
         let state = encode(&labs);
         assert_ne!(state & SMART_SPACING, 0);
         assert_eq!(state & FILLER_WORDS, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
     }
 
     #[test]
@@ -1178,12 +874,9 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode(&labs) & SPOKEN_SYMBOLS, 0);
         labs.spoken_symbols = true;
-        labs.unload_idle_minutes = 24 * 60;
         let state = encode(&labs);
         assert_ne!(state & SPOKEN_SYMBOLS, 0);
         assert_eq!(state & SPOKEN_FORMATTING, 0);
-        assert_eq!(state & SMART_SPACING, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
     }
 
     #[test]
@@ -1191,11 +884,7 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode_where(&labs, |_| true) & SIDED_CHORDS, 0);
         labs.sided_modifier_chords = true;
-        labs.unload_idle_minutes = 24 * 60;
-        let state = encode_where(&labs, |_| true);
-        assert_ne!(state & SIDED_CHORDS, 0);
-        assert_eq!(state & SPOKEN_SYMBOLS, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
+        assert_ne!(encode_where(&labs, |_| true) & SIDED_CHORDS, 0);
     }
 
     #[test]
@@ -1203,11 +892,9 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode_where(&labs, |_| true) & TAP_OR_HOLD, 0);
         labs.tap_or_hold = true;
-        labs.unload_idle_minutes = 24 * 60;
         let state = encode_where(&labs, |_| true);
         assert_ne!(state & TAP_OR_HOLD, 0);
         assert_eq!(state & SIDED_CHORDS, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
     }
 
     #[test]
@@ -1215,11 +902,7 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode_where(&labs, |_| true) & HISTORY_STATS, 0);
         labs.history_stats = true;
-        labs.unload_idle_minutes = 24 * 60;
-        let state = encode_where(&labs, |_| true);
-        assert_ne!(state & HISTORY_STATS, 0);
-        assert_eq!(state & PARAKEET_ULTRA, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
+        assert_ne!(encode_where(&labs, |_| true) & HISTORY_STATS, 0);
     }
 
     #[test]
@@ -1227,36 +910,9 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode_where(&labs, |_| true) & RECENT_DICTATIONS, 0);
         labs.recent_dictations = true;
-        labs.unload_idle_minutes = 24 * 60;
         let state = encode_where(&labs, |_| true);
         assert_ne!(state & RECENT_DICTATIONS, 0);
         assert_eq!(state & HISTORY_STATS, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
-    }
-
-    #[test]
-    fn skip_pauses_is_its_own_bit_and_off_by_default() {
-        let mut labs = LabsSettings::default();
-        assert_eq!(encode_where(&labs, |_| true) & SKIP_PAUSES, 0);
-        labs.skip_pauses = true;
-        labs.unload_idle_minutes = 24 * 60;
-        let state = encode_where(&labs, |_| true);
-        assert_ne!(state & SKIP_PAUSES, 0);
-        assert_eq!(state & TAP_OR_HOLD, 0);
-        assert_eq!(state & PARAKEET_ULTRA, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
-    }
-
-    #[test]
-    fn keep_recordings_is_its_own_bit_and_off_by_default() {
-        let mut labs = LabsSettings::default();
-        assert_eq!(encode_where(&labs, |_| true) & KEEP_RECORDINGS, 0);
-        labs.keep_recordings = true;
-        labs.unload_idle_minutes = 24 * 60;
-        let state = encode_where(&labs, |_| true);
-        assert_ne!(state & KEEP_RECORDINGS, 0);
-        assert_eq!(state & RECENT_DICTATIONS, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
     }
 
     #[test]
@@ -1264,11 +920,7 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode_where(&labs, |_| true) & HIDE_MENU_BAR_ICON, 0);
         labs.hide_menu_bar_icon = true;
-        labs.unload_idle_minutes = 24 * 60;
-        let state = encode_where(&labs, |_| true);
-        assert_ne!(state & HIDE_MENU_BAR_ICON, 0);
-        assert_eq!(state & KEEP_RECORDINGS, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
+        assert_ne!(encode_where(&labs, |_| true) & HIDE_MENU_BAR_ICON, 0);
     }
 
     #[test]
@@ -1276,30 +928,9 @@ mod tests {
         let mut labs = LabsSettings::default();
         assert_eq!(encode_where(&labs, |_| true) & GNOME_CLIPBOARD_RESTORE, 0);
         labs.gnome_clipboard_restore = true;
-        labs.unload_idle_minutes = 24 * 60;
         let state = encode_where(&labs, |_| true);
         assert_ne!(state & GNOME_CLIPBOARD_RESTORE, 0);
         assert_eq!(state & HIDE_MENU_BAR_ICON, 0);
-        assert_eq!(state >> MINUTES_SHIFT, 24 * 60);
-    }
-
-    #[test]
-    fn cloud_transcription_carries_its_provider() {
-        use crate::transcription::cloud::CloudProvider;
-        let mut labs = LabsSettings {
-            cloud_transcription_provider: CloudProvider::Codex,
-            ..LabsSettings::default()
-        };
-        let state = encode_where(&labs, |_| true);
-        assert_eq!(state & CLOUD_TRANSCRIPTION, 0);
-        labs.cloud_transcription = true;
-        let state = encode_where(&labs, |_| true);
-        assert_ne!(state & CLOUD_TRANSCRIPTION, 0);
-        assert_ne!(state & CLOUD_CODEX, 0);
-        assert_eq!(state & GNOME_CLIPBOARD_RESTORE, 0);
-        labs.cloud_transcription_provider = CloudProvider::Claude;
-        assert_eq!(encode_where(&labs, |_| true) & CLOUD_CODEX, 0);
-        assert_eq!(encode_where(&labs, |_| false) & CLOUD_TRANSCRIPTION, 0);
     }
 
     #[test]
