@@ -11,15 +11,12 @@ use super::{
     PermissionReport, PrintReply, StatusReport, TranscriptionReport, WindowReport, settings,
 };
 use crate::app_settings::AppSettings;
-use crate::desktop::host::{
-    DesktopListenerSnapshot, DesktopTranscriptionSnapshot, DesktopUpdateStatus,
-};
+use crate::desktop::host::{DesktopListenerSnapshot, DesktopUpdateStatus};
 
 /// What the running Hex published last.
 pub(crate) struct HostState {
     pub(crate) settings: AppSettings,
     pub(crate) listener: DesktopListenerSnapshot,
-    pub(crate) transcription: DesktopTranscriptionSnapshot,
     pub(crate) update: DesktopUpdateStatus,
     pub(crate) capture: CaptureSnapshot,
     pub(crate) window_open: bool,
@@ -406,7 +403,6 @@ mod tests {
                     shortcuts: Default::default(),
                     shortcuts_configurable: false,
                 },
-                transcription: DesktopTranscriptionSnapshot::default(),
                 update: DesktopUpdateStatus::Current,
                 capture: capture_from_state(
                     self.recording

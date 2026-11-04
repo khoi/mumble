@@ -146,7 +146,6 @@ impl Backend {
             view: ServiceView {
                 listener: desktop.listener,
                 operation_error: desktop.operation_error,
-                transcription: desktop.transcription,
                 update_status: desktop.update_status,
                 update_notes: desktop.update_notes,
                 editing,

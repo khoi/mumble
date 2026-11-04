@@ -64,7 +64,6 @@ impl crate::control::host::Host for LinuxControl {
         Ok(crate::control::host::HostState {
             capture: crate::control::host::capture_from_state(status.desktop.activity.state),
             listener: status.desktop.listener,
-            transcription: status.desktop.transcription,
             update: status.desktop.update_status,
             settings: status.settings,
             window_open: status.window_open,

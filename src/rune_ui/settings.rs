@@ -922,12 +922,6 @@ fn command_row(p: Paint, key: &str, title: &str, description: &str, commands: &[
     setting_row(p, key, title, Some(description), lines)
 }
 
-/// The Transcribe with row's description. Cloud transcription uses the
-/// chosen app's own sign-in, so the row needs no extra status line.
-pub(super) fn transcription_status(_ui: &Ui, _p: Paint) -> Option<(String, rune::Color)> {
-    None
-}
-
 /// What a recorder shows; each change rolls up into it from below.
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum Face {

@@ -22,9 +22,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWi
 use crate::app_settings::AppSettings;
 use crate::desktop::activity::DesktopActivity;
 use crate::desktop::events::{EventReader, TranscriptPhase, VoiceEvent};
-use crate::desktop::host::{
-    DesktopAction, DesktopListenerSnapshot, DesktopShortcuts, DesktopTranscriptionSnapshot,
-};
+use crate::desktop::host::{DesktopAction, DesktopListenerSnapshot, DesktopShortcuts};
 use crate::desktop::i18n::tr_fill;
 use crate::history::History;
 use crate::windows::rune::{Published, Request};
@@ -491,9 +489,6 @@ impl WindowsDesktopHost {
                 shortcuts_configurable: false,
             },
             operation_error: self.error.clone(),
-            transcription: DesktopTranscriptionSnapshot {
-                selection: self.settings.transcription.clone(),
-            },
             update_status: self.updater.status(),
             update_notes: self.updater.notes(),
             settings: self.settings.clone(),

@@ -107,7 +107,6 @@ impl Backend {
             view: ServiceView {
                 listener: published.listener.clone(),
                 operation_error: published.operation_error.clone(),
-                transcription: published.transcription.clone(),
                 update_status: published.update_status.clone(),
                 update_notes: published.update_notes.clone(),
                 editing: false,

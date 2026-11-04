@@ -118,12 +118,12 @@ fn basics(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
         layer,
     );
     rows.push(
-        icon_described_row(
+        icon_row(
             p,
             "transcription",
             &WAVE,
             tr("Transcribe with"),
-            s::transcription_status(ui, p),
+            None,
             provider_control,
         )
         .into(),

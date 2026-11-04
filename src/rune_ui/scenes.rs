@@ -551,9 +551,6 @@ pub(super) fn fixture(shortcuts: DesktopShortcuts) -> Ui {
             shortcuts_configurable: false,
         },
         operation_error: None,
-        transcription: DesktopTranscriptionSnapshot {
-            selection: ui.settings.transcription.clone(),
-        },
         update_status: DesktopUpdateStatus::Current,
         update_notes: None,
         editing: false,

@@ -58,7 +58,7 @@ use rune::{Anim, AppSpec, Cx, El, Icon, ScrollSpec, Tx, Waker, col, el, icon, ro
 use crate::app_settings::{AppSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, ModifierSide};
 use crate::desktop::host::{
     DesktopAction, DesktopGrantedShortcut, DesktopListenerSnapshot, DesktopShortcuts,
-    DesktopTranscriptionSnapshot, DesktopUpdateStatus,
+    DesktopUpdateStatus,
 };
 use crate::desktop::i18n::{tr, tr_fill};
 use controls::{METRICS, Paint};
@@ -524,7 +524,6 @@ struct HostState {
 struct ServiceView {
     listener: DesktopListenerSnapshot,
     operation_error: Option<String>,
-    transcription: DesktopTranscriptionSnapshot,
     update_status: DesktopUpdateStatus,
     update_notes: Option<crate::desktop::host::UpdateNotes>,
     /// The service is recording or saving a shortcut.

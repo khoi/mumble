@@ -37,8 +37,7 @@ use objc2_foundation::{MainThreadMarker, NSAppleEventManager, NSObject, NSString
 
 use crate::app_settings::AppSettings;
 use crate::desktop::host::{
-    DesktopAction, DesktopListenerSnapshot, DesktopShortcut, DesktopShortcuts,
-    DesktopTranscriptionSnapshot, DesktopUpdateStatus,
+    DesktopAction, DesktopListenerSnapshot, DesktopShortcut, DesktopShortcuts, DesktopUpdateStatus,
 };
 use crate::dictation::indicator::DictationIndicatorEvent;
 use crate::macos_rune::status_item::StatusItemAction;
@@ -103,7 +102,6 @@ pub(crate) enum ShortcutTarget {
 #[derive(Clone, PartialEq)]
 pub(crate) struct Published {
     pub(crate) listener: DesktopListenerSnapshot,
-    pub(crate) transcription: DesktopTranscriptionSnapshot,
     pub(crate) update_status: DesktopUpdateStatus,
     pub(crate) update_notes: Option<crate::desktop::host::UpdateNotes>,
     pub(crate) settings: AppSettings,
@@ -593,9 +591,6 @@ impl Runtime {
                 warning: failure,
                 shortcuts: DesktopShortcuts::Registered,
                 shortcuts_configurable: false,
-            },
-            transcription: DesktopTranscriptionSnapshot {
-                selection: self.settings.transcription.clone(),
             },
             update_status: update_status(),
             update_notes: UPDATER.get().and_then(crate::updater::Updater::notes),

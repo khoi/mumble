@@ -22,7 +22,6 @@ use crate::desktop::activity::DesktopActivity;
 use crate::desktop::events::EventReader;
 use crate::desktop::host::{
     DesktopAction, DesktopListenerSnapshot, DesktopShortcut, DesktopSnapshot,
-    DesktopTranscriptionSnapshot,
 };
 use crate::linux::dictation::ListenerUpdate;
 use crate::linux::input::{LinuxHotkey, ListenerCommand};
@@ -1014,9 +1013,6 @@ impl LinuxDesktopHost {
                         .filter(|(at, _)| Some(*at) != self.dismissed_failure_at)
                         .map(|(_, message)| message.clone())
                 }),
-            transcription: DesktopTranscriptionSnapshot {
-                selection: self.settings.transcription.clone(),
-            },
             update_status,
             update_notes: self.updater.notes(),
         }

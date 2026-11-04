@@ -33,8 +33,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use crate::app_settings::AppSettings;
 use crate::control::{CaptureAction, ControlError, ControlReply, Pane};
 use crate::desktop::host::{
-    DesktopAction, DesktopListenerSnapshot, DesktopShortcut, DesktopTranscriptionSnapshot,
-    DesktopUpdateStatus,
+    DesktopAction, DesktopListenerSnapshot, DesktopShortcut, DesktopUpdateStatus,
 };
 use crate::desktop::tray_menu::{TrayCommand, TrayView};
 use crate::history::History;
@@ -92,7 +91,6 @@ pub(crate) struct Published {
     pub(crate) activity: Option<crate::desktop::events::VoiceState>,
     pub(crate) listener: DesktopListenerSnapshot,
     pub(crate) operation_error: Option<String>,
-    pub(crate) transcription: DesktopTranscriptionSnapshot,
     pub(crate) update_status: DesktopUpdateStatus,
     pub(crate) update_notes: Option<crate::desktop::host::UpdateNotes>,
     pub(crate) settings: AppSettings,
@@ -374,7 +372,6 @@ impl crate::control::host::Host for WindowsControl {
         Ok(crate::control::host::HostState {
             settings: published.settings.clone(),
             listener: published.listener.clone(),
-            transcription: published.transcription.clone(),
             update: published.update_status.clone(),
             capture: crate::control::host::capture_from_state(published.activity),
             window_open: self.window().is_visible(),

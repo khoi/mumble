@@ -1,5 +1,4 @@
 use crate::desktop::activity::DesktopActivity;
-use crate::transcription::TranscriptionSelection;
 
 /// The Linux service's snapshot; Windows and macOS publish their own
 /// in-process.
@@ -9,16 +8,10 @@ pub(crate) struct DesktopSnapshot {
     pub(crate) activity: DesktopActivity,
     pub(crate) listener: DesktopListenerSnapshot,
     pub(crate) operation_error: Option<String>,
-    pub(crate) transcription: DesktopTranscriptionSnapshot,
     pub(crate) update_status: DesktopUpdateStatus,
     /// What the staged dev build changed, while Restart to update shows.
     #[serde(default)]
     pub(crate) update_notes: Option<UpdateNotes>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct DesktopTranscriptionSnapshot {
-    pub(crate) selection: TranscriptionSelection,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
