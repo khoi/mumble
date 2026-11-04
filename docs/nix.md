@@ -19,7 +19,7 @@ nix build
 nix run . -- app
 ```
 
-Or add `mumble.url = "github:khoi/mumble"` to your configuration's flake inputs
+Or add `mumble.url = "github:supabitapp/mumble"` to your configuration's flake inputs
 and install `mumble.packages.${system}.default` (`x86_64-linux` or
 `aarch64-linux`). The package supplies the
 `mumble` command and desktop launcher, native libraries, and the `curl`,
@@ -36,7 +36,7 @@ system's, so both use the same glibc:
 ```nix
 {
   inputs.mumble = {
-    url = "github:khoi/mumble";
+    url = "github:supabitapp/mumble";
     # Use the name of your own nixpkgs input here.
     inputs.nixpkgs.follows = "nixpkgs";
   };

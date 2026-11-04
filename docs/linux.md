@@ -265,7 +265,7 @@ rustup default stable
 Build and install Mumble as your desktop user:
 
 ```sh
-git clone https://github.com/khoi/mumble.git
+git clone https://github.com/supabitapp/mumble.git
 cd mumble
 ./scripts/install-linux.sh
 ~/.local/bin/mumble

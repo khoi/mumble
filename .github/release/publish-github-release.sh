@@ -12,7 +12,7 @@
 # MUMBLE_RELEASE_SOURCE (a checkout of the commit with docs/releases/), GH_TOKEN.
 set -eu
 
-repo=${MUMBLE_RELEASE_REPO:-khoi/mumble}
+repo=${MUMBLE_RELEASE_REPO:-supabitapp/mumble}
 [ $# -eq 1 ] || {
   echo "Usage: $0 <dist>" >&2
   exit 1

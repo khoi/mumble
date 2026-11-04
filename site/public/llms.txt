@@ -8,8 +8,8 @@
 
 ## Docs
 
-- [README](https://github.com/khoi/mumble/blob/dev/README.md): features, settings, privacy, and troubleshooting
-- [Windows guide](https://github.com/khoi/mumble/blob/dev/docs/windows.md)
-- [Linux guide](https://github.com/khoi/mumble/blob/dev/docs/linux.md)
+- [README](https://github.com/supabitapp/mumble/blob/dev/README.md): features, settings, privacy, and troubleshooting
+- [Windows guide](https://github.com/supabitapp/mumble/blob/dev/docs/windows.md)
+- [Linux guide](https://github.com/supabitapp/mumble/blob/dev/docs/linux.md)
 - [Transforms](https://anoma.ly/mumble/docs/transforms): the JavaScript API for changing dictated text before Mumble pastes it, including `fetch` and `node:child_process`
 - [Managing Mumble](https://anoma.ly/mumble/docs/admin): macOS configuration-profile keys that turn off OpenCode processing, transforms, Labs, and updates, or hold transforms to this computer

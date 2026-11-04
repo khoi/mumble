@@ -30,7 +30,7 @@ export const RELEASE = {
   },
   github: data.github,
   homebrew: "brew install --cask anomalyco/tap/mumble",
-  nix: "nix profile add github:khoi/mumble",
+  nix: "nix profile add github:supabitapp/mumble",
 } as const
 
 export const DOWNLOAD_URLS = [

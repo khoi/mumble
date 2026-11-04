@@ -1139,7 +1139,7 @@ release: like OpenCode, the stable run tags `v<VERSION>` (the crate version)
 on the released commit only after every platform published, then creates the
 GitHub release with the built-in `GITHUB_TOKEN`, so a failed run leaves no
 tag; `v*` tags are unrestricted because nothing triggers on them. Like OpenCode's release, build jobs (Linux x64 and ARM64 on
-Ubuntu 24.04 runners with their `.deb` and `.rpm`, Windows x64 and ARM64 through `.github/workflows/build-desktop.yml`,
+Depot's Ubuntu 24.04 runners with their `.deb` and `.rpm`, Windows x64 and ARM64 through `.github/workflows/build-desktop.yml`,
 macOS as an ad-hoc signed `MUMBLE_RELEASE_UNSIGNED=1` app, installers through
 `windows-installers.yml`, AUR and Homebrew staging) run repository code with
 no environment, secret, or id-token; sign and publish jobs run in `release`,

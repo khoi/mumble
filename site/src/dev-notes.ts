@@ -42,7 +42,7 @@ function date(iso: string): string {
   return parsed.toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }) + " ET"
 }
 
-const REPOSITORY = "https://github.com/khoi/mumble"
+const REPOSITORY = "https://github.com/supabitapp/mumble"
 const COMMIT = /^[0-9a-f]{40}$/
 
 // ?since=<version> (the app's What's new) shows only the builds after the

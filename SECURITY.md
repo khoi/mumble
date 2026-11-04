@@ -1,7 +1,7 @@
 # Security
 
 Report vulnerabilities through
-[GitHub private vulnerability reporting](https://github.com/khoi/mumble/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/supabitapp/mumble/security/advisories/new).
 Do not include secrets, private transcripts, browsing history, or unredacted Mumble
 diagnostic logs in a public issue.
 

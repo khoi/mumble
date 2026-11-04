@@ -35,7 +35,7 @@ distributions='[
   {"kind": "rpm-x64", "package": "mumble", "command": "curl -fLo /tmp/mumble.rpm https://anoma.ly/release/mumble/desktop/stable/linux-x64-rpm && sudo dnf install /tmp/mumble.rpm"},
   {"kind": "rpm-arm64", "package": "mumble", "command": "curl -fLo /tmp/mumble.rpm https://anoma.ly/release/mumble/desktop/stable/linux-arm64-rpm && sudo dnf install /tmp/mumble.rpm"},
   {"kind": "brew", "cask": "anomalyco/tap/mumble", "command": "brew upgrade --cask anomalyco/tap/mumble"},
-  {"kind": "nix", "attribute": "github:khoi/mumble", "command": "nix profile upgrade mumble"}
+  {"kind": "nix", "attribute": "github:supabitapp/mumble", "command": "nix profile upgrade mumble"}
 ]'
 
 publish() {

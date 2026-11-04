@@ -82,7 +82,7 @@ optionally sign `Mumble Test.app` with the same Developer ID so testers grant
 permissions once (needs `build-app.sh` to accept a team with
 `MUMBLE_TEST_BUILD=1`).
 
-## Secrets for `khoi/mumble`
+## Secrets for `supabitapp/mumble`
 
 Add to the `release` environment (limited to `dev` and `production`).
 Names mirror OpenCode; GitHub cannot copy secret values, so an admin

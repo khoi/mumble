@@ -55,7 +55,7 @@ jobs:
   # boards and Asahi), falling back to the CPU without a Vulkan device.
   linux-x64:
     name: Linux x86_64
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04-16
     timeout-minutes: 90
     env:
       MUMBLE_VERSION: ${{ inputs.version }}
@@ -92,7 +92,6 @@ jobs:
       - name: Build
         env:
           MUMBLE_RELEASE_DIST: ${{ runner.temp }}/dist
-          CARGO_BUILD_JOBS: 4
           OPENSSL_NO_VENDOR: 1
           CC: clang
           CXX: clang++
@@ -142,7 +141,7 @@ jobs:
 
   linux-arm64:
     name: Linux aarch64
-    runs-on: ubuntu-24.04-arm
+    runs-on: depot-ubuntu-24.04-arm-16
     timeout-minutes: 90
     env:
       MUMBLE_VERSION: ${{ inputs.version }}

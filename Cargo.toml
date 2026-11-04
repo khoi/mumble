@@ -4,7 +4,7 @@ version = "3.3.0"
 edition = "2024"
 default-run = "mumble"
 license = "MIT"
-repository = "https://github.com/khoi/mumble"
+repository = "https://github.com/supabitapp/mumble"
 
 [workspace]
 

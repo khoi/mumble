@@ -4,8 +4,8 @@ contact_links:
     url: https://anoma.ly/mumble/
     about: Download the macOS app, check permissions, and find troubleshooting steps.
   - name: Linux beta requirements
-    url: https://github.com/khoi/mumble/blob/dev/docs/linux.md
+    url: https://github.com/supabitapp/mumble/blob/dev/docs/linux.md
     about: Check supported X11/Wayland environments and installation requirements.
   - name: Security vulnerabilities
-    url: https://github.com/khoi/mumble/blob/dev/SECURITY.md
+    url: https://github.com/supabitapp/mumble/blob/dev/SECURITY.md
     about: Follow the security reporting instructions rather than opening a public issue.

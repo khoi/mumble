@@ -33,7 +33,7 @@ function sprite(ctx, name, x, y, size, radius) {
   return true
 }
 // The project a repo notification is about.
-const repoIcon = (repo) => ({ "khoi/mumble": "mumble", "kitlangton/scrawl": "scrawl" })[repo] ?? repo.split("/")[0]
+const repoIcon = (repo) => ({ "supabitapp/mumble": "mumble", "kitlangton/scrawl": "scrawl" })[repo] ?? repo.split("/")[0]
 
 // Glyphs, 24-unit boxes: Simple Icons (CC0) for brands, Lucide (ISC) for generic apps.
 const GLYPH = {
@@ -102,7 +102,7 @@ export const CONTENT = {
     ["#mumble", "mumble-ci", "release build: 9,001 warnings, 0 errors. shipping"],
   ],
   mail: [
-    ["GitHub", "[khoi/mumble] 37 new issues", "You're receiving this because you're Kit."],
+    ["GitHub", "[supabitapp/mumble] 37 new issues", "You're receiving this because you're Kit."],
     ["GitHub", "[anomalyco/opencode] Review requested", "Dax requested your review on #9420."],
     ["GitHub", "[kitlangton/scrawl] New discussion", "Can Scrawl record my dreams?"],
     ["Effect", "Effect Days speaker check-in", "Can you send your slides again?"],
@@ -122,17 +122,17 @@ export const CONTENT = {
   ],
   review: [
     ["anomalyco/opencode", "#9420", "effect: migrate the last Promise", "+412", "−3,880", "Dax"],
-    ["khoi/mumble", "#176", "fix: stop transcribing keyboard clacks", "+38", "−6", "Jay"],
+    ["supabitapp/mumble", "#176", "fix: stop transcribing keyboard clacks", "+38", "−6", "Jay"],
     ["kitlangton/scrawl", "#91", "feat: ink that fades faster", "+120", "−44", "Frank"],
     ["anomalyco/opencode", "#9433", "chore: rename Layer to Layer2", "+1", "−1", "Dax"],
   ],
   dm: [["Dax", "you around?"], ["Jay", "quick q"], ["Frank", "got a sec?"], ["Jay", "call?"], ["Dax", "hey"], ["Frank", "???"]],
   issue: [
-    ["khoi/mumble", "#171", "Hold-to-dictate stops when I sneeze", "bug"],
-    ["khoi/mumble", "#172", "Transcribes “Effect” as “a fact” every time", "bug"],
-    ["khoi/mumble", "#173", "Meeting offer pops up during my standup", "bug"],
-    ["khoi/mumble", "#174", "Wayland HUD shows on the wrong monitor", "linux"],
-    ["khoi/mumble", "#175", "Feature request: dictate in Klingon", "enhancement"],
+    ["supabitapp/mumble", "#171", "Hold-to-dictate stops when I sneeze", "bug"],
+    ["supabitapp/mumble", "#172", "Transcribes “Effect” as “a fact” every time", "bug"],
+    ["supabitapp/mumble", "#173", "Meeting offer pops up during my standup", "bug"],
+    ["supabitapp/mumble", "#174", "Wayland HUD shows on the wrong monitor", "linux"],
+    ["supabitapp/mumble", "#175", "Feature request: dictate in Klingon", "enhancement"],
     ["anomalyco/opencode", "#9412", "Subagent spawned a subagent that spawned a subagent", "bug"],
     ["anomalyco/opencode", "#9415", "Too much Effect in my stack trace", "question"],
     ["kitlangton/scrawl", "#88", "Red ink won't come off my screen", "bug"],

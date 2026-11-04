@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   resolve:
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
       short: ${{ steps.resolve.outputs.short }}
@@ -101,7 +101,7 @@ jobs:
   summary:
     needs: [resolve, desktop, installers, macos]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     permissions:
       actions: read
     steps:

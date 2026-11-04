@@ -25,7 +25,7 @@ downloads.hex.kitlangton.dev, .com         Kit's old bucket, frozen at 2.3.1; re
                                            compiled it, so it stays up forever; the Worker in
                                            packaging/legacy-downloads redirects it to
                                            anoma.ly/mumble/files (same bytes) once deployed
-github.com/khoi/mumble/releases/tag/v<version>       identical-byte mirror of every file (app-v through 2.3.1)
+github.com/supabitapp/mumble/releases/tag/v<version>       identical-byte mirror of every file (app-v through 2.3.1)
 ```
 
 `docs/releasing.md` describes the Worker config, the workflow that publishes

@@ -40,7 +40,7 @@ publish                                       // stable requires the signatures
 
 ## Configuration
 
-The workflow uses OpenCode's names. In khoi/mumble, these are `release`
+The workflow uses OpenCode's names. In supabitapp/mumble, these are `release`
 environment secrets:
 
 - `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`: the Entra app
@@ -52,7 +52,7 @@ environment secrets:
 
 The identity needs a federated credential with issuer
 `https://token.actions.githubusercontent.com`, subject
-`repo:khoi/mumble:environment:release`, and audience
+`repo:supabitapp/mumble:environment:release`, and audience
 `api://AzureADTokenExchange`. It also needs the *Artifact Signing Certificate
 Profile Signer* role on the profile. Luke (Hona) owns Anomaly's Azure
 self-service setup.

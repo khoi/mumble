@@ -16,7 +16,7 @@ set -euo pipefail
 version=${1:?Usage: release-dev-notes.sh <version> <commit> <out>}
 commit=${2:?Usage: release-dev-notes.sh <version> <commit> <out>}
 out=${3:?Usage: release-dev-notes.sh <version> <commit> <out>}
-repository=https://github.com/khoi/mumble
+repository=https://github.com/supabitapp/mumble
 notes_url=${MUMBLE_DEV_NOTES_URL:-https://anoma.ly/mumble/files/dev-notes.json}
 manifest_url=${MUMBLE_DEV_MANIFEST_URL:-https://anoma.ly/release/mumble/desktop/dev.json}
 max_builds=40

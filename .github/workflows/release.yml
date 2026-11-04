@@ -22,7 +22,7 @@ name: Release
 #
 # There is one environment, release, like OpenCode's: no approval, deployment
 # policy dev and production. The service authorizes the publish jobs by their
-# OIDC token: khoi/mumble, this file, environment release, the dev channel
+# OIDC token: supabitapp/mumble, this file, environment release, the dev channel
 # from dev and stable from production (anomalyco/release registry/mumble.json).
 # Mumble never uses the service's dev stage.
 #
@@ -76,7 +76,7 @@ env:
 
 jobs:
   plan:
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
       version: ${{ steps.plan.outputs.version }}
@@ -150,7 +150,7 @@ jobs:
   onboarding:
     needs: plan
     if: needs.plan.outputs.channel == 'stable' || needs.plan.outputs.channel == 'check'
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04-16
     timeout-minutes: 90
     permissions:
       contents: read
@@ -385,7 +385,7 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
           description: Mumble
-          description-url: https://github.com/khoi/mumble
+          description-url: https://github.com/supabitapp/mumble
           exclude-environment-credential: true
           exclude-workload-identity-credential: true
           exclude-managed-identity-credential: true
@@ -511,7 +511,7 @@ jobs:
           || (needs.sign-macos.result == 'success'
               && (needs.verify-macos.result == 'success' || needs.sign-macos.outputs.signed != 'true')))
       && (needs.sign-windows-installers.result == 'success' || needs.sign-windows.outputs.signed != 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     environment: release
     permissions:
       contents: read
@@ -576,7 +576,7 @@ jobs:
         (needs.plan.outputs.channel == 'stable' && needs.publish.result == 'success')
         || (needs.plan.outputs.channel == 'check' && needs.installers.result == 'success'
             && (needs.verify-macos.result == 'success' || needs.sign-macos.outputs.signed != 'true')) ) }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     permissions:
       contents: write
     env:
@@ -625,7 +625,7 @@ jobs:
     name: AUR package
     needs: [plan, build, publish]
     if: ${{ !cancelled() && needs.publish.result == 'success' && needs.plan.outputs.channel == 'stable' }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     container: archlinux:base-devel
     env:
       MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
@@ -680,7 +680,7 @@ jobs:
     name: AUR
     needs: [plan, aur-stage]
     if: ${{ !cancelled() && needs.aur-stage.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     environment: release
     steps:
       - *checkout-release
@@ -697,7 +697,7 @@ jobs:
   record-aur:
     needs: [plan, aur]
     if: ${{ !cancelled() && needs.aur.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     environment: release
     permissions:
       contents: read
@@ -766,7 +766,7 @@ jobs:
     name: Homebrew
     needs: [plan, homebrew-stage]
     if: ${{ !cancelled() && needs.homebrew-stage.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     environment: release
     env:
       MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
@@ -785,7 +785,7 @@ jobs:
   record-brew:
     needs: [plan, homebrew]
     if: ${{ !cancelled() && needs.homebrew.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     environment: release
     permissions:
       contents: read
@@ -802,7 +802,7 @@ jobs:
   dev-notes-stage:
     needs: plan
     if: needs.plan.outputs.channel == 'dev'
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     env:
       MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}
       SHA: ${{ needs.plan.outputs.sha }}
@@ -834,7 +834,7 @@ jobs:
     if: >-
       ${{ !cancelled() && needs.plan.outputs.channel == 'dev'
       && needs.publish.result == 'success' && needs.dev-notes-stage.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: depot-ubuntu-24.04
     environment: release
     env:
       MUMBLE_VERSION: ${{ needs.plan.outputs.release-version }}

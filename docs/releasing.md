@@ -69,7 +69,7 @@ by Release: after a stable release, run **Site** with `mode: production` from
 - Windows: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
   `AZURE_TRUSTED_SIGNING_ENDPOINT`, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME`,
   `AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE`, with a federated credential for
-  `repo:khoi/mumble:environment:release` (docs/windows-signing.md).
+  `repo:supabitapp/mumble:environment:release` (docs/windows-signing.md).
 
 ### Release tags
 
@@ -88,7 +88,7 @@ Repository admins can still change rulesets.
 ## The release service
 
 The service authorizes the publish jobs by their GitHub OIDC token alone:
-`registry/mumble.json` in `anomalyco/release` admits repository `khoi/mumble`
+`registry/mumble.json` in `anomalyco/release` admits repository `supabitapp/mumble`
 (by name and id) and workflow `.github/workflows/release.yml` running
 from the same ref it was triggered on, for artifact `desktop` on both the dev
 and production services, as two publishers:
@@ -427,8 +427,8 @@ never self-updates; Settings says
 "Updated by your package manager". Source installs say "Updated from your
 source checkout".
 
-Both Linux architectures build natively on Ubuntu 24.04 runners
-(`ubuntu-24.04`, `ubuntu-24.04-arm`) inside a Debian 12 image
+Both Linux architectures build natively on Depot's Ubuntu 24.04 runners
+(`depot-ubuntu-24.04-16`, `depot-ubuntu-24.04-arm-16`) inside a Debian 12 image
 (`scripts/build-linux-release.sh`, `packaging/linux/build.Dockerfile`, with
 Vulkan headers and glslc from Vulkan SDK 1.4.341), so every Linux file needs
 only glibc 2.36 and GCC 12's libstdc++ (Debian 12, Ubuntu 23.04, Fedora 37,

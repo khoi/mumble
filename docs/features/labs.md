@@ -46,7 +46,7 @@ Feature             Pane  Toggle (settings.json, mumble settings)   On: what it 
 └── Terminal paste  no    paste_with_shift             (Windows) paste with Ctrl+Shift+V (#477/#478; Linux keeps it in General)
 
 Settings › Labs                          // labs.page
-├── "Try unfinished features. They may change or break." + Send feedback -> https://github.com/khoi/mumble/issues/new
+├── "Try unfinished features. They may change or break." + Send feedback -> https://github.com/supabitapp/mumble/issues/new
 ├── Opened by a link (macOS) -> mumble://labs opens this page; mumble://labs/<feature> also scrolls to the
 │   feature's row (centred) and pulses it for ~1.4 s (layer_02 fill, then back); it never turns the
 │   feature on. An unknown or absent name -> the page opens and process.log notes it. mumble://settings/<pane>
