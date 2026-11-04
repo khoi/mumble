@@ -59,8 +59,6 @@ struct Key {
     kind: Kind,
     /// `none` clears it.
     optional: bool,
-    /// Why it can't be set here, if it can't.
-    read_only: Option<&'static str>,
     about: &'static str,
 }
 
@@ -69,7 +67,6 @@ const fn key(key: &'static str, kind: Kind, about: &'static str) -> Key {
         key,
         kind,
         optional: false,
-        read_only: None,
         about,
     }
 }
@@ -79,15 +76,11 @@ const fn optional(key: &'static str, kind: Kind, about: &'static str) -> Key {
         key,
         kind,
         optional: true,
-        read_only: None,
         about,
     }
 }
 
 const UNIT: Kind = Kind::Number { min: 0.0, max: 1.0 };
-
-/// Choice keys whose values are numbers in settings.json.
-const NUMERIC_CHOICES: [&str; 0] = [];
 
 const KEYS: &[Key] = &[
     key(
@@ -527,7 +520,6 @@ fn value_of(key: &Key, json: &Value) -> SettingValue {
             Ok(Some(binding)) => Value::String(format_hotkey(&binding)),
             _ => Value::Null,
         },
-        Kind::Choice(_) if NUMERIC_CHOICES.contains(&key.key) => Value::String(raw.to_string()),
         _ => raw,
     };
     SettingValue {
@@ -538,10 +530,9 @@ fn value_of(key: &Key, json: &Value) -> SettingValue {
             Kind::Choice(choices) => choices.iter().map(|&choice| choice.into()).collect(),
             _ => Vec::new(),
         },
-        writable: key.read_only.is_none()
-            && crate::policy::Policy::current()
-                .setting_lock(key.key)
-                .is_none(),
+        writable: crate::policy::Policy::current()
+            .setting_lock(key.key)
+            .is_none(),
         about: key.about.into(),
         available: needs(key.key).is_none_or(crate::rune_ui::capability),
     }
@@ -562,12 +553,6 @@ pub fn apply(
     let key = keys()
         .find(|key| key.key == name)
         .ok_or_else(|| unknown(name))?;
-    if let Some(why) = key.read_only {
-        return Err(ControlError::new(
-            "read-only",
-            format!("`{name}` can't be set here: {why}"),
-        ));
-    }
     let value = parse(key, raw, shortcuts)?;
     let mut json = serde_json::to_value(settings)
         .map_err(|error| ControlError::new("internal", error.to_string()))?;
@@ -767,11 +752,7 @@ fn parse(key: &Key, raw: &str, shortcuts: &ShortcutRules) -> Result<Value, Contr
                 .iter()
                 .find(|choice| choice.to_ascii_lowercase().replace('-', "_") == normalized)
                 .ok_or_else(|| invalid(name, &format!("expected one of {}", choices.join(", "))))?;
-            Ok(if NUMERIC_CHOICES.contains(&name) {
-                Value::from(choice.parse::<u32>().expect("numeric choices are numbers"))
-            } else {
-                Value::String((*choice).into())
-            })
+            Ok(Value::String((*choice).into()))
         }
         Kind::Text => Ok(Value::String(raw.into())),
         Kind::Json => serde_json::from_str(raw).map_err(|error| invalid(name, &error.to_string())),
