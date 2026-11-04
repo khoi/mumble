@@ -357,56 +357,63 @@ fn pause_browser_rows(ui: &Ui, p: Paint) -> Vec<El> {
     rows
 }
 
-/// The languages the transcription service can be told to expect, as a quiet
-/// select. `auto` lets the service detect the language.
-const TRANSCRIPTION_LANGUAGES: &[(&str, &str)] = &[
-    ("auto", "Auto"),
-    ("en", "English"),
-    ("de", "German"),
-    ("es", "Spanish"),
-    ("fr", "French"),
-    ("it", "Italian"),
-    ("pt", "Portuguese"),
-    ("nl", "Dutch"),
-    ("pl", "Polish"),
-    ("ru", "Russian"),
-    ("uk", "Ukrainian"),
-    ("tr", "Turkish"),
-    ("ar", "Arabic"),
-    ("hi", "Hindi"),
-    ("ja", "Japanese"),
-    ("ko", "Korean"),
-    ("zh", "Chinese"),
-];
+/// The spoken languages the selected provider accepts, as a quiet select:
+/// Auto, then the provider's own list, so a language it would reject is never
+/// offered. A saved language not already in the list stays shown and selected
+/// (labeled unsupported when the provider can't use it), never silently shown
+/// as Auto and never silently rewritten.
+fn language_options(
+    provider: crate::transcription::CloudProvider,
+    current: &str,
+) -> (Vec<String>, Vec<String>, usize, bool) {
+    let mut codes = vec![crate::transcription::AUTO_LANGUAGE.to_string()];
+    let mut labels = vec!["Auto".to_string()];
+    for (code, name) in provider.languages() {
+        codes.push((*code).to_string());
+        labels.push((*name).to_string());
+    }
+    let unsupported = !provider.supports_language(current);
+    if !codes.iter().any(|code| code == current) {
+        codes.push(current.to_string());
+        labels.push(if unsupported {
+            format!("{current} (unsupported)")
+        } else {
+            current.to_string()
+        });
+    }
+    let selected = codes.iter().position(|code| code == current).unwrap_or(0);
+    (codes, labels, selected, unsupported)
+}
 
 fn language_row(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Option<El> {
-    let current = ui.settings.transcription.language.as_str();
-    let labels: Vec<&'static str> = TRANSCRIPTION_LANGUAGES
-        .iter()
-        .map(|(_, name)| *name)
-        .collect();
-    let selected = TRANSCRIPTION_LANGUAGES
-        .iter()
-        .position(|(code, _)| *code == current)
-        .unwrap_or(0);
-    let control = pick_select(
+    let provider = ui.settings.transcription.provider;
+    let current = ui.settings.transcription.language.clone();
+    let (codes, labels, selected, unsupported) = language_options(provider, &current);
+    let control = quiet_select(
         ui,
         p,
-        "transcription-language",
+        Menu::Pick("transcription-language"),
+        "transcription-language-control".into(),
         labels,
         selected,
-        |ui, index| {
-            let code = TRANSCRIPTION_LANGUAGES[index].0;
-            ui.update(|settings| settings.transcription.language = code.to_string());
+        move |ui, index| {
+            let code = codes[index].clone();
+            ui.update(|settings| settings.transcription.language = code.clone());
         },
         layer,
     );
-    Some(icon_row(
+    let note = unsupported.then(|| {
+        (
+            format!("{} can't transcribe this language", provider.name()),
+            p.warning(),
+        )
+    });
+    Some(icon_described_row(
         p,
         "transcription-language",
         &LANGUAGES,
         tr("Language"),
-        None,
+        note,
         control,
     ))
 }
@@ -1191,7 +1198,7 @@ pub(super) fn pick_select(
         p,
         Menu::Pick(key),
         format!("{key}-control"),
-        labels,
+        labels.into_iter().map(String::from).collect(),
         selected,
         pick,
         layer,
@@ -1205,7 +1212,7 @@ pub(super) fn quiet_select(
     p: Paint,
     menu: Menu,
     key: String,
-    labels: Vec<&'static str>,
+    labels: Vec<String>,
     selected: usize,
     pick: impl Fn(&mut Ui, usize) + 'static,
     layer: &mut Vec<El>,
@@ -1214,14 +1221,14 @@ pub(super) fn quiet_select(
     let pick = std::rc::Rc::new(pick);
     Select::new(key, &labels)
         .appearance(SelectAppearance::Inline)
-        .current(labels.get(selected).copied())
+        .current(labels.get(selected).map(String::as_str))
         .open(ui.open == Some(menu))
         .placement(Placement::BottomEnd)
         .on_toggle(move |ui: &mut Ui| s::toggle_menu(ui, menu))
         .on_close(|ui: &mut Ui| ui.open = None)
         .on_choose(move |ui: &mut Ui, value: &str, _: &mut rune::Tx| {
             ui.open = None;
-            if let Some(index) = choices.iter().position(|label| *label == value) {
+            if let Some(index) = choices.iter().position(|label| label == value) {
                 pick(ui, index);
             }
         })
@@ -1330,4 +1337,45 @@ pub(super) fn keys_button(ui: &Ui, p: Paint, target: ShortcutTarget) -> El {
         button = button.hover(c.hover).press(c.pressed);
     }
     button
+}
+
+#[cfg(test)]
+mod tests {
+    use super::language_options;
+    use crate::transcription::CloudProvider;
+
+    #[test]
+    fn the_language_picker_offers_the_providers_languages_plus_auto() {
+        let (codes, _, selected, unsupported) = language_options(CloudProvider::Claude, "de");
+        assert_eq!(codes.first().map(String::as_str), Some("auto"));
+        assert!(codes.iter().any(|code| code == "de"));
+        // Claude can't transcribe Chinese, so it is never offered for Claude.
+        assert!(!codes.iter().any(|code| code == "zh"));
+        assert_eq!(codes[selected], "de");
+        assert!(!unsupported);
+        // Codex offers the wider list, Chinese included.
+        let (codex, ..) = language_options(CloudProvider::Codex, "zh");
+        assert!(codex.iter().any(|code| code == "zh"));
+    }
+
+    #[test]
+    fn a_saved_language_the_provider_cannot_use_is_surfaced_not_hidden() {
+        let (codes, labels, selected, unsupported) = language_options(CloudProvider::Claude, "zh");
+        assert!(unsupported);
+        // The saved code stays shown and selected, never silently Auto.
+        assert_ne!(selected, 0);
+        assert_eq!(codes[selected], "zh");
+        assert!(labels[selected].contains("unsupported"));
+    }
+
+    #[test]
+    fn a_saved_code_codex_supports_but_does_not_list_still_shows_itself() {
+        // Codex accepts any 2-3 letter code; a saved one outside the listed set
+        // is shown and selected as itself, not silently Auto, and not flagged.
+        let (codes, labels, selected, unsupported) = language_options(CloudProvider::Codex, "vi");
+        assert!(!unsupported);
+        assert_ne!(selected, 0);
+        assert_eq!(codes[selected], "vi");
+        assert!(!labels[selected].contains("unsupported"));
+    }
 }

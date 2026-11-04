@@ -35,6 +35,45 @@ pub enum CloudProvider {
     Codex,
 }
 
+/// Every spoken language the picker can offer, with its English name. These
+/// are the single source of truth for both the language picker and each
+/// provider's support check. Claude accepts the first [`CLAUDE_LANGUAGES`];
+/// Codex accepts these and any other 2–3-letter lowercase code.
+const LANGUAGE_NAMES: &[(&str, &str)] = &[
+    ("en", "English"),
+    ("es", "Spanish"),
+    ("fr", "French"),
+    ("ja", "Japanese"),
+    ("de", "German"),
+    ("pt", "Portuguese"),
+    ("it", "Italian"),
+    ("ko", "Korean"),
+    ("hi", "Hindi"),
+    ("id", "Indonesian"),
+    ("ru", "Russian"),
+    ("pl", "Polish"),
+    ("tr", "Turkish"),
+    ("nl", "Dutch"),
+    ("uk", "Ukrainian"),
+    ("el", "Greek"),
+    ("cs", "Czech"),
+    ("da", "Danish"),
+    ("sv", "Swedish"),
+    ("no", "Norwegian"),
+    ("ar", "Arabic"),
+    ("zh", "Chinese"),
+];
+
+/// The languages Claude's service accepts: the leading entries of
+/// [`LANGUAGE_NAMES`], shared with `claude::spoken_language`.
+pub(crate) const CLAUDE_LANGUAGES: &[(&str, &str)] = LANGUAGE_NAMES.split_at(20).0;
+
+/// Whether `code` is a plausible 2–3-letter lowercase language code, the shape
+/// Codex accepts for any language.
+fn is_language_code(code: &str) -> bool {
+    matches!(code.len(), 2 | 3) && code.chars().all(|c| c.is_ascii_lowercase())
+}
+
 impl CloudProvider {
     pub const ALL: [Self; 2] = [Self::Claude, Self::Codex];
 
@@ -50,6 +89,28 @@ impl CloudProvider {
         match self {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
+        }
+    }
+
+    /// The spoken languages the picker lists for this provider (code, English
+    /// name); `auto` is always available on top of these.
+    pub fn languages(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Claude => CLAUDE_LANGUAGES,
+            Self::Codex => LANGUAGE_NAMES,
+        }
+    }
+
+    /// Whether this provider can transcribe `code` (a language code, or
+    /// `auto`). Claude takes its fixed set; Codex takes any 2–3-letter
+    /// lowercase code.
+    pub fn supports_language(self, code: &str) -> bool {
+        if code == crate::transcription::AUTO_LANGUAGE {
+            return true;
+        }
+        match self {
+            Self::Claude => self.languages().iter().any(|(c, _)| *c == code),
+            Self::Codex => is_language_code(code),
         }
     }
 }
@@ -371,6 +432,30 @@ mod tests {
     fn samples_become_clamped_16_bit_pcm() {
         let pcm: Vec<i16> = pcm16(&[0.0, 1.0, -1.0, 2.0, -2.0, 0.5]).collect();
         assert_eq!(pcm, [0, 32767, -32767, 32767, -32767, 16384]);
+    }
+
+    #[test]
+    fn each_provider_reports_the_languages_it_can_transcribe() {
+        // Claude takes its fixed set and nothing else; Codex takes the wider
+        // list plus any 2–3-letter lowercase code.
+        assert!(CloudProvider::Claude.supports_language("de"));
+        assert!(CloudProvider::Claude.supports_language(crate::transcription::AUTO_LANGUAGE));
+        assert!(!CloudProvider::Claude.supports_language("zh"));
+        assert!(!CloudProvider::Claude.supports_language("vi"));
+        assert!(CloudProvider::Codex.supports_language("zh"));
+        assert!(CloudProvider::Codex.supports_language("vi"));
+        assert!(!CloudProvider::Codex.supports_language("klingon"));
+        // The picker's offered codes are exactly the supported ones.
+        for provider in CloudProvider::ALL {
+            for (code, _) in provider.languages() {
+                assert!(
+                    provider.supports_language(code),
+                    "{} / {code}",
+                    provider.name()
+                );
+            }
+        }
+        assert!(CloudProvider::Claude.languages().len() < CloudProvider::Codex.languages().len());
     }
 
     #[test]

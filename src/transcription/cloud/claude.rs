@@ -33,10 +33,6 @@ const FINISH_QUIET: Duration = Duration::from_millis(1_500);
 /// The hard cap after CloseStream, as Claude Code's `safety` is.
 const FINISH_CAP: Duration = Duration::from_secs(5);
 const MAX_KEYTERM_CHARS: usize = 1_024;
-const LANGUAGES: [&str; 20] = [
-    "en", "es", "fr", "ja", "de", "pt", "it", "ko", "hi", "id", "ru", "pl", "tr", "nl", "uk", "el",
-    "cs", "da", "sv", "no",
-];
 
 /// A whole clip's text, or why there is none, by `deadline`.
 pub(super) fn transcribe(
@@ -138,7 +134,13 @@ fn finish(socket: &mut socket::Socket, transcript: &Transcript) -> String {
 fn spoken_language(language: &str) -> Result<&str, CloudError> {
     match language {
         crate::transcription::AUTO_LANGUAGE | "" => Ok("en"),
-        language if LANGUAGES.contains(&language) => Ok(language),
+        language
+            if super::CLAUDE_LANGUAGES
+                .iter()
+                .any(|(code, _)| *code == language) =>
+        {
+            Ok(language)
+        }
         language => Err(CloudError::Language(language.into())),
     }
 }
