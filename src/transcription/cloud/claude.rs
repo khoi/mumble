@@ -11,6 +11,7 @@ use tungstenite::Message;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::HeaderValue;
 use tungstenite::protocol::frame::coding::CloseCode;
+use tungstenite::protocol::CloseFrame;
 
 use super::CloudError;
 use super::socket::{self, Event};
@@ -25,10 +26,12 @@ const FRAME_BYTES: usize = 32_000;
 const KEEP_ALIVE: &str = r#"{"type":"KeepAlive"}"#;
 const CLOSE_STREAM: &str = r#"{"type":"CloseStream"}"#;
 const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(8);
-/// After CloseStream, the service needs at least this long, or half the
-/// length of audio still unheard (a whole clip sent at once).
-const MIN_FINISH: Duration = Duration::from_secs(15);
-const MAX_KEYTERMS: usize = 50;
+/// After CloseStream, Claude Code resolves at the first end-of-speech
+/// marker, else after this long without a frame, and closes the socket
+/// (code 1000) itself. A whole clip sent at once still gets the safety cap.
+const FINISH_QUIET: Duration = Duration::from_millis(1_500);
+/// The hard cap after CloseStream, as Claude Code's `safety` is.
+const FINISH_CAP: Duration = Duration::from_secs(5);
 const MAX_KEYTERM_CHARS: usize = 1_024;
 const LANGUAGES: [&str; 20] = [
     "en", "es", "fr", "ja", "de", "pt", "it", "ko", "hi", "id", "ru", "pl", "tr", "nl", "uk", "el",
@@ -65,9 +68,10 @@ pub(super) fn stream(
     socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
     let mut keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
     let mut transcript = Transcript::default();
-    let mut ending = false;
+    // `Some(last_frame)` once CloseStream has been sent.
+    let mut ending: Option<Instant> = None;
     loop {
-        if !ending {
+        if ending.is_none() {
             let taken = audio.take()?;
             let pcm: Vec<u8> = super::pcm16(&taken.audio)
                 .flat_map(i16::to_le_bytes)
@@ -77,34 +81,59 @@ pub(super) fn stream(
             }
             if taken.ended {
                 socket::send(&mut socket, Message::text(CLOSE_STREAM))?;
-                let unheard = Duration::from_secs_f64(taken.audio.len() as f64 / 16_000.0);
-                let finish = Instant::now() + MIN_FINISH.max(unheard / 2);
+                let cap = Instant::now() + FINISH_CAP;
                 socket::limit(
                     &mut socket,
-                    Some(deadline.map_or(finish, |deadline| deadline.min(finish))),
+                    Some(deadline.map_or(cap, |deadline| deadline.min(cap))),
                 );
-                ending = true;
+                ending = Some(Instant::now());
             }
         }
         match socket::next(&mut socket)? {
             Event::Text(frame) => {
-                if transcript.frame(&frame)? {
+                let update = transcript.frame(&frame)?;
+                if matches!(update, Update::Changed | Update::Endpoint) {
                     publish(partials, transcript.committed(), transcript.pending.clone());
                 }
+                if let Some(last_frame) = &mut ending {
+                    *last_frame = Instant::now();
+                    // Resolve at the first end of speech after CloseStream,
+                    // as Claude Code does, and close the socket ourselves.
+                    if matches!(update, Update::Endpoint) {
+                        return Ok(finish(&mut socket, &transcript));
+                    }
+                }
             }
-            Event::Closed(code) if ending => return transcript.closed(code),
+            Event::Closed(code) if ending.is_some() => return transcript.closed(code),
             Event::Closed(_) => {
                 return Err(CloudError::Failed(
                     "Claude closed the stream before the dictation ended".into(),
                 ));
             }
-            Event::Idle if Instant::now() >= keep_alive => {
-                socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
-                keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
-            }
-            Event::Idle => {}
+            Event::Idle => match ending {
+                Some(last_frame) if last_frame.elapsed() >= FINISH_QUIET => {
+                    return Ok(finish(&mut socket, &transcript));
+                }
+                Some(_) => {}
+                None if Instant::now() >= keep_alive => {
+                    socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
+                    keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
+                }
+                None => {}
+            },
         }
     }
+}
+
+/// Closes the socket (code 1000) as Claude Code does, and returns the text
+/// gathered so far.
+fn finish(socket: &mut socket::Socket, transcript: &Transcript) -> String {
+    let _ = socket.close(Some(CloseFrame {
+        code: CloseCode::Normal,
+        reason: Default::default(),
+    }));
+    let _ = socket.flush();
+    transcript.all()
 }
 
 /// The language Claude transcribes in: Auto is English, as in Claude Code.
@@ -126,9 +155,17 @@ struct Transcript {
     pending: String,
 }
 
+/// What one frame did to the transcript.
+enum Update {
+    /// A segment was committed (`TranscriptEndpoint`).
+    Endpoint,
+    /// The segment in progress changed (`TranscriptText`).
+    Changed,
+    Nothing,
+}
+
 impl Transcript {
-    /// Takes one frame; true when the text changed.
-    fn frame(&mut self, data: &str) -> Result<bool, CloudError> {
+    fn frame(&mut self, data: &str) -> Result<Update, CloudError> {
         #[derive(Deserialize)]
         struct Frame {
             #[serde(rename = "type")]
@@ -136,23 +173,23 @@ impl Transcript {
             data: Option<String>,
         }
         let Ok(frame) = serde_json::from_str::<Frame>(data) else {
-            return Ok(false);
+            return Ok(Update::Nothing);
         };
         match frame.kind.as_str() {
             "TranscriptText" => {
                 let text = frame.data.unwrap_or_default();
                 let changed = text != self.pending;
                 self.pending = text;
-                Ok(changed)
+                Ok(if changed { Update::Changed } else { Update::Nothing })
             }
             "TranscriptEndpoint" if !self.pending.is_empty() => {
                 self.committed.push(std::mem::take(&mut self.pending));
-                Ok(true)
+                Ok(Update::Endpoint)
             }
             "TranscriptError" | "error" => Err(CloudError::Failed(
                 "Claude reported a transcription error".into(),
             )),
-            _ => Ok(false),
+            _ => Ok(Update::Nothing),
         }
     }
 
@@ -160,15 +197,15 @@ impl Transcript {
         joined(self.committed.iter().map(String::as_str))
     }
 
-    /// The text once the service closed the socket with `code`.
-    fn closed(self, code: Option<CloseCode>) -> Result<String, CloudError> {
+    /// Every committed segment and the one in progress.
+    fn all(&self) -> String {
+        joined(self.committed.iter().chain([&self.pending]).map(String::as_str))
+    }
+
+    /// The text once the service closed the socket first with `code`.
+    fn closed(&self, code: Option<CloseCode>) -> Result<String, CloudError> {
         match code {
-            None | Some(CloseCode::Normal) => Ok(joined(
-                self.committed
-                    .iter()
-                    .chain([&self.pending])
-                    .map(String::as_str),
-            )),
+            None | Some(CloseCode::Normal) => Ok(self.all()),
             Some(code) => Err(CloudError::Failed(format!(
                 "Claude closed the connection ({})",
                 u16::from(code)
@@ -221,7 +258,8 @@ fn request(
 }
 
 /// Claude Code's rules for keyterms: commas split terms, so they become
-/// spaces; printable ASCII only; at most 50 terms and 1,024 characters.
+/// spaces; printable ASCII only; deduplicated exactly (case kept); 1,024
+/// characters at most, with no limit on the number of terms.
 fn keyterms_header(terms: &[String]) -> String {
     let mut seen = std::collections::HashSet::new();
     let mut kept: Vec<String> = Vec::new();
@@ -235,11 +273,11 @@ fn keyterms_header(terms: &[String]) -> String {
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");
-        if clean.is_empty() || !seen.insert(clean.to_lowercase()) {
+        if clean.is_empty() || !seen.insert(clean.clone()) {
             continue;
         }
         let cost = clean.len() + usize::from(!kept.is_empty());
-        if kept.len() == MAX_KEYTERMS || length + cost > MAX_KEYTERM_CHARS {
+        if length + cost > MAX_KEYTERM_CHARS {
             break;
         }
         length += cost;
@@ -400,29 +438,18 @@ mod tests {
     #[test]
     fn live_text_shows_committed_words_then_the_segment_in_progress() {
         let mut transcript = Transcript::default();
-        assert!(
-            transcript
-                .frame(r#"{"type":"TranscriptText","data":"so the"}"#)
-                .unwrap()
-        );
-        assert!(
-            !transcript
-                .frame(r#"{"type":"TranscriptText","data":"so the"}"#)
-                .unwrap()
-        );
-        assert!(
-            transcript
-                .frame(r#"{"type":"TranscriptEndpoint"}"#)
-                .unwrap()
-        );
-        assert!(
-            transcript
-                .frame(r#"{"type":"TranscriptText","data":"plan is"}"#)
-                .unwrap()
-        );
+        let kind = |t: &mut Transcript, f: &str| match t.frame(f).unwrap() {
+            Update::Endpoint => "endpoint",
+            Update::Changed => "changed",
+            Update::Nothing => "nothing",
+        };
+        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptText","data":"so the"}"#), "changed");
+        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptText","data":"so the"}"#), "nothing");
+        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptEndpoint"}"#), "endpoint");
+        assert_eq!(kind(&mut transcript, r#"{"type":"TranscriptText","data":"plan is"}"#), "changed");
         assert_eq!(transcript.committed(), "so the");
         assert_eq!(transcript.pending, "plan is");
-        assert!(!transcript.frame(r#"{"type":"Metadata"}"#).unwrap());
+        assert_eq!(kind(&mut transcript, r#"{"type":"Metadata"}"#), "nothing");
     }
 
     #[test]
@@ -482,13 +509,16 @@ mod tests {
 
     #[test]
     fn keyterms_follow_claude_codes_rules() {
-        let terms: Vec<String> = ["Rune, Kit", "rune kit", "Hëx", "  ", "OpenCode"]
+        // Dedup keeps case, as Claude Code does: "Rune Kit" and "rune kit"
+        // are both kept.
+        let terms: Vec<String> = ["Rune, Kit", "rune kit", "Hëx", "  ", "OpenCode", "Rune Kit"]
             .into_iter()
             .map(String::from)
             .collect();
-        assert_eq!(keyterms_header(&terms), "Rune Kit,Hx,OpenCode");
-        let many: Vec<String> = (0..80).map(|n| format!("term{n}")).collect();
-        assert_eq!(keyterms_header(&many).split(',').count(), MAX_KEYTERMS);
+        assert_eq!(keyterms_header(&terms), "Rune Kit,rune kit,Hx,OpenCode");
+        // No term-count cap: 80 short terms all fit under 1,024 characters.
+        let many: Vec<String> = (0..80).map(|n| format!("t{n}")).collect();
+        assert_eq!(keyterms_header(&many).split(',').count(), 80);
         let long: Vec<String> = (0..10).map(|n| format!("{n}{}", "x".repeat(200))).collect();
         assert!(keyterms_header(&long).len() <= MAX_KEYTERM_CHARS);
     }

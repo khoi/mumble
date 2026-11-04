@@ -21,9 +21,11 @@ use crate::transcription::engine::Partials;
 const URL: &str = "https://chatgpt.com/backend-api/transcribe";
 const STREAM_HOST: &str = "chatgpt.com";
 const STREAM_URL: &str =
-    "wss://chatgpt.com/backend-api/dictation/stream?dictation_surface=composer&client_type=desktop";
+    "wss://chatgpt.com/backend-api/dictation/stream?dictation_surface=composer";
 const PROTOCOLS: &str = "chatgpt-dictation, codex-desktop";
-const DESKTOP_VERSION: &str = "26.1021.31345";
+/// Codex Desktop reports `app.getVersion()`; track a currently shipping
+/// ChatGPT.app version (bump with it).
+const DESKTOP_VERSION: &str = "26.1007.71326";
 /// How long a new session may take to say it started.
 const SESSION_START: Duration = Duration::from_secs(15);
 /// How long a closing session may take to send its last words.
@@ -295,6 +297,7 @@ fn stream_request(login: &Login) -> Result<tungstenite::handshake::client::Reque
     for (name, value) in [
         ("authorization", format!("Bearer {}", login.token)),
         ("chatgpt-account-id", login.account.clone()),
+        ("accept-language", crate::desktop::i18n::preferred_locale()),
         ("originator", "Codex Desktop".into()),
         ("user-agent", user_agent()),
         ("sec-websocket-protocol", PROTOCOLS.into()),
@@ -426,9 +429,7 @@ fn wav(clip: &[f32]) -> Result<Vec<u8>, CloudError> {
 }
 
 fn boundary() -> String {
-    let mut random = [0u8; 16];
-    let _ = getrandom::fill(&mut random);
-    format!("hex-{}", data_encoding::HEXLOWER.encode(&random))
+    format!("----codex-transcribe-{}", uuid())
 }
 
 /// The form Codex Desktop posts: the WAV as `file`, then the language.

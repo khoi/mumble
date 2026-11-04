@@ -147,7 +147,7 @@ fn system_locale() -> String {
 
 /// The person's first preferred locale in full (`zh-Hant-TW`), for the
 /// interface language; on macOS the system's language list.
-fn preferred_locale() -> String {
+pub(crate) fn preferred_locale() -> String {
     #[cfg(target_os = "macos")]
     if let Some(locale) = macos_preferred_locale() {
         return locale;
