@@ -1,4 +1,23 @@
 {
   "$schema": "https://supaterm.com/schema/supaterm.json",
-  "iconPath": "site/public/favicon.png"
+  "iconPath": "site/public/favicon.png",
+  "defaultThreadEnvMode": "worktree",
+  "scripts": [
+    {
+      "name": "Run Mumble",
+      "command": "cargo run -- app",
+      "icon": "play"
+    },
+    {
+      "name": "Check",
+      "command": "scripts/check",
+      "icon": "test"
+    },
+    {
+      "name": "Clean build output",
+      "command": "cargo clean",
+      "icon": "build",
+      "runOnDone": true
+    }
+  ]
 }
