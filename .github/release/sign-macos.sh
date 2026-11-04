@@ -50,7 +50,7 @@ check_layout "$finder" 0000000142756431
 
 # Every Mach-O in the bundle must be one this script signs: these always,
 # and libonnxruntime only while a build still bundles it.
-required=$(printf '%s\n' Contents/MacOS/hex Contents/MacOS/scrawl-helper \
+required=$(printf '%s\n' Contents/MacOS/hex \
   Contents/Library/HexMicrophone.driver/Contents/MacOS/HexMicrophoneDriver | LC_ALL=C sort)
 optional=Contents/Frameworks/libonnxruntime.1.23.2.dylib
 found=$(cd "$app" && find . -type f -exec sh -c 'file -b "$1" | grep -q Mach-O && printf "%s\n" "${1#./}"' _ {} \; | LC_ALL=C sort)
@@ -69,8 +69,6 @@ notarize() {
 
 if [ -f "$app/$optional" ]; then sign "$app/$optional"; fi
 sign "$app/Contents/Library/HexMicrophone.driver"
-# The capture experiment's movie decoder; Hex runs it, so it needs no entitlement.
-sign --identifier anomaly.hex.scrawl-helper "$app/Contents/MacOS/scrawl-helper"
 sign --entitlements "$release/hex.entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 
