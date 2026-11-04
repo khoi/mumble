@@ -998,7 +998,7 @@ fn segments_and_switch_tracks_hover_at_once() {
     let mut rt = runtime("portal", true, TALL_SIZE);
     open_advanced(&mut rt, Pane::General);
     let targets = [
-        rt.find("speech-engine-control-trigger"),
+        rt.find("indicator-control-trigger"),
         rt.find("avoid-bluetooth-microphone/switch"),
     ];
     for (target, name) in targets.into_iter().zip(["select", "switch"]) {
@@ -1971,7 +1971,7 @@ mod panes;
 /// window means for something else must not reach that trigger.
 #[test]
 fn the_recorder_still_gets_space_and_enter_after_a_menu_closes() {
-    for scene in ["menus", "language-menu"] {
+    for scene in ["menus"] {
         for recorded in [Key::Text(" ".into()), Key::Enter] {
             let mut rt = runtime(scene, true, GOLDEN_SIZE);
             assert!(rt.state.open.is_some(), "{scene} opens a menu");

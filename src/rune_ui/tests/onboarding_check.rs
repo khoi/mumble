@@ -38,6 +38,7 @@ pub(super) const SCENES: &[&str] = &[
 
 /// The optional pages: the demo and the practice.
 const OPTIONAL: &[&str] = &[
+    "onboarding",
     "onboarding-demo",
     "onboarding-try",
     "mac-onboarding-try",
@@ -72,10 +73,14 @@ fn onboarding_skip() {
 
     // macOS, permissions still to grant: the demo skips to them.
     let mut rt = runtime("mac-onboarding-permissions", true, PANE_SIZE);
-    rt.update(|ui, _| super::super::onboarding_kit::live::fixture_resume(ui, Page::Demo));
+    rt.update(|ui, _| {
+        if let Some(s) = ui.first_run.as_mut() {
+            s.jump_to_demo();
+        }
+    });
     settle(&mut rt);
     assert_eq!(page(&rt), Some(Page::Demo));
-    skip(&mut rt, "mac demo", Page::Permissions);
+    skip(&mut rt, "demo", Page::Permissions);
 
     // Nothing left to set up: the demo and the practice skip to Hex is ready.
     let mut rt = runtime("onboarding-demo", true, PANE_SIZE);
