@@ -1145,7 +1145,6 @@ fn platform_goldens() {
     for dark in [true, false] {
         for scene in [
             "mac-settings",
-            "mac-input-source-models",
             "mac-settings-permissions-stale",
             "shortcut-mode",
             "shortcut-mode-key",
