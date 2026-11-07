@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use rune::{
-    Anim, Cx, El, OverlayHandle, OverlayOptions, OverlayPlacement, OverlaySpec, ScreenEdge, row,
-    text,
+    Anim, Cx, El, OverlayHandle, OverlayOptions, OverlayPlacement, OverlaySpec, ScreenEdge, Span,
+    row, text,
 };
 
 use super::controls::Paint;
@@ -162,25 +162,19 @@ fn is_blank(partial: &Partial) -> bool {
     partial.stable.trim().is_empty() && partial.tentative.trim().is_empty()
 }
 
-/// About one space of the plate's font, between right-to-left stable and
-/// tentative words.
-const RTL_SPACE: f32 = 4.0;
-
-/// Whether the line's first strong letter is right-to-left (Hebrew, Arabic,
-/// Persian, Syriac, Thaana, N'Ko, and their presentation forms).
-fn is_right_to_left(stable: &str, tentative: &str) -> bool {
-    stable
-        .chars()
-        .chain(tentative.chars())
-        .find(|c| c.is_alphabetic() || is_rtl_letter(*c))
-        .is_some_and(is_rtl_letter)
-}
-
-fn is_rtl_letter(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0590}'..='\u{08FF}' | '\u{FB1D}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}'
-    )
+/// The line as one string, oldest words first, and where its tentative
+/// words start.
+fn words(plate: &Plate) -> (String, usize) {
+    let stable = plate.stable.trim();
+    let tentative = plate.tentative.trim();
+    let gap = if stable.is_empty() || tentative.is_empty() {
+        ""
+    } else {
+        " "
+    };
+    let line = format!("{stable}{gap}{tentative}");
+    let from = line.len() - tentative.len();
+    (line, from)
 }
 
 fn view(plate: &Plate, cx: &mut Cx<Plate>) -> El {
@@ -193,41 +187,24 @@ fn view(plate: &Plate, cx: &mut Cx<Plate>) -> El {
         .center()
         .px(4.0)
         .hover_motion_within(Anim::INSTANT, Anim::INSTANT);
-    if plate.stable.trim().is_empty() && plate.tentative.trim().is_empty() {
+    let (line, tentative) = words(plate);
+    if line.is_empty() {
         return root;
     }
-    // The newest words stay in view: the start gives way with "…".
-    let stable = text(plate.stable.trim().to_owned())
-        .key("stable")
+    let faint = (tentative < line.len()).then(|| Span {
+        color: Some(p.faint()),
+        ..Span::new(tentative, line.len())
+    });
+    // One text, so the newest words stay in view however the stream splits
+    // them: the start gives way with "…".
+    let words = text(line)
+        .key("words")
+        .spans(faint.into_iter().collect::<Vec<_>>())
         .truncate_head()
         .font(p.k.ty.ui)
-        .color(p.text());
-    let rtl = is_right_to_left(&plate.stable, &plate.tentative);
-    let tentative = (!plate.tentative.trim().is_empty()).then(|| {
-        let words = text(if rtl {
-            // A leading space would sit on the right-to-left line's far
-            // (right) side; the gap goes between the words instead.
-            plate.tentative.trim().to_owned()
-        } else {
-            plate.tentative.clone()
-        })
-        .key("tentative")
-        .truncate()
-        .font(p.k.ty.ui)
-        .color(p.faint());
-        let spaced = rtl
-            && !plate.stable.trim().is_empty()
-            && plate.tentative.starts_with(char::is_whitespace);
-        if spaced { words.mr(RTL_SPACE) } else { words }
-    });
-    let line = row().key("line").min_w(0.0).shrink();
-    // Right-to-left, the newer (tentative) words read after the stable ones,
-    // so they sit to their left.
-    let line = if rtl {
-        line.children(tentative).child(stable)
-    } else {
-        line.child(stable).children(tentative)
-    };
+        .color(p.text())
+        .min_w(0.0)
+        .shrink();
     root.child(
         row()
             .key("plate")
@@ -238,7 +215,7 @@ fn view(plate: &Plate, cx: &mut Cx<Plate>) -> El {
             .radius(PLATE_H / 2.0)
             .fill(c.bg_base)
             .border(p.hair, c.border_base)
-            .child(line),
+            .child(words),
     )
 }
 
@@ -288,43 +265,43 @@ mod tests {
         assert!(w < SIZE.0 / 2.0, "the plate hugs a short line: {w}");
         assert!((x + w / 2.0 - SIZE.0 / 2.0).abs() < 1.0, "centred: {x} {w}");
         assert!((y + h / 2.0 - SIZE.1 / 2.0).abs() < 1.0, "centred: {y} {h}");
-        assert!(rect(&rt, "tentative").is_none());
     }
 
     #[test]
     fn a_long_line_stays_inside_the_overlay_on_one_line() {
-        for tentative in ["", " together with the team"] {
-            let rt = runtime(LONG, tentative, true);
+        for (stable, tentative) in [(LONG, ""), (LONG, " together with the team"), ("", LONG)] {
+            let rt = runtime(stable, tentative, true);
             let [x, _, w, h] = rect(&rt, "plate").unwrap();
             assert!(x >= 0.0 && x + w <= SIZE.0, "inside: {x} {w}");
             assert_eq!(h, PLATE_H);
-            let [line_x, _, line_w, _] = rect(&rt, "line").unwrap();
+            let [words_x, _, words_w, line] = rect(&rt, "words").unwrap();
             assert!(
-                line_x + line_w <= x + w,
-                "the words fit the plate: {line_x} {line_w}"
+                words_x + words_w <= x + w,
+                "the words fit the plate: {words_x} {words_w}"
             );
-            let [_, _, _, line] = rect(&rt, "stable").unwrap();
             assert!(line < PLATE_H, "one line: {line}");
-            assert_eq!(rect(&rt, "tentative").is_some(), !tentative.is_empty());
         }
     }
 
     #[test]
-    fn tentative_words_follow_the_stable_ones_in_reading_order() {
-        let rt = runtime(SHORT, " is to finish", false);
-        let [sx, _, sw, _] = rect(&rt, "stable").unwrap();
-        let [tx, _, _, _] = rect(&rt, "tentative").unwrap();
-        assert!(tx >= sx + sw - 0.5, "left to right: {sx} {sw} {tx}");
-
-        let rt = runtime(HEBREW, " והיום", false);
-        let [sx, _, _, _] = rect(&rt, "stable").unwrap();
-        let [tx, _, tw, _] = rect(&rt, "tentative").unwrap();
-        assert!(tx + tw < sx, "right to left, after a space: {tx} {tw} {sx}");
-
-        assert!(is_right_to_left(HEBREW, ""));
-        assert!(is_right_to_left("  ", " مرحبا"));
-        assert!(!is_right_to_left(SHORT, " שלום"));
-        assert!(!is_right_to_left("", ""));
+    fn tentative_words_follow_the_stable_ones_in_one_line() {
+        let line = |stable: &str, tentative: &str| {
+            words(&Plate {
+                stable: stable.into(),
+                tentative: tentative.into(),
+            })
+        };
+        assert_eq!(
+            line(SHORT, " is to finish"),
+            (format!("{SHORT} is to finish"), 22)
+        );
+        assert_eq!(line(SHORT, "is"), (format!("{SHORT} is"), 22));
+        assert_eq!(line("", "  so the plan "), ("so the plan".into(), 0));
+        assert_eq!(line(" so the plan ", ""), ("so the plan".into(), 11));
+        assert_eq!(
+            line(HEBREW, " והיום"),
+            (format!("{HEBREW} והיום"), HEBREW.len() + 1)
+        );
     }
 
     #[test]
@@ -384,6 +361,7 @@ mod tests {
             ("short", SHORT, ""),
             ("long", LONG, ""),
             ("tentative", SHORT, " is to finish"),
+            ("long-tentative", "", LONG),
             ("rtl", HEBREW, " והיום"),
         ] {
             for dark in [false, true] {
