@@ -251,7 +251,7 @@ Transcribe with and Language rows in
 ## Dictate
 
 ```ts
-Saved shortcut                           // dictation; Option by default; Windows and X11 accept mouse buttons, macOS with Labs > Mouse shortcuts
+Saved shortcut                           // dictation; fn by default on macOS; Windows and X11 accept mouse buttons, macOS with Labs > Mouse shortcuts
 ├── Hold -> Speak -> Release
 ├── Tap, tap -> Speak hands-free -> Press again   // Shortcut mode: Hold or double-tap
 ├── Tap mode (Toggle) -> Cancel shortcut, Escape by default, while recording
