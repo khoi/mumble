@@ -492,7 +492,6 @@ fn run_host(
             guard.refresh();
             let interval = if stopping
                 || guard.shortcut_edit.is_some()
-                || guard.transcription_preparation.is_some()
                 || guard.listener.as_ref().is_some_and(|listener| {
                     matches!(listener.startup, ListenerStartup::Awaiting { .. })
                         || listener.worker.is_finished()

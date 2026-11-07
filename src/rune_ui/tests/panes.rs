@@ -1452,19 +1452,19 @@ fn a_labs_card_shows_its_description_and_its_switch_turns_it_on() {
     use crate::labs::Feature;
     let mut rt = runtime("mac-labs", true, (980.0, 2000.0));
     unfold_labs(&mut rt);
-    let feature = Feature::SubtitleExport;
-    assert!(rt.find("lab-card-subtitle-export").is_some());
-    tap(&mut rt, "lab-card-subtitle-export");
+    let feature = Feature::LiveText;
+    assert!(rt.find("lab-card-live-text").is_some());
+    tap(&mut rt, "lab-card-live-text");
     assert!(
         !feature.on(&rt.state.settings),
         "pressing a card flips nothing"
     );
-    tap(&mut rt, "lab-subtitle-export");
+    tap(&mut rt, "lab-live-text");
     assert!(
         feature.on(&rt.state.settings),
         "the card's switch turns it on"
     );
-    tap(&mut rt, "lab-subtitle-export");
+    tap(&mut rt, "lab-live-text");
     assert!(!feature.on(&rt.state.settings), "and off");
 }
 
@@ -1539,11 +1539,10 @@ fn labs_groups_follow_each_os() {
         assert!(shown.contains(&has.to_string()), "{scene} shows {has}");
         assert!(!shown.contains(&lacks.to_string()), "{scene} hides {lacks}");
         for group in crate::labs::Group::ALL {
-            let any = shown.iter().any(|id| {
-                crate::labs::Feature::from_name(id)
-                    .map_or(crate::labs::Group::Annotate, |feature| feature.group())
-                    == group
-            });
+            let any = shown
+                .iter()
+                .filter_map(|id| crate::labs::Feature::from_name(id))
+                .any(|feature| feature.group() == group);
             assert_eq!(
                 rt.find(&format!("group-{}", group.id())).is_some(),
                 any,

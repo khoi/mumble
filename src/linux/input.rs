@@ -1756,7 +1756,6 @@ mod tests {
         assert_eq!(id(Shortcut::Dictation, "ALT+space"), "dictation");
         assert_eq!(id(Shortcut::Dictation, "CTRL+ALT+j"), "dictation");
         assert_eq!(id(Shortcut::PasteLast, "CTRL+ALT+v"), "paste-last");
-        assert_eq!(id(Shortcut::Capture, "F9"), "capture");
         assert_eq!(id(Shortcut::RawDictation, "CTRL+r"), "raw-dictation");
     }
 
