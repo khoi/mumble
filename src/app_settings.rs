@@ -884,27 +884,24 @@ mod tests {
     /// another shortcut, and the other shortcuts' checks count it.
     #[test]
     fn the_second_dictation_shortcut_needs_its_lab_and_its_own_keys() {
-        let function = HotkeyBinding {
-            modifiers: HotkeyModifiers {
-                function: true,
-                ..HotkeyModifiers::default()
-            },
+        let option = HotkeyBinding {
+            modifiers: HotkeyModifiers::option(),
             key: None,
         };
         let mut settings = AppSettings {
-            second_dictation_hotkey: Some(function.clone()),
+            second_dictation_hotkey: Some(option.clone()),
             ..AppSettings::default()
         };
         assert!(!settings.labs.second_dictation_shortcut);
         assert_eq!(settings.runtime_hotkeys().second_dictation, None);
-        assert!(!settings.hotkey_in_use(HotkeySlot::RawDictation, &function));
+        assert!(!settings.hotkey_in_use(HotkeySlot::RawDictation, &option));
 
         settings.labs.second_dictation_shortcut = true;
         let active = settings.runtime_hotkeys().second_dictation;
         if cfg!(target_os = "macos") {
-            assert_eq!(active, Some(function.runtime()));
-            assert!(settings.hotkey_in_use(HotkeySlot::RawDictation, &function));
-            assert!(settings.hotkey_in_use(HotkeySlot::Dictation, &function));
+            assert_eq!(active, Some(option.runtime()));
+            assert!(settings.hotkey_in_use(HotkeySlot::RawDictation, &option));
+            assert!(settings.hotkey_in_use(HotkeySlot::Dictation, &option));
         } else {
             assert_eq!(active, None);
         }

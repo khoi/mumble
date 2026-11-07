@@ -70,6 +70,7 @@ where
 }
 
 impl HotkeyModifiers {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub const fn option() -> Self {
         Self {
             option: Some(ModifierSide::Either),
@@ -617,13 +618,16 @@ impl<'de> Deserialize<'de> for HotkeyBinding {
 }
 
 impl Default for HotkeyBinding {
-    /// Option on macOS, Ctrl+Space on Windows, Alt+Space on Linux, and
+    /// fn on macOS, Ctrl+Space on Windows, Alt+Space on Linux, and
     /// Ctrl+Alt+Space on GNOME, whose window menu takes Alt+Space (#723), and
     /// on KDE Plasma, whose KRunner does (#898).
     fn default() -> Self {
         #[cfg(target_os = "macos")]
         let binding = Self {
-            modifiers: HotkeyModifiers::option(),
+            modifiers: HotkeyModifiers {
+                function: true,
+                ..HotkeyModifiers::default()
+            },
             key: None,
         };
         #[cfg(target_os = "windows")]

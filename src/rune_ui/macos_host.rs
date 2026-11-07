@@ -1042,7 +1042,10 @@ mod tests {
             key: None,
         }));
         assert!(
-            binding.overlaps(&HotkeyBinding::default()),
+            binding.overlaps(&HotkeyBinding {
+                modifiers: HotkeyModifiers::option(),
+                key: None,
+            }),
             "⌥ takes both too"
         );
         assert_eq!(

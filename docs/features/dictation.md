@@ -20,7 +20,7 @@ write fails, capture remains active with an error; retry or cancel it explicitly
 The GPUI regression that injected this failure went with GPUI; no Rune test
 injects a failed shortcut save yet.
 
-**Shortcut:** Option by default, after macOS permissions are ready; transcription
+**Shortcut:** fn by default on macOS, after macOS permissions are ready; transcription
 also needs the chosen provider's app (Claude or Codex) signed in. Commands and
 OpenCode are not required. General > Dictation >
 Shortcut accepts modifier-only, modifier-plus-key, standalone Fn/Globe, and

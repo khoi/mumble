@@ -429,7 +429,7 @@ CoreAudio formats, AppleScript details, or event serialization.
   Accessibility are ready. Mumble never asks for Input
   Monitoring: Accessibility also grants the listen-event access its shortcut
   taps need (measured on macOS 26 and 27).
-- The dictation shortcut defaults to Option but supports modifier-only,
+- The dictation shortcut defaults to fn on macOS but supports modifier-only,
   modifier-plus-key, standalone Globe/Fn, and standalone function-key bindings.
   Capturing a new binding suspends global matching.
 - Every shortcut is a chord: the set of keys held together, any order and

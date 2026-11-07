@@ -894,7 +894,7 @@ fn side(s: &Onboard, cx: &mut Cx<Onboard>) -> El {
     }
 
     let note = if s.interactive_try() {
-        "On Your turn, hold ⌥ and speak into your Mac's mic — your running Mumble pastes your real words into the card."
+        "On Your turn, hold fn and speak into your Mac's mic — your running Mumble pastes your real words into the card."
     } else {
         "Mumble transcribes through Claude or Codex; the demo plays the same answer typed, then spoken."
     };
