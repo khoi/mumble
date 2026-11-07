@@ -26,9 +26,8 @@ const FRAME_BYTES: usize = 32_000;
 const KEEP_ALIVE: &str = r#"{"type":"KeepAlive"}"#;
 const CLOSE_STREAM: &str = r#"{"type":"CloseStream"}"#;
 const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(8);
-/// After CloseStream, Claude Code resolves at the first end-of-speech
-/// marker, else after this long without a frame, and closes the socket
-/// (code 1000) itself. A whole clip sent at once still gets the safety cap.
+/// Claude Code's `noData`: a live stream that heard no text this long after
+/// CloseStream resolves, and a whole clip resolves once frames stop this long.
 const FINISH_QUIET: Duration = Duration::from_millis(1_500);
 /// The hard cap after CloseStream, as Claude Code's `safety` is.
 const FINISH_CAP: Duration = Duration::from_secs(5);
@@ -41,12 +40,13 @@ pub(super) fn transcribe(
     keyterms: &[String],
     deadline: Instant,
 ) -> Result<String, CloudError> {
-    stream(
+    run(
         &Audio::whole(clip),
         language,
         keyterms,
         None,
         Some(deadline),
+        Finish::Whole,
     )
 }
 
@@ -57,18 +57,69 @@ pub(super) fn stream(
     language: &str,
     keyterms: &[String],
     partials: Option<&Partials>,
+) -> Result<String, CloudError> {
+    run(audio, language, keyterms, partials, None, Finish::Live)
+}
+
+/// How a stream resolves once CloseStream is sent.
+#[derive(Clone, Copy)]
+enum Finish {
+    /// Audio sent while it was recorded: earlier sentences already ended,
+    /// so the first end-of-speech marker after CloseStream resolves it, as
+    /// Claude Code's voice mode does.
+    Live,
+    /// A whole clip sent at once ends every sentence after CloseStream, so
+    /// it resolves only once the service goes quiet.
+    Whole,
+}
+
+/// What the service sent since CloseStream.
+struct Closing {
+    at: Instant,
+    last_frame: Instant,
+    texts: usize,
+    endpoints: usize,
+}
+
+impl Closing {
+    fn new(transcript: &Transcript, now: Instant) -> Self {
+        Self {
+            at: now,
+            last_frame: now,
+            texts: transcript.texts,
+            endpoints: transcript.endpoints,
+        }
+    }
+
+    fn done(&self, finish: Finish, transcript: &Transcript, now: Instant) -> bool {
+        let since_close = now.saturating_duration_since(self.at);
+        since_close >= FINISH_CAP
+            || match finish {
+                Finish::Live => {
+                    transcript.endpoints > self.endpoints
+                        || (transcript.texts == self.texts && since_close >= FINISH_QUIET)
+                }
+                Finish::Whole => now.saturating_duration_since(self.last_frame) >= FINISH_QUIET,
+            }
+    }
+}
+
+fn run(
+    audio: &Audio,
+    language: &str,
+    keyterms: &[String],
+    partials: Option<&Partials>,
     deadline: Option<Instant>,
+    finish: Finish,
 ) -> Result<String, CloudError> {
     let language = spoken_language(language)?;
     let mut socket = socket::connect(HOST, request(&token()?, language, keyterms)?, deadline)?;
     socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
     let mut keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
     let mut transcript = Transcript::default();
-    // When CloseStream was sent, and when the last frame arrived after it.
-    let mut closed_at: Option<Instant> = None;
-    let mut last_frame = Instant::now();
+    let mut closing: Option<Closing> = None;
     loop {
-        if closed_at.is_none() {
+        if closing.is_none() {
             let taken = audio.take()?;
             let pcm: Vec<u8> = super::pcm16(&taken.audio)
                 .flat_map(i16::to_le_bytes)
@@ -81,9 +132,7 @@ pub(super) fn stream(
                 // The engine's budget is the only hard transport deadline;
                 // the finalize caps below resolve with the text instead.
                 socket::limit(&mut socket, deadline);
-                let now = Instant::now();
-                closed_at = Some(now);
-                last_frame = now;
+                closing = Some(Closing::new(&transcript, Instant::now()));
             }
         }
         match socket::next(&mut socket)? {
@@ -91,37 +140,35 @@ pub(super) fn stream(
                 if transcript.frame(&frame)? {
                     publish(partials, transcript.committed(), transcript.pending.clone());
                 }
-                if closed_at.is_some() {
-                    last_frame = Instant::now();
+                if let Some(closing) = &mut closing {
+                    closing.last_frame = Instant::now();
                 }
             }
-            Event::Closed(code) if closed_at.is_some() => return transcript.closed(code),
+            Event::Closed(code) if closing.is_some() => return transcript.closed(code),
             Event::Closed(_) => {
                 return Err(CloudError::Failed(
                     "Claude closed the stream before the dictation ended".into(),
                 ));
             }
-            Event::Idle if closed_at.is_none() && Instant::now() >= keep_alive => {
+            Event::Idle if closing.is_none() && Instant::now() >= keep_alive => {
                 socket::send(&mut socket, Message::text(KEEP_ALIVE))?;
                 keep_alive = Instant::now() + KEEP_ALIVE_EVERY;
             }
             Event::Idle => {}
         }
-        // After CloseStream, every sentence sends its own endpoint, so wait
-        // for the service to go quiet (or the safety cap) and return all the
-        // text, then close the socket ourselves (code 1000) as Claude Code
-        // does. A read must never time out and discard accumulated text.
-        if let Some(closed_at) = closed_at
-            && (last_frame.elapsed() >= FINISH_QUIET || closed_at.elapsed() >= FINISH_CAP)
+        // A read must never time out and discard accumulated text, so the
+        // socket is closed here (code 1000) as Claude Code does.
+        if let Some(closing) = &closing
+            && closing.done(finish, &transcript, Instant::now())
         {
-            return Ok(finish(&mut socket, &transcript));
+            return Ok(close(&mut socket, &transcript));
         }
     }
 }
 
 /// Closes the socket (code 1000) as Claude Code does, and returns the text
 /// gathered so far.
-fn finish(socket: &mut socket::Socket, transcript: &Transcript) -> String {
+fn close(socket: &mut socket::Socket, transcript: &Transcript) -> String {
     let _ = socket.close(Some(CloseFrame {
         code: CloseCode::Normal,
         reason: Default::default(),
@@ -153,6 +200,8 @@ fn spoken_language(language: &str) -> Result<&str, CloudError> {
 struct Transcript {
     committed: Vec<String>,
     pending: String,
+    texts: usize,
+    endpoints: usize,
 }
 
 impl Transcript {
@@ -168,12 +217,17 @@ impl Transcript {
             return Ok(false);
         };
         match frame.kind.as_str() {
-            "TranscriptText" => {
+            "TranscriptText" | "TranscriptInterim" => {
+                self.texts += 1;
                 let changed = frame.data.as_deref() != Some(self.pending.as_str());
                 self.pending = frame.data.unwrap_or_default();
                 Ok(changed)
             }
-            "TranscriptEndpoint" if !self.pending.is_empty() => {
+            "TranscriptEndpoint" => {
+                self.endpoints += 1;
+                if self.pending.is_empty() {
+                    return Ok(false);
+                }
                 self.committed.push(std::mem::take(&mut self.pending));
                 Ok(true)
             }
@@ -467,6 +521,59 @@ mod tests {
             transcript.frame(frame).unwrap();
         }
         assert_eq!(transcript.all(), "First sentence. Second sentence.");
+    }
+
+    #[test]
+    fn a_live_stream_resolves_at_the_first_endpoint_after_closestream() {
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let mut transcript = Transcript::default();
+        transcript
+            .frame(r#"{"type":"TranscriptText","data":"hello"}"#)
+            .unwrap();
+        let closing = Closing::new(&transcript, start);
+        assert!(!closing.done(Finish::Live, &transcript, at(100)));
+        transcript
+            .frame(r#"{"type":"TranscriptText","data":"hello world"}"#)
+            .unwrap();
+        assert!(!closing.done(Finish::Live, &transcript, at(2_000)));
+        transcript
+            .frame(r#"{"type":"TranscriptEndpoint"}"#)
+            .unwrap();
+        assert!(closing.done(Finish::Live, &transcript, at(200)));
+        assert!(!closing.done(Finish::Whole, &transcript, at(200)));
+        assert_eq!(transcript.all(), "hello world");
+    }
+
+    #[test]
+    fn a_live_stream_without_text_after_closestream_resolves_at_no_data() {
+        let start = Instant::now();
+        let transcript = Transcript::default();
+        let closing = Closing::new(&transcript, start);
+        let at = |ms| start + Duration::from_millis(ms);
+        assert!(!closing.done(Finish::Live, &transcript, at(1_400)));
+        assert!(closing.done(Finish::Live, &transcript, at(1_500)));
+    }
+
+    #[test]
+    fn a_whole_clip_waits_for_quiet_and_every_stream_stops_at_the_cap() {
+        let start = Instant::now();
+        let mut transcript = Transcript::default();
+        let mut closing = Closing::new(&transcript, start);
+        let at = |ms| start + Duration::from_millis(ms);
+        transcript
+            .frame(r#"{"type":"TranscriptEndpoint"}"#)
+            .unwrap();
+        closing.last_frame = at(1_000);
+        assert!(!closing.done(Finish::Whole, &transcript, at(2_000)));
+        assert!(closing.done(Finish::Whole, &transcript, at(2_500)));
+        let live = Closing::new(&Transcript::default(), start);
+        let talking = Transcript {
+            texts: 1,
+            ..Transcript::default()
+        };
+        assert!(!live.done(Finish::Live, &talking, at(4_900)));
+        assert!(live.done(Finish::Live, &talking, at(5_000)));
     }
 
     #[test]

@@ -133,7 +133,7 @@ impl CloudStream {
         let keyterms = crate::dictation::vocabulary::terms();
         Self::spawn(provider, move |audio| match provider {
             CloudProvider::Claude => {
-                super::claude::stream(&audio, &language, &keyterms, partials.as_ref(), None)
+                super::claude::stream(&audio, &language, &keyterms, partials.as_ref())
             }
             CloudProvider::Codex => super::codex::stream(&audio, &language, partials.as_ref()),
         })
