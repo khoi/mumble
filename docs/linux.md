@@ -32,8 +32,13 @@ StatusNotifierItem host, such as Waybar, KDE, or Omarchy's bar), Mumble shows a
 tray icon: click it to open the window, or use its menu: **Show Mumble**,
 **Paste last dictation**, the update once one
 is ready (**Restart to update**), **Enable / Disable Mumble**, and **Quit Mumble**;
-while Mumble records or transcribes, the menu and tooltip say so. Without a
-tray, quit with **Quit Mumble** at the bottom of the window's sidebar, the launcher's **Quit Mumble** action, or `mumble quit`.
+while Mumble records or transcribes, the menu and tooltip say so. The mark is white,
+and black when the desktop's color scheme prefers light; Mumble reads that setting
+when it creates the tray, so a later switch applies at the next launch. KDE's
+portal takes the scheme from the window palette, so a mixed theme with light
+windows and a dark panel (such as Breeze Twilight) gets a black mark on a dark
+panel. Without a tray, quit with **Quit Mumble** at the bottom of the window's
+sidebar, the launcher's **Quit Mumble** action, or `mumble quit`.
 
 The window opens at 980×760 logical pixels and floats on tiling window
 managers with no window rule: it maps with its minimum size equal to its
@@ -188,8 +193,10 @@ direct install gets it in `~/.local/share/icons/hicolor` when Mumble first start
 Remove the application while preserving logs and settings with:
 
 ```sh
-sh install-linux.sh uninstall
+curl -fsSL https://anoma.ly/mumble/files/install-linux.sh | sh -s -- uninstall
 ```
+
+or, with a saved copy of the installer, `sh install-linux.sh uninstall`.
 
 ### Upgrading from 2.3.1
 
@@ -406,23 +413,22 @@ dictation rules:
   their menu, and the paste lands there instead of the message box
   (#1023). Mumble still logs the
   paste as sent. Ctrl+Space or a key without modifiers works.
-  Hyprland names each shortcut `anomaly.mumble:<shortcut>-<trigger>`: Mumble's app
-  id, the shortcut, and the key Settings records with `+` written as `-`.
-  With the default keys these are `anomaly.mumble:dictation-ALT-space` and
-  `anomaly.mumble:paste-last-CTRL-ALT-v`.
-  The name changes when you record another key in Settings, so list the
-  current names with `hyprctl globalshortcuts` while Mumble runs and bind those.
-  For example:
+  Hyprland names each shortcut `anomaly.mumble:<shortcut>`:
+  `anomaly.mumble:dictation`, `anomaly.mumble:paste-last`, and
+  `anomaly.mumble:raw-dictation` (Dictate without processing). The names stay
+  the same when you record another key in Settings (#1376), so a bind keeps
+  working; `hyprctl globalshortcuts` lists them while Mumble runs. For example:
 
 ```lua
-hl.bind("End", hl.dsp.global("anomaly.mumble:dictation-ALT-space"))
-hl.bind("F10", hl.dsp.global("anomaly.mumble:paste-last-CTRL-ALT-v"))
+hl.bind("End", hl.dsp.global("anomaly.mumble:dictation"))
+hl.bind("F10", hl.dsp.global("anomaly.mumble:paste-last"))
 ```
 
   Traditional Hyprland configs write
-  `bind = , End, global, anomaly.mumble:dictation-ALT-space`. Binds to
+  `bind = , End, global, anomaly.mumble:dictation`. Earlier builds put the
+  recorded key in the name (`anomaly.mumble:dictation-ALT-space`), and binds to
   `mumble:dictation` or `mumble:paste-last` (names from before Mumble's app id was
-  `anomaly.mumble`) do nothing; replace them. Remove any `cancel-dictation`
+  `anomaly.mumble`) are older still; both do nothing now, so replace them. Remove any `cancel-dictation`
   bind: Mumble no longer has it. Hyprland 0.56's Lua binds send no release when the modifier comes
   up before the key (Alt before Z); 0.57 fixes this. On 0.56, Toggle is
   unaffected: the next press still finishes. In Hold, recording continues
@@ -567,12 +573,18 @@ approved, so you're asked only once.
     Ctrl+V to paste" and the transcript stays on the clipboard.
 
   There is no silent XWayland, direct-typing, uinput, or privileged
-  input-injection fallback; the only XWayland use besides the HUD is the
-  opt-in clipboard restore above. Transcript text travels on stdin, not command-line
+  input-injection fallback; the only XWayland uses besides the HUD are the
+  opt-in clipboard restore above and the opt-in floating meeting capsules
+  below. Transcript text travels on stdin, not command-line
   arguments.
 - The overlay uses layer-shell. Without it (GNOME), only the HUD opens on
   XWayland as an override-redirect, click-through window that never takes
-  focus. With neither, Settings reports that the HUD is unavailable rather than
+  focus. The meeting capsules take clicks, so there a call offer opens the
+  Meetings pane instead, unless you opt in to Labs › Floating meeting capsules
+  on GNOME (`mumble labs on gnome-meeting-capsules`, off by default): the offer
+  and recording capsule then float over the call on XWayland, taking clicks
+  on their buttons but never keyboard focus. It works only while XWayland is
+  already running; Mumble never starts it. With neither, Settings reports that the HUD is unavailable rather than
   presenting a normal focus-taking window as an overlay.
 - Shortcuts come from the GlobalShortcuts portal or from your own keybindings
   for the `mumble` commands ([Shortcuts](#shortcuts)). Mumble reads no input devices

@@ -32,15 +32,17 @@ runtime settings persist in Application Support.
 Every build shows General, Output, History, and Labs. Labs holds features
 we're unsure about, especially ones people asked for that we built: **new or
 user-requested features land in Labs, off by default, not on by default.**
-Labs has no master switch; Settings › Labs is one flat list of rows (name,
-description, toggle), each off by default, plus Send feedback and Run setup
-again. Each feature has an audience: `Everyone` or `Dev` (dev, local, test, and
+Labs has no master switch; Settings › Labs lists every lab this OS has as a
+card (name, description, toggle), each off by default, under one collapsible
+header per group (Dictation, Output, History, Meetings, Annotate, Shortcuts,
+Models; `labs::Feature::group`), plus Send feedback and Run setup again. Each feature has an audience: `Everyone` or `Dev` (dev, local, test, and
 dev-channel builds only; a stable build never lists, accepts, or runs it).
 A feature with its own pane joins the sidebar as a normal item while
 on and is hidden while off; a behaviour-only feature is just its toggle. Today:
-Voice Filter (locked on while its macOS driver is installed), Playground,
-Live text, Mouse shortcuts (#209, macOS), Also pause the browser (#301, macOS),
-Share dictation shortcut (#176, Windows), and Terminal paste (Windows).
+Voice Filter (Dev; locked on while its macOS driver is installed, and a
+stable build with the driver keeps its pane for Uninstall alone), Playground
+(Dev), Live text, Mouse shortcuts (#209, macOS), Also pause the browser (#301,
+macOS), Share dictation shortcut (#176, Windows), and Terminal paste (Windows).
 Externally contributed features land there too. Transcription is not a Labs
 feature: choosing the cloud service (Claude or Codex) is a normal General
 setting. Only developer tools (`dev_build::is_dev_build()` with
@@ -74,7 +76,12 @@ substitute for source inspection or a second roadmap.
 - `audio`: `cpal` device enumeration, input resolution (`--device`, the saved
   microphone, else the system default, never Mumble Microphone), the CoreAudio
   default-input and device-list listeners, timestamped mono float PCM
-  delivery, live selection, and bounded stream recovery.
+  delivery, live selection, and bounded stream recovery. `audio/fixture`:
+  with `MUMBLE_AUDIO_FIXTURE=<wav>` every microphone open plays that file
+  instead (10 ms chunks at real-time pace, from its start at each open,
+  looping) and no device is enumerated or opened, so benchmarks drive the
+  real capture, stream, and output pipeline without recording anyone; the
+  microphone permission then reads as ready.
 - `suppression`: the macOS event taps, shortcut suppression, and the
   configurable dictation-hotkey state machine.
 - `keyboard`: active-layout key resolution and balanced synthetic shortcuts.
@@ -193,7 +200,8 @@ substitute for source inspection or a second roadmap.
   macOS reads the front tab of a table of
   scriptable browsers (Safari and Chromium
   dictionaries) through AppleScript and any other app's focused AXWebArea
-  `AXURL`; `windows/context` reads any browser through UI Automation and
+  `AXURL`, and the front window's title only while a script
+  transformation is set up (`reads_window_title`); `windows/context` reads any browser through UI Automation and
   `linux/atspi` through AT-SPI.
 - `application_catalog`: cached installed-application discovery for the Modes
   picker, one module per OS: macOS bundles, Windows executables from Start menu
@@ -212,7 +220,8 @@ substitute for source inspection or a second roadmap.
   values only. Locked switches read off at load and keep their saved values on
   save; list-driven work checks the policy where it starts.
 - `app_paths`: the Application Support owner (`mumble` on every OS) for runtime
-  logs and shared state.
+  logs and shared state. The logs folder and its files are owner-only on
+  Unix (0700/0600, tightened when an older Mumble left them open).
 - `desktop/onboarding`, `desktop/permission_guide`: required permission health, the native
   floating System Settings guide, the release startup gate, and the practice
   game.
@@ -300,6 +309,8 @@ substitute for source inspection or a second roadmap.
 - `desktop/tray_menu`: the tray menu Linux and Windows share (recording state, Show
   Mumble, Paste last dictation, the update item, Enable / Disable Mumble, Quit Mumble).
   Each tray maps a `TrayCommand` onto its own runtime.
+- `desktop/tray_icon`: the tray mark Linux and Windows share: the white Mumble
+  mark, drawn black on a light panel or taskbar, where white would vanish.
 - `linux/login_item`: Launch at login on Linux, the managed XDG autostart
   entry the installer also writes; the file is the only state.
 - `net`: Mumble's own HTTPS (update checks, transformation `fetch`, cloud
@@ -348,7 +359,9 @@ substitute for source inspection or a second roadmap.
 - `desktop/events`, `control/dashboard`: bounded asynchronous append-only NDJSON observations
   and bounded incremental reading; the debug `dashboard` TUI and the Activity
   pane are read-only projections. Context events name the foreground app,
-  never a page address.
+  written only when it changes, never a page address or window title, and no
+  event holds dictated or transcribed text: History is the only place Mumble
+  keeps what was said.
 - `desktop/activity`: the shared listener, device, session, and latest-failure
   projection over `EventReader`. Transcript rows read retained events directly.
 - `desktop/host`: the in-process listener, transcription, shortcut, and update
@@ -366,6 +379,12 @@ substitute for source inspection or a second roadmap.
   `rune_ui/linux_host.rs`, `windows_host.rs`, and `macos_host.rs` connect it to
   each OS's host. Keep shared UI in the pane modules and only OS behavior in
   the hosts.
+- `rune_ui/accessibility_tests`: the window's accessibility tree, which Rune
+  builds with AccessKit for screen readers, Voice Control, and strobe's
+  benches (`docs/features/accessibility.md`). Rows, choices, lists, and
+  icon-only buttons get their names, values, states, and places in Mumble's
+  shared pieces (`controls`, `lists`, `list_detail`, `sidebar`); names go
+  through `tr`. Every control in every scene must have a name.
 - `desktop/opencode_catalog`: the OpenCode model catalog as the window shows it:
   loading off the UI thread, the missing/failing notice, model names, search,
   and thinking variants.
@@ -399,7 +418,7 @@ substitute for source inspection or a second roadmap.
   its own thread. Answers on a channel; cancel and a dialog that never opened
   read as nothing chosen.
 - `labs`: the Labs feature registry (`labs::Feature`: name, settings key,
-  description, audience), the runtime gates (`labs::live_text`,
+  description, audience, group), the runtime gates (`labs::live_text`,
   `playground`, `vocabulary_biasing`, `mouse_shortcuts`), and
   `mumble labs [on|off <feature>]`. `dev_build`: whether this is a dev, local, test,
   or dev-channel build.
@@ -464,10 +483,15 @@ CoreAudio formats, AppleScript details, or event serialization.
   dictation of the saved shortcut (the listener's event log on Linux and
   Windows), and Done always skips it.
 - GUI startup must successfully call `keyboard::initialize_layout` on the OS
-  main thread before settings, keyboard-using workers, or Rune start. That
-  snapshot is fixed until restart; cached misses must not re-enter TIS/TSM.
-  Uncached headless lookups retain live-layout resolution, with all native
-  lookup and snapshot construction serialized by the same lock.
+  main thread before settings, keyboard-using workers, or Rune start. When the
+  selected input source changes, the main thread rebuilds the snapshot
+  (`keyboard::refresh_layout`, from the one always-on input-source observer)
+  and publishes it whole; workers read the old or the new snapshot, never a
+  mix, and cached misses never re-enter TIS/TSM. After a rebuild the runtime
+  shortcuts are resolved again from the last applied settings; a macOS
+  shortcut on a letter key follows its letter, and the listener rebinds it
+  only once idle. Uncached headless lookups retain live-layout resolution,
+  with all native lookup and snapshot construction serialized by the same lock.
 - macOS launch order: `main` calls `rune::prewarm_gpu()` (macOS draws with Rune's native Metal
   backend by default; Mumble never picks a backend) right after parsing
   the command line, only when it will run the app (`mumble app` without Rune's
@@ -508,7 +532,12 @@ CoreAudio formats, AppleScript details, or event serialization.
   fences remain required. Never strip Fn globally from shortcut matching.
 - Hold the shortcut to dictate and release to transcribe. Captures shorter than
   300 ms discard. A 450 ms hotkey pre-roll
-  protects speech onset. Capture has no automatic duration limit; release or
+  protects speech onset, except when "While dictating" mutes, pauses, or lowers
+  other audio: that audio predates the suppression and holds whatever was
+  playing, so those hotkey captures keep no pre-roll (#1309, #1468;
+  `dictation::hotkey_pre_roll`, every OS). Do nothing keeps 450 ms. There is no
+  separate pre-roll setting. Capture has
+  no automatic duration limit; release or
   an explicit stop ends it.
 - Only Toggle mode has a cancel (#786, #1022): its cancel shortcut
   (`cancel_hotkey`, Escape by default, rebindable in General under Shortcut
@@ -764,13 +793,14 @@ CoreAudio formats, AppleScript details, or event serialization.
   crates.io; never run `cargo publish`. Mumble depends on `rune`, `rune-kit`,
   and `rune-theme-opencode` at one pinned Git rev in `Cargo.toml` and
   `Cargo.lock`; every pin bump
-  must also update `cargoLock.outputHashes."rune-0.0.1"` in `nix/package.nix`
-  and keep `windows` 0.62.2 for `gpu-allocator` in `Cargo.lock`.
+  must also update `cargoGitDependencies."rune-0.0.1"` (its rev and output hash)
+  in `nix/package.nix` and keep `windows` 0.62.2 for `gpu-allocator` in
+  `Cargo.lock`.
 - At the start of each work round, bump Mumble's Rune pin to Rune's `dev` head:
   read the `## dev` section of Rune's `CHANGELOG.md` since the current pin,
-  adapt to its breaking changes, update `nix/package.nix`'s outputHash, and
-  run `scripts/check rune_ui`, goldens included. If Rune itself breaks, report
-  it to Rune rather than working around it.
+  adapt to its breaking changes, update Rune's rev and output hash in
+  `nix/package.nix`, and run `scripts/check rune_ui`, goldens included. If Rune
+  itself breaks, report it to Rune rather than working around it.
 - Mumble runs as one long-lived process per user and data root on every OS: a
   menu-bar process on macOS (`macos_rune`, native `NSStatusItem`, native Metal
   `NSPanel` HUD), a tray process on Windows
@@ -846,6 +876,14 @@ CoreAudio formats, AppleScript details, or event serialization.
   this user's XWayland process already runs with `DISPLAY` set; Mumble never
   connects first, so it never starts XWayland. While it is off there, Settings
   › Output says the clipboard can't be restored and points to the toggle.
+  A second explicit opt-in exception: Labs › Floating meeting capsules on
+  GNOME (`gnome-meeting-capsules`, off by default) lets the meeting capsules
+  (recording offer, recording capsule) open on XWayland through Rune's
+  `OverlayOptions::xwayland_input`, as override-redirect windows that take
+  clicks in their input shape and never keyboard focus, only on a Wayland
+  session without layer-shell and only while this user's XWayland process
+  already runs; Mumble decides at each show and never starts XWayland. Off, or
+  when the overlay still can't open, an offer opens the Meetings pane (#1271).
   Everything else stays on Wayland. The desktop may grant a different
   trigger, keep an older one, or refuse one; Settings shows what it granted,
   follows ShortcutsChanged, and opens ConfigureShortcuts (portal version 2).
@@ -973,7 +1011,7 @@ git diff --check
 New, unproven, user-requested, and externally contributed features
 (including ones the issue pipeline builds) land in Labs, off by default
 ([docs/features/labs.md](docs/features/labs.md)): add a `labs::Feature` with
-its settings key and description, a row on the Labs page, and a
+its settings key, description, and group (`Feature::group`), a card on the Labs page, and a
 `mumble settings` key; gate where the feature's work starts (worker, thread,
 capture), not just its UI. Never add a master switch or ship such a feature
 on by default. Remove it from Labs when it graduates or is dropped.
@@ -983,6 +1021,25 @@ tests through cargo-nextest (`brew install cargo-nextest`) with
 `.config/nextest.toml`, which kills a hung test and reports it by name; CI uses
 the same config's `ci` profile. Read its output whole rather than piping it
 through `grep | head`; failures are summarized at the end.
+
+Benchmark with strobe (`docs/perf.md`): `strobe.json` builds `--release`
+with `CARGO_PROFILE_RELEASE_*` env for line tables in `mumble.pdb` (no profile
+or feature, so any commit builds), and `perf/*.bench.ts` holds the cases.
+strobe drives the window through its accessibility tree (UI Automation) and
+posted window input, with no bridge or build feature: selectors are element
+keys, so keep the keys benches use stable
+(`docs/features/accessibility.md`). A
+benchmarked copy runs with its own
+`MUMBLE_APPLICATION_SUPPORT_DIR` (a root other than the default also gets its
+own Windows single-instance event), `MUMBLE_DISABLE_UPDATES=1` (no update
+checks, as a test build), `USERPROFILE`/`HOME` for `~/.config/mumble`, and a
+seeded `settings.json` with the listener off. Never point a benchmark at the
+user's own data folder. Derive user folders through `app_paths`
+(`home_dir`, `data_dir`, `document_dir`) and, in Annotate's crates,
+`scrawl_router::user_dirs`, never `dirs` directly: on Windows `dirs` ignores
+the redirected `USERPROFILE`/`APPDATA`/`LOCALAPPDATA` and reaches the real
+user's folders. Add a case beside each performance change, in the
+same PR.
 
 Keep source files under 800 non-test lines (`#[cfg(test)]` code excluded);
 1,500 is a hard cap, and older files above it live in
@@ -1218,8 +1275,9 @@ Use `termctrl` to verify TUI changes at both wide and narrow dimensions. The
 - `~/Library/Application Support/mumble/logs/process.log`: Rust,
   CoreAudio, and context-adapter diagnostics.
 
-Windows uses `%APPDATA%\mumble` and Linux `~/.local/share/mumble` (or under
-`XDG_DATA_HOME`). Mumble keeps no compatibility with earlier `voice-control`
+Windows uses `%APPDATA%\mumble`, with logs and models in `%LOCALAPPDATA%\mumble`
+(machine-local, so roaming profiles don't copy them), and Linux
+`~/.local/share/mumble` (or under `XDG_DATA_HOME`). Mumble keeps no compatibility with earlier `voice-control`
 folders or per-OS settings files.
 
 ## Future Direction

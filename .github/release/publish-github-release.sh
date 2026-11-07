@@ -36,7 +36,7 @@ printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 
-assets=$(cd "$dist" && { ls mumble-*.zip mumble-*.dmg mumble-*.exe mumble-*-linux-* 2>/dev/null || true; })
+assets=$(cd "$dist" && { ls mumble-*.zip mumble-*.dmg mumble-*.exe mumble-*.com hex-*-linux-* 2>/dev/null || true; })
 [ -n "$assets" ] || {
   echo "No release files in $dist." >&2
   exit 1

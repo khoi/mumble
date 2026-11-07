@@ -11,23 +11,29 @@ debug, local `MUMBLE_LOCAL_BUILD`, test `MUMBLE_TEST_BUILD`, and dev-channel
 drops it, its gate reads false even when `settings.json` says on, and the
 saved setting is kept untouched. In dev builds a Dev row carries a quiet
 "Dev" tag, and `mumble labs` prints each feature's audience. Every feature
-below is `Everyone` today. There is no master switch. **Labs** is always the last item in the
-sidebar and lists every Labs feature as one flat row (name, one-line
-description, toggle), each **off by default**, plus Send feedback and Run
-setup again.
+below is `Everyone` today unless marked `(Dev)`. Each feature also has a
+**group** (`labs::Feature::group` in `src/labs/group.rs`, one exhaustive
+`match`, so a new feature must choose): Dictation, Output (paste, formatting,
+spoken punctuation), History, or Shortcuts. There
+is no master switch. **Labs** is always the last item in the sidebar and lists
+every Labs feature this OS has as a card (name, one-line description, toggle)
+under its group's collapsible header, each **off by default**, plus Send
+feedback and Run setup again.
 
 ```ts
 Feature             Pane  Toggle (settings.json, mumble settings)   On: what it does
-├── Voice Filter    yes   experimental.mumble_microphone  (macOS, Linux) Voice Filter joins the sidebar; feeds the Mumble Microphone (macOS driver, Linux PipeWire source)
-├── Playground      yes   labs.playground                        a Playground sidebar item and ⇧⌘D open the story browser
+├── Voice Filter (Dev) yes experimental.mumble_microphone (macOS, Linux) Voice Filter joins the sidebar; feeds the Mumble Microphone (macOS driver, Linux PipeWire source)
+│                                        a stable build never feeds it; with the macOS driver installed it keeps the pane with Uninstall alone
+├── Playground (Dev) yes  labs.playground                        a Playground sidebar item and ⇧⌘D open the story browser
 ├── Live text       no    labs.live_text                         provisional words beside the HUD while dictating
+├── Settings search no    labs.settings_search                  a search field atop General filters its rows, Advanced's included
 ├── Mouse shortcuts no    labs.mouse_shortcuts         (macOS)   mouse buttons record as shortcuts (#209)
 ├── Also pause the browser no pause_browser_media      (macOS)   pause a playing tab too, with Pause media (#301); General shows its permission row
 ├── Share dictation shortcut no share_dictation_shortcut (Windows) apps such as Discord see the shortcut too (#176)
 ├── Restore shortcut default no labs.restore_shortcut_default   Paste last dictation's row offers its default back (#613)
 ├── Keep dictation on clipboard no labs.keep_on_clipboard (macOS) a pasted dictation stays on the clipboard; the previous one is not restored (#200)
 ├── Copy dictation only no labs.copy_only (macOS)    a dictation goes to the clipboard and is never pasted; Paste last dictation still pastes (#629)
-├── Spoken formatting no labs.spoken_formatting      spoken "new line"/"line break", "new paragraph", "open/close quote" become line breaks and quotation marks; Spanish "nuevo párrafo", "nueva línea", "abre/cierra comillas", … too (#630, #1040)
+├── Spoken formatting no labs.spoken_formatting      spoken "new line"/"line break", "new paragraph", "open/close quote", "quote … unquote" become line breaks and quotation marks; Spanish "nuevo párrafo", "nueva línea", "abre/cierra comillas", … too (#630, #1040)
 ├── Spoken symbols  no    labs.spoken_symbols          spoken "hashtag", "underscore", "comma", … become symbols joined to their words: "#release", "my_variable", "done, thanks"; Spanish "arroba", "guion bajo", "coma", … too (#678, #1040)
 ├── Remove filler words no labs.filler_words          um, umm, uh, uhh, erm, er, ah leave dictations, with no model (#631)
 ├── Second dictation shortcut no labs.second_dictation_shortcut + second_dictation_hotkey (macOS)
@@ -37,38 +43,64 @@ Feature             Pane  Toggle (settings.json, mumble settings)   On: what it 
 ├── Tap or hold      no    labs.tap_or_hold             (macOS, Linux) in Toggle mode, a press held past 300 ms dictates until it lifts; a short tap still locks (#711, #1144)
 ├── Special keys alone no labs.standalone_special_keys (Linux, Windows) Linux: Menu, Pause, Scroll Lock may be a shortcut's key, alone or with modifiers (#767); Windows: Insert, Home, End, Page Up, Page Down may stand alone (#794)
 ├── Section key alone no  labs.section_key_alone       (Linux) the § key, left of 1 on ISO keyboards, may be a shortcut with no modifier (#1050)
-├── Dictation stats no    labs.history_stats           History shows a summary of retained dictations; mumble history stats prints it (#790)
+├── Dictation stats no    labs.history_stats           History's Stats button opens a summary of retained dictations; mumble history stats prints it (#790)
 ├── Copy recent dictations no labs.recent_dictations (macOS) the menu bar's Copy Recent Dictation submenu copies one of the last five dictations (#877)
 ├── Fix results in Output no labs.output_fixes           Output's Try card offers Vocabulary and Fix this, which copies an agent prompt naming the wrong result (#989)
 ├── Hide menu bar icon no labs.hide_menu_bar_icon      (macOS) the menu-bar icon hides; shortcuts keep working, reopening Mumble shows Settings (#1064)
+├── ⌘Q closes Settings no labs.quit_closes_window      (macOS) the app menu's Quit Mumble (⌘Q) closes the Settings window instead of quitting Mumble; dictation keeps running, the menu bar icon still quits (#1473)
+├── Notch indicator no    labs.notch_indicator         (macOS) with the indicator at Top, the notch widens sideways in the Dynamic Island's compact style: an orange mic and level bars, the macOS spinner, a green checkmark; flat screens keep it below the menu bar
 ├── Restore clipboard on GNOME no labs.gnome_clipboard_restore (Linux) on a Wayland desktop without data-control (GNOME), a paste snapshots and restores
 │                                        the clipboard through XWayland, only while this user's Xwayland already runs; never starts it (#1111)
-└── Terminal paste  no    paste_with_shift             (Windows) paste with Ctrl+Shift+V (#477/#478; Linux keeps it in General)
+└── Terminal paste  no    paste_with_shift             (Windows) paste with Ctrl+Shift+V (#477/#478; Linux keeps it in General);
+                                         Java games (javaw/java, e.g. Minecraft) still get Ctrl+V (#1362)
+                                         // check: terminal_paste_sends_plain_control_v_to_java_games (windows/paste.rs)
 
-Settings › Labs                          // labs.page
-├── "Try unfinished features. They may change or break." + Send feedback -> https://github.com/supabitapp/mumble/issues/new
-├── Opened by a link (macOS) -> mumble://labs opens this page; mumble://labs/<feature> also scrolls to the
-│   feature's row (centred) and pulses it for ~1.4 s (layer_02 fill, then back); it never turns the
-│   feature on. An unknown or absent name -> the page opens and process.log notes it. mumble://settings/<pane>
+Settings › Labs                          // labs.page, a store (labs/store.rs)
+├── Header -> "Labs", Search N labs (⌘F focuses it), Discover | Turned on · N
+├── Group chips with counts -> All, Dictation, Output, History, Shortcuts
+│   (labs/group.rs; a group this OS has no lab in hides)
+├── Discover, no chip or search -> New in Labs: the two newest labs, then every other lab
+│   under its group's header; a lab added on the newest date among those shown carries New
+├── Group header (key group-<id>) -> name, card count, chevron; a group with no card here hides
+│   ├── Press -> folds or unfolds it, saved at once in labs.groups (settings.json, not a mumble settings key)
+│   ├── Never pressed -> open while it holds a lab that's on, folded otherwise
+│   └── Turning off a group's last lab -> the group stays open (it is saved open first)
+├── A chip, a search (name, description, group), or Turned on -> only the matching cards,
+│   still under their headers; a chip or search shows every match whatever the folds,
+│   under a plain heading; none -> "No labs match" / "Nothing turned on yet"
+│   // checks: labs_groups_fold_and_remember_it, labs_groups_follow_each_os (tests/panes.rs);
+│   // every_group_has_a_feature_and_round_trips_its_id (labs/group.rs);
+│   // goldens mac-labs (light, dark), windows-labs, linux-labs, mac-labs-link
+├── Card -> neutral icon tile, name with New / Dev tags on one line, up to two lines of description, a switch;
+│   pressing the card itself does nothing (there is no drawer)
+│   ├── The switch (key lab-<id>) -> flips the lab, saved at once
+│   ├── A pane feature on -> its pane is a normal top-level sidebar item; off -> hidden entirely
+│   └── Voice Filter while its driver is installed, or a managed or locked lab -> its switch is disabled
+├── Opened by a link (macOS) -> mumble://labs opens this page; ?tab=on, ?category=<group id> and ?search=<text>
+│   set the store; mumble://labs/<lab> also selects that lab's group chip (unless ?category names one). It never turns a lab on. An unknown
+│   or absent name -> the page opens and process.log notes it. mumble://settings/<pane>
 │   (general, output, history, voice-filter) opens a main pane; one Mumble doesn't show -> General.
 │   Links over 2048 bytes are ignored; a test build's scheme is mumble-test://
-├── One row per feature this OS has -> press flips it, saved at once
-│   ├── A pane feature on -> its pane is a normal top-level sidebar item; off -> hidden entirely
-│   └── Voice Filter while its driver is installed -> on, disabled, "Uninstall the driver in Voice Filter to turn it off."
-└── Run setup again -> replays the onboarding (below)
+└── Footer -> "Unfinished features. They may change or break.", Run setup again (replays the onboarding,
+    below), Send feedback -> https://github.com/supabitapp/mumble/issues/new
 
 mumble labs                                 // labs.cli; edits settings.json, no running Mumble
 ├── (list) -> every feature this build has: name, on/off, audience, description, its mumble settings key
-├── link <feature> -> macOS: prints mumble://labs/<feature> (mumble-test:// in a test build); no Copy link on the rows, 20 of them would only add noise
+├── link <feature> -> macOS: prints mumble://labs/<feature> (mumble-test:// in a test build), which opens Labs on its group
 ├── on <feature> | off <feature> -> a running Mumble saves and applies it (mumble settings set); otherwise settings.json
-├── off voice-filter with the driver installed -> refused: uninstall the driver
+├── off voice-filter with the driver installed -> refused: uninstall the driver (dev builds; stable has no voice-filter)
 └── mumble experiments … -> points at mumble labs
 
 mumble settings set labs.live_text true     // macOS: through the running Mumble
 ```
 
-Checks: `rune_ui::deep_link` tests (parser, every feature's link reads back);
-`a_labs_link_*` in tests/panes.rs and the `mac-labs-link` golden (Linux).
+Checks: `rune_ui::deep_link` tests (parser, query, every feature's link reads
+back); the labs store tests in tests/panes.rs (links, card toggles, a lab's own settings on its card, the stable build's missing Dev labs,
+filters, ⌘F, a lone card's width, group folds and each OS's groups) and the
+`mac-labs`, `mac-labs-link`, `windows-labs`, and `linux-labs` goldens (Linux).
+Scenes: `mac-labs`, `mac-labs-on`, `mac-labs-category`, `mac-labs-search`,
+`mac-labs-settings`, `mac-labs-link`, `windows-labs`, `linux-labs`. Not yet observed: the store in a running
+Mumble.
 
 Settings saved before this model may carry `labs.enabled`; it is read and
 ignored, and every feature keeps its own toggle. `mumble status` lists the
@@ -77,7 +109,9 @@ features on (`Labs` line on macOS, `labs` array in the macOS and Linux JSON,
 
 Every toggle applies at once, from the window or `mumble labs on|off` (issue
 568, from @maharshi365): Live text is asked as each dictation starts and its
-plate is always installed (prewarmed only when Live text is on at launch);
+plate is always installed (prewarmed on macOS whatever the setting, so a
+plate turned on after launch never flashes the last dictation's words,
+#1075; elsewhere only when Live text is on at launch);
 the window always attaches the playground with Rune's own ⇧⌘D off, and its
 sidebar item, ⇧⌘D, the macOS View menu, and story links open it only while
 the toggle is on. Nothing starts at launch for a feature that is off. Limit:
@@ -98,6 +132,17 @@ settings load (macOS), with a one-time note in General
 `mouse_shortcuts_go_back_to_their_default_while_their_labs_toggle_is_off` in
 [app_settings.rs](../../src/app_settings.rs).
 
+Clicks and drags reach Mumble's filtering (event-consuming) session tap only
+while some shortcut is a mouse button; otherwise they go to the listen-only
+tap, as chord evidence only. A filtering tap on mouse events, even one that
+passes every event through, broke dragging windows between displays and
+Spaces (#1215). The tap thread's 5 s health check moves them when a mouse
+shortcut is bound or cleared, so for up to 5 s after that a newly bound button
+still reaches the app. Check:
+`mouse_events_reach_the_filtering_tap_only_while_a_mouse_shortcut_is_bound` in
+[suppression/tests.rs](../../src/suppression/tests.rs) (macOS only). Not yet
+observed: a real two-display Mac dragging windows with Mumble running.
+
 Restore shortcut default (`restore-shortcut-default`, issue 613): while on,
 General › Advanced › Paste last dictation shows a Restore default shortcut
 button (`restore-paste-last`) whenever the shortcut is not its default
@@ -109,6 +154,27 @@ row is exactly as before. The gate is the row itself (the feature does no
 other work). Check:
 `restore_default_brings_back_paste_last_only_with_its_lab_on` in
 [tests.rs](../../src/rune_ui/tests.rs).
+
+Settings search (`settings-search`, every OS): while on, General starts with
+a single-line search field. Typing keeps only the rows and cards whose title
+or description matches case-insensitively; the Advanced fold's rows match
+without opening it, and the fold control hides while a query is set.
+Permissions and errors always stay; the listener card matches its status,
+hint, and Enable/Disable text, and the desktop-shortcut card matches its
+title, and either counts as a match when shown. Nothing matching shows
+"No settings match" with the kit's empty state, and clearing the field
+restores the pane. The gate is the pane
+([general/search.rs](../../src/rune_ui/general/search.rs) reads
+`labs::Feature::SettingsSearch`), so off, General is exactly as before.
+Checks: `settings_search_shows_with_its_lab_and_filters_general`,
+`settings_search_matches_descriptions`,
+`settings_search_keeps_permissions_and_status_cards`, and
+`command_f_focuses_general_search_only_with_its_lab_and_pane` in
+[tests.rs](../../src/rune_ui/tests.rs) and the matching test in
+[general/search.rs](../../src/rune_ui/general/search.rs). Not yet observed
+in a real window; the Labs page goldens were regenerated for macOS
+(`mac-labs`, `mac-labs-link`, light and dark), Windows (`windows-labs`,
+light), and Linux (`linux-labs`, light).
 
 Keep dictation on clipboard (`keep-on-clipboard`, issue 200, macOS): while
 on, a pasted dictation stays on the clipboard. `paste::Paster` reads
@@ -155,7 +221,12 @@ replacements). Whole phrases, ignoring case and Spanish accents, are
 replaced: "new line", "line break", "nueva línea", and "salto de línea" by
 one line break, "new paragraph" and "nuevo párrafo" by two, "open quote",
 "abrir comillas", and "abre comillas" by an opening `"`, and "close quote",
-"cerrar comillas", and "cierra comillas" by a closing one; the commas,
+"cerrar comillas", and "cierra comillas" by a closing one. A whole-word
+"quote" with a later "unquote" in the same dictation and words between them
+becomes the same pair of marks ("He said quote hello unquote." becomes
+`He said "hello".`, #1167); "quote" with no "unquote" after it, a lone
+"unquote", "quotes"/"quoted"/"unquoted", and "quote unquote" said back to
+back stay as they are. The commas,
 periods, and spaces the model puts around a command go with it ("Hello. New
 line. Next" becomes "Hello.\nNext"). Words such as "newline", "new liner",
 "lineal", or "comillas" alone stay as they are. English and Spanish phrases
@@ -261,8 +332,10 @@ whitespace, opening punctuation, straight quotes, or symbols such as `@ $ # /
 -`, and never before text that starts with whitespace or closing punctuation.
 Selected text, a cursor at the start, or an app that doesn't expose its
 cursor leaves the text unchanged, and both the clipboard paste and the
-Chromium 155/156 typing path use the adjusted text. Lowercasing the first
-letter is not done. Off, pasting is exactly as before. Checks:
+Chromium 155/156 typing path use the adjusted text. Mumble's own window is
+never asked: its tree belongs to the main thread that updates it (#1402).
+Lowercasing the first letter is not done. Off, pasting is exactly as before.
+Checks:
 `smart_spacing_adds_a_space_only_where_one_belongs` in
 [paste.rs](../../src/paste.rs) (macOS only);
 `smart_spacing_is_its_own_bit_and_off_by_default` in
@@ -343,8 +416,9 @@ mumble settings set dictation_hotkey menu        // labs.special-keys
 │   instead lets Insert, Home, End, Page Up, Page Down stand alone ("home alone
 │   needs Labs › Special keys alone" while off), and off puts a saved one back
 ├── macOS -> no toggle; a bare one still needs a modifier, as before
-├── Window recorder -> refuses them while off ("Add a modifier"); Rune reports
-│   none of these keys yet, so the recorder can't record them either way
+├── Window recorder (Linux) -> records them, alone too, while on (#1187);
+│   refuses them while off ("Add a modifier")
+│   Check: `recorder_takes_special_keys_alone` in `rune_ui/settings.rs`
 └── Toggle turned off (row, mumble labs off, mumble settings), or settings load with
     it off -> a Linux shortcut on one goes back to its default (Dictate without
     processing unbound), so the listener never registers it
@@ -404,26 +478,35 @@ Not yet observed: a real ISO keyboard on X11 or a Wayland portal granting
 `section`; whether Rune reports § as text on every layout; the Labs page
 goldens need regenerating on Linux with the new row.
 
-Dictation stats (`history-stats`, issue 790, every OS): while on, the History
-pane shows a "Dictation stats" block above the list once anything is retained:
-dictations, words, words per minute, how often Output changed the text, the
-daily streak, and the top five apps; `mumble history stats [--since] [--until]
-[--json]` prints the same ([transcript-cli.md](../transcript-cli.md)). It sums
-every entry within retention (`History::stats`, `history/stats.rs`), not the
-pane's 200-entry search, so it ends with what retention removes; the rollup that
-outlives retention, streak notifications, and per-replacement counts are not
-built. The gates are `labs::history_stats()`, read when the pane reloads (off,
-it reads nothing for stats, and sums again only when the entries or the toggle
-change) and where `mumble history stats` starts (off, it fails naming `mumble labs on
+Dictation stats (`history-stats`, issue 790, every OS): while on, History's
+header shows a Secondary "Stats" button beside its retention select once
+anything is retained. It opens a centered "Dictation stats" dialog (Escape, a
+scrim press, or Close dismisses it, and focus returns to Stats) with dictations,
+words, words per minute, how often Output changed the text, the daily streak,
+and the top five apps; `mumble history stats [--since] [--until] [--json]` prints
+the same ([transcript-cli.md](../transcript-cli.md)). It sums every entry within
+retention (`History::stats`, `history/stats.rs`), not the pane's 200-entry
+search, so it ends with what retention removes; the rollup that outlives
+retention, streak notifications, and per-replacement counts are not built. The
+gates are `labs::history_stats()`, read when the pane reloads (off, it reads
+nothing for stats, and sums again when the entries or the toggle change, or
+once when the dialog closes because the stats emptied) and where
+`mumble history stats` starts (off, it fails naming `mumble labs on
 history-stats` before History is read), and the window's own setting for the
-block. Off, History is exactly as before. Checks: the tests in
-[history/stats.rs](../../src/history/stats.rs) (words, speed, changes, top
-apps, streak across a gap, expired entries skipped past the search cap);
-`history_stats_parse_sum_retained_entries_and_need_the_labs_toggle` in
+button and dialog. Closing the window, opening History again from the menu bar
+or `mumble window show history`, turning the switch off, emptying retained
+history, or leaving History closes the dialog, and Command-1…9 pane shortcuts
+wait while it is open. Off, History is exactly as before. Checks:
+the tests in [history/stats.rs](../../src/history/stats.rs) (words, speed,
+changes, top apps, streak across a gap, expired entries skipped past the search
+cap); `history_stats_parse_sum_retained_entries_and_need_the_labs_toggle` in
 [control/transcript_cli_tests.rs](../../src/control/transcript_cli_tests.rs);
 `history_stats_is_its_own_bit_and_off_by_default` in
-[labs.rs](../../src/labs.rs). Not yet observed: the block in a real window;
-there is no `--snap` scene for it (the fixture has no store), and the Labs
+[labs.rs](../../src/labs.rs); and
+`history_stats_button_opens_and_closes_the_dialog` in
+[rune_ui/tests.rs](../../src/rune_ui/tests.rs). `history-stats` in
+[rune_ui/scenes.rs](../../src/rune_ui/scenes.rs) renders the button and dialog
+in both themes. Not yet observed: the dialog in a real window, and the Labs
 page goldens need regenerating on Linux with the new row.
 
 Copy recent dictations (`recent-dictations`, issue 877, macOS): while on,
@@ -482,6 +565,62 @@ Off, the icon is exactly as before. Checks:
 [labs.rs](../../src/labs.rs). Not yet observed: the icon hiding on a real
 Mac, or macOS restoring an item's remembered visibility; the row renders
 only in macOS builds, so no golden changes.
+
+⌘Q closes Settings (`quit-closes-window`, issue 1473, macOS): for people who
+press ⌘Q to put the Settings window away and expect dictation to keep running.
+Only the app menu's Quit Mumble item (⌘Q, `quitMumble:` in the main menu) changes:
+while the lab is on it closes the window, exactly as Close Window (⌘W) does, so
+Mumble hides the window, restores the Dock policy for a closed window, and keeps
+listening. The gate, `labs::quit_closes_window()`, is read each time
+`macos_rune::MenuTarget::quit_mumble` runs, so turning it on or off applies at
+once. The status item's Quit Mumble (⌘Q in its own menu), AppKit's terminate (the
+quit Apple event, logout, the Dock's Quit), `mumble quit`, and `mumble restart` still
+quit and drain as before, and with the lab off ⌘Q quits exactly as it did.
+Checks: `quit_closes_window_is_its_own_bit_and_off_by_default` in
+[labs.rs](../../src/labs.rs); the existing menu, close, and drain tests are
+unchanged. The handler is compiled, clippy-linted, and covered by the macOS test
+build in CI (the Check macOS run for #1480), but it is not yet observed on a
+real Mac; the row renders only in macOS builds, so no golden changes.
+
+Notch indicator (`notch-indicator`, macOS only): for MacBooks with a
+notch, a recording indicator in the Dynamic Island's compact style that
+reads as part of the Mac. It is not Dot scope: the notch keeps its height
+and widens by `hud_placement::EAR_WIDTH` (34 pt) on each side, with fully
+rounded bottom corners, and draws one SF Symbols–style glyph beside the
+camera on each side in Apple's dark system colours (`ears` in
+[rune_hud.wgsl](../../src/rune_hud.wgsl)):
+
+```ts
+Recording   -> orange mic.fill (the colour macOS and iOS give a microphone in use)
+               + five orange capsule bars that move with the voice (√ level)
+Working     -> the macOS 12-spoke spinner + the bars at rest with light running through them
+Done        -> a green checkmark pops in, held 700 ms (Dot scope's done stays 100 ms)
+Failed      -> red exclamationmark.circle.fill
+Then        -> the ears fold back into the notch; glyphs scale and unblur in and out with them
+Reduce Motion -> the spinner, bars' wobble, and light hold still (Pose::clock stays 0)
+```
+
+The gate, `labs::notch_indicator()`, is read each time the HUD is placed on
+the pointer's screen (`Hud::place_on_pointer_screen` in
+[rune_hud/macos.rs](../../src/rune_hud/macos.rs)), so it applies from the
+next dictation. `hud_placement::ears` places it only on a screen whose
+`NSScreen` reports a notch, and only with Settings' indicator position at
+Top; a flat external display, Bottom, and Hidden keep what they did, and
+with the lab off HUD Lab's placement stands. Linux and Windows have no row,
+`mumble labs on notch-indicator` doesn't know it there, and `mumble settings set
+labs.notch_indicator` answers `unsupported` (as any `labs.` switch for
+another OS now does). Checks: `ears_widen_the_notch_sideways_at_its_own_height`
+in [rune_hud/hud_placement.rs](../../src/rune_hud/hud_placement.rs);
+`the_notch_indicator_holds_done_for_its_checkmark` in
+[dictation/indicator.rs](../../src/dictation/indicator.rs);
+`a_labs_switch_for_another_os_is_refused` in
+[control/settings.rs](../../src/control/settings.rs);
+`notch_indicator_is_its_own_bit_and_off_by_default` in
+[labs.rs](../../src/labs.rs); its frames render through the real shaders
+with `MUMBLE_HUD_EARS=1` and `rune_hud_frames`. Not yet observed: a real
+dictation through the ears on a Mac with the lab on (`mumble dev hud` drives
+them in a debug build), and the failure glyph, which no render covers yet; the
+row renders only in macOS builds, so no golden changes.
 
 Normal features, not Labs: dictation, lowering audio while dictating (#210), Dot scope, chord shortcuts, QuickJS transformations, clipboard
 restore (Labs › Keep dictation on clipboard skips it on macOS), the

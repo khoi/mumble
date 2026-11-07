@@ -263,11 +263,19 @@ Bluetooth default input (macOS, avoid_bluetooth_microphone on) // transport type
   -> built-in mic stands in, else the first other real input
   ├── no other usable input -> the Bluetooth default
   └── setting changes -> re-resolve like a device-list change -> switch once idle
+virtual input or iPhone Continuity microphone (macOS: ccwd/ccwl transport) // #1100
+  -> never stands in: the phone prompts and can fail to open
+  ├── lid closed, nothing else -> "the built-in microphone is off while the lid is closed"
+  └── the default, the saved microphone, or --device -> used as named
 
 warm stream keeps running but delivers only exact zeros (macOS, #1122)
   -> that dictation is discarded as near-silent, as before
   -> its finish reopens the microphone like a stream failure // logged once
   -> next dictation records from a fresh stream
+
+open stream stops delivering audio without an error (any OS, #1206)
+  -> 4 s with no chunk (STREAM_STALL_TIMEOUT) -> treated as a stream failure
+  -> reopened like any interrupted stream, idle or not // logged "microphone stopped delivering audio"
 
 programmatic dictation (local API) when the stream interrupts or gaps
   ├── audio delivered before the loss -> kept under its id // recover.programmatic-loss
@@ -285,8 +293,12 @@ Checks in [audio.rs](../../src/audio.rs):
 `a_closed_lid_passes_over_the_built_in_microphone`,
 `only_the_internal_microphone_is_switched_off_by_the_lid`,
 `a_headphone_jack_microphone_is_used_with_the_lid_closed`,
+`an_iphone_microphone_never_stands_in`,
+`continuity_capture_transports_are_recognised` (pure resolution and fourcc
+values; no iPhone observed with the lid closed),
 `where_the_os_reports_new_devices_only_a_failed_open_is_retried`,
-`only_an_idle_capture_lets_the_microphone_switch`;
+`only_an_idle_capture_lets_the_microphone_switch`,
+`a_stream_that_stops_delivering_audio_is_reopened`;
 [dictation/audio.rs](../../src/dictation/audio.rs):
 `recovered_owner_delivers_audio_and_accepts_a_new_capture`,
 `microphone_loss_keeps_only_a_programmatic_captures_delivered_audio`,
@@ -376,6 +388,13 @@ finished dictation whose audio through the release is exactly zero now
 reopens the stream the way a stream failure does; a cold microphone
 (release-while-idle) already opens fresh for each press. The first such
 dictation is still discarded. Not verified with a real WhatsApp call.
+
+**Fixed after 3.3.0 ([#1206](https://github.com/anomalyco/hex/issues/1206)):**
+after a burst of overrun warnings while idle, a warm USB microphone's stream
+stopped delivering audio without reporting an error, so every dictation held
+only the stale pre-roll and was discarded as no speech until Mumble restarted. An
+open stream that delivers nothing for 4 s now counts as failed and is reopened
+with the usual bounded recovery. Not verified on the reporter's microphone.
 
 ### Fence Late Capture Notifications
 
@@ -514,10 +533,18 @@ GUI startup -> require OS main thread -> initialize_layout // recover.keyboard-l
      └── Command layer (UCKeyTranslate with cmdKey) -> separate map
                                      // no worker-side TIS/TSM query
 
+Selected input source changes (Dvorak -> U.S.)       // recover.keyboard-layout-change
+  -> observer marks it -> pump on the main thread -> refresh_layout
+  -> rebuild with the same fills -> publish whole       // workers see old or new
+  -> changed -> resolve runtime shortcuts again from the last applied settings
+     ├── letter key -> the key that types the letter now
+     ├── other keys -> recorded key code
+     └── listener rebinds each shortcut once its machine is idle
+
 Synthetic shortcut with Command (⌘V)
   ├── Command layer has the character -> that keycode // "Dvorak – QWERTY ⌘"
   └── otherwise -> plain snapshot as above
-Shortcuts without Command and recorded hotkeys -> plain snapshot only
+Shortcuts without Command -> plain snapshot only
 
 Headless lookup without snapshot -> shared native lock -> current layout query
   -> current layout misses ASCII character -> ASCII-capable fallback
@@ -527,8 +554,17 @@ Sources: [keyboard.rs](../../src/keyboard.rs),
 [macos_rune.rs](../../src/macos_rune.rs).
 The lock alone is not GUI thread safety: successful main-thread prewarming and
 pure cached misses prevent later GUI workers from querying native layout APIs.
-The GUI snapshot remains fixed until restart. CLI lookups without a snapshot
-still query the current layout; this fix does not remove their live resolution.
+Until t1304 the GUI snapshot stayed fixed until restart: launched on Dvorak and
+switched to U.S., ⌘V posted keycode 47 (U.S. `.`), so dictations logged
+"pasted" but nothing appeared. One input-source observer now runs for the
+app's life (keyboard model switching reads the same one while it is on), and
+each change rebuilds the snapshot on the main thread.
+`a_published_layout_replaces_the_one_before`,
+`readers_see_a_whole_layout_while_it_is_replaced`, and
+`letter_shortcuts_resolve_again_on_a_new_layout` cover the swap and the
+shortcut re-resolution; the TIS notification and a real switch followed by a
+paste are unverified on a Mac. CLI lookups without a snapshot still query the
+current layout.
 Non-Latin active layouts (Russian, Hebrew, …) produce no ASCII letters with an
 empty modifier state, so a snapshot built from them alone would miss paste
 shortcuts like ⌘V. macOS resolves such shortcuts against the ASCII-capable

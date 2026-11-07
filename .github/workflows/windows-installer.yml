@@ -46,6 +46,13 @@ jobs:
             file="dist/mumble-$version-windows-$label.exe"
             curl --fail --silent --show-error --proto '=https' "$url" -o "$file"
             test "$(sha256sum < "$file" | cut -d' ' -f1)" = "$(jq -r --arg t "windows-$label" '.release.targets[$t].sha256' manifest.json)"
+            # mumble.com, the console entry point, from releases that have one.
+            if jq -e --arg t "windows-$label-cli" '.release.targets[$t]' manifest.json > /dev/null; then
+              url="${release%/release}$(jq -er --arg t "windows-$label-cli" '.release.targets[$t].url' manifest.json)"
+              file="dist/mumble-$version-windows-$label.com"
+              curl --fail --silent --show-error --proto '=https' "$url" -o "$file"
+              test "$(sha256sum < "$file" | cut -d' ' -f1)" = "$(jq -r --arg t "windows-$label-cli" '.release.targets[$t].sha256' manifest.json)"
+            fi
           done
           echo "Testing installers around Mumble $version from $manifest." >> "$GITHUB_STEP_SUMMARY"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -86,11 +93,13 @@ jobs:
         shell: pwsh
         run: |
           $exe = (Resolve-Path "published/mumble-$env:MUMBLE_VERSION-windows-${{ matrix.label }}.exe").Path
+          $console = Resolve-Path "published/mumble-$env:MUMBLE_VERSION-windows-${{ matrix.label }}.com" -ErrorAction SilentlyContinue | ForEach-Object Path
           "MUMBLE_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
-          scripts/build-windows-installer.ps1 -Executable $exe -Version $env:MUMBLE_VERSION -Arch ${{ matrix.arch }} -OutDir installers
+          "MUMBLE_CONSOLE=$console" | Out-File -FilePath $env:GITHUB_ENV -Append
+          scripts/build-windows-installer.ps1 -Executable $exe -Console $console -Version $env:MUMBLE_VERSION -Arch ${{ matrix.arch }} -OutDir installers
       - name: Install, reinstall, install over another version, and uninstall silently
         shell: pwsh
-        run: scripts/test-windows-installer.ps1 -Installer "installers/mumble-setup-$env:MUMBLE_VERSION-windows-${{ matrix.label }}.exe" -Executable $env:MUMBLE_EXE -Version $env:MUMBLE_VERSION
+        run: scripts/test-windows-installer.ps1 -Installer "installers/mumble-setup-$env:MUMBLE_VERSION-windows-${{ matrix.label }}.exe" -Executable $env:MUMBLE_EXE -Console $env:MUMBLE_CONSOLE -Version $env:MUMBLE_VERSION
       - name: Upload installer logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

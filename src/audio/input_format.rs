@@ -47,6 +47,23 @@ pub(super) fn start_stream_with_fallback(
     let supported = device
         .default_input_config()
         .wrap_err("could not read the input device configuration")?;
+    // ALSA's default period, PipeWire's included, can be large: about a
+    // second of audio per chunk put speech from before the press into the
+    // pre-roll (#1309). Ask for about 20 ms first.
+    #[cfg(target_os = "linux")]
+    if let Some(&period) =
+        fixed_buffer_sizes(supported.sample_rate(), supported.buffer_size()).first()
+    {
+        match start_stream(device, &supported, period, default_name.clone()) {
+            Ok(started) => return Ok(started),
+            Err(error) => tracing::warn!(
+                error = format!("{error:#}"),
+                device = %device_name,
+                buffer = ?period,
+                "the microphone refused a short period; using its default"
+            ),
+        }
+    }
     let error = match start_stream(
         device,
         &supported,
@@ -62,15 +79,15 @@ pub(super) fn start_stream_with_fallback(
         "the microphone refused its default format; trying the others it lists"
     );
     // Intel Smart Sound refused every stream cpal built, at any format and
-    // buffer, yet opens in its exact mix format through WASAPI (#988).
+    // buffer, so Mumble tries its own WASAPI paths next (#988).
     #[cfg(target_os = "windows")]
     match super::wasapi_capture::start(device, device_name) {
         Ok(started) => return Ok(started),
-        Err(mix_error) => tracing::warn!(
-            error = format!("{mix_error:#}"),
+        Err(wasapi_error) => tracing::warn!(
+            error = format!("{wasapi_error:#}"),
             device = %device_name,
             cpal_thread_apartment = %super::wasapi_capture::apartment(),
-            "the microphone refused its exact mix format; trying the formats it lists"
+            "the microphone refused every direct wasapi path; trying the formats it lists"
         ),
     }
     // Some drivers refuse every format with the backend's default buffer

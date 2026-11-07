@@ -3,8 +3,11 @@
 //! - The main thread runs Rune's event loop (`rune::App`, windowless and
 //!   kept running, as an accessory app) and, beside it on the same AppKit
 //!   run loop, the native status item, the updater, the main menu, the Dock
-//!   reopen handler, and the Metal dictation HUD. A 16 ms main-loop timer
-//!   ([`Pump`]) drives them, so they keep working with no window open.
+//!   reopen handler, and the Metal dictation HUD. A main-loop timer
+//!   ([`Pump`]) drives them, so they keep working with no window open: every
+//!   frame (16 ms) while the HUD animates, otherwise every 250 ms, and
+//!   whatever sends it work (HUD events, menu actions, control calls,
+//!   input-source changes) wakes it at once ([`wake_pump`]).
 //! - The runtime thread owns model preparation, starts the listener once
 //!   setup is ready, and publishes the listener, model, update, and settings
 //!   state the window shows ([`RuntimeHandle`]).
@@ -30,9 +33,9 @@ use block2::RcBlock;
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, NSObjectProtocol, Sel};
+use objc2::runtime::{AnyObject, NSObjectProtocol};
 use objc2::{MainThreadOnly, msg_send, sel};
-use objc2_app_kit::{NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::{MainThreadMarker, NSAppleEventManager, NSObject, NSString, NSTimer};
 
 use crate::app_settings::AppSettings;
@@ -45,16 +48,28 @@ use crate::recognition::RecognitionControl;
 use crate::rune_hud::DictationIndicatorUi;
 use crate::rune_ui::{Destination, Ui};
 
+mod activation;
 mod control;
+mod launch;
+mod main_menu;
 pub(crate) mod status_item;
+mod wake;
+
+use activation::{observe_activation, reopen_on_activation};
+use launch::{LaunchWindow, launched_as_login_item, observe_launch, take_login_launch_activation};
+use main_menu::install_main_menu;
+use wake::{pump_now, relay, start_pump_timer};
+
+pub(crate) use wake::wake_pump;
+
+#[cfg(test)]
+use wake::pump_interval;
 
 #[cfg(test)]
 mod tests;
 
 /// How often the runtime refreshes while nothing is asked.
 const RUNTIME_TICK: Duration = Duration::from_millis(250);
-/// The main-loop timer: the HUD follows the pointer and channels drain.
-const PUMP_INTERVAL: f64 = 0.016;
 /// Seconds a window opened at launch has to draw its first frame before the
 /// status item, HUD, and menu are set up anyway.
 const LAUNCH_SETUP_DEADLINE: f64 = 1.0;
@@ -254,21 +269,15 @@ pub struct ListenerConfig {
     pub device: Option<String>,
 }
 
-fn should_open_app_on_launch(
-    show_dock_icon: bool,
-    setup_ready: bool,
-    onboarding_completed: bool,
-    status_item_available: bool,
-) -> bool {
-    show_dock_icon || !setup_ready || !onboarding_completed || !status_item_available
-}
-
-pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()> {
+pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig, hidden: bool) -> Result<()> {
     let Some(mtm) = MainThreadMarker::new() else {
         return Err(eyre!("desktop startup requires the main thread"));
     };
     shutdown.store(false, Ordering::Relaxed);
     watch_process();
+    // Observing first means a source change during startup still rebuilds
+    // the snapshot at the pump's first turn.
+    crate::keyboard_input_sources::start(mtm);
     crate::keyboard::initialize_layout()?;
     crate::updater::finish_on_launch();
     let _ = UPDATER.set(crate::updater::Updater::start());
@@ -398,13 +407,20 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     let _ = WINDOW.set(window.clone());
     // The status item is created inside the loop; Mumble can't run without a
     // way back to its window, so a failed item opens the window there.
-    let open_at_launch = settings_error.is_some()
-        || should_open_app_on_launch(
+    // With the Dock icon shown, Mumble starts windowless and opens the window
+    // once AppKit says the launch wasn't a login item.
+    let launch_window = if settings_error.is_some() {
+        LaunchWindow::Open
+    } else {
+        LaunchWindow::decide(
+            hidden,
             settings.show_dock_icon,
             setup_ready,
             onboarding_completed,
             true,
-        );
+        )
+    };
+    let open_at_launch = launch_window == LaunchWindow::Open;
     if let Some(error) = settings_error {
         window.update(move |ui, _| crate::rune_ui::show_error(ui, error));
     }
@@ -415,6 +431,24 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     };
     let hud = crate::rune_hud::install(&mut app);
     crate::rune_ui::live_text::install(&mut app, crate::rune_hud::live_text_place);
+    // `mumble dictation` and `mumble paste-last` go straight to the listener; the
+    // rest reach the main thread's pump.
+    let (pump_calls, pump_call_receiver) = mpsc::sync_channel(8);
+    let control_runtime = handle.clone();
+    thread::Builder::new()
+        .name("mumble-control".into())
+        .spawn(move || {
+            for call in control_receiver {
+                if let Some(call) = control::answer_off_main(&control_runtime, call) {
+                    if pump_calls.send(call).is_err() {
+                        return;
+                    }
+                    wake_pump();
+                }
+            }
+        })?;
+    // The pump idles between events, so its other senders wake it.
+    let developer_receiver = relay("mumble-developer-calls", developer_receiver, 8)?;
     let pump = Pump {
         window: window.clone(),
         runtime: handle,
@@ -423,7 +457,7 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
         hud,
         status_actions: None,
         developer_calls: developer_receiver,
-        control_calls: control_receiver,
+        control_calls: pump_call_receiver,
         status_menu_at: Instant::now(),
         model_menu_at: Instant::now(),
         show_dock_icon: settings.show_dock_icon,
@@ -455,6 +489,9 @@ pub fn run(shutdown: &'static AtomicBool, listener: ListenerConfig) -> Result<()
     // is in place before the loop runs; the rest of `target` waits below.
     let target = MenuTarget::new(mtm);
     observe_termination(&target);
+    if launch_window == LaunchWindow::OpenUnlessLoginItem {
+        observe_launch(&target);
+    }
     // The status item, HUD, and main menu wait for the window's first frame
     // so it reaches the screen without them; a launch without a window sets
     // them up in the loop's first turn. None of these updates change what the
@@ -621,6 +658,8 @@ struct PumpState {
     /// Created on the main thread, so it stays out of the `Send` [`Pump`].
     indicator: DictationIndicatorUi,
     timer: Retained<NSTimer>,
+    /// The timer runs every frame, not at the idle interval ([`wake`]).
+    fast: bool,
     _menu_target: Retained<MenuTarget>,
 }
 
@@ -672,7 +711,9 @@ fn start_main_thread() {
     let Some(Launch { mut pump, target }) = LAUNCH.with(|slot| slot.borrow_mut().take()) else {
         return;
     };
-    pump.status_actions = match crate::macos_rune::status_item::install() {
+    pump.status_actions = match crate::macos_rune::status_item::install().and_then(|actions| {
+        relay("mumble-status-actions", actions, 8).map_err(color_eyre::Report::from)
+    }) {
         Ok(actions) => Some(actions),
         Err(error) => {
             tracing::error!(%error, "could not install Mumble status item; opening the window");
@@ -690,6 +731,7 @@ fn start_main_thread() {
     );
     let indicator = DictationIndicatorUi::new(pump.hud.clone());
     install_main_menu(&target, mtm);
+    observe_activation(&target);
     // Inside the loop, once AppKit has started, so its own Apple event setup
     // can't replace this handler.
     // SAFETY: the target outlives the handler (kept in PUMP for the app's
@@ -703,31 +745,34 @@ fn start_main_thread() {
             andEventID: REOPEN_APPLICATION,
         ];
     }
-    let block = RcBlock::new(|_: std::ptr::NonNull<NSTimer>| {
-        PUMP.with(|slot| {
-            if let Some(state) = slot.borrow_mut().as_mut() {
-                state.pump.tick(&mut state.indicator);
-            }
-        });
-    });
-    // SAFETY: the timer runs its block on this (main) thread's run loop.
-    let timer = unsafe {
-        NSTimer::scheduledTimerWithTimeInterval_repeats_block(PUMP_INTERVAL, true, &block)
-    };
-    // Keep firing while a menu is open (event-tracking run loop mode).
-    // SAFETY: adding a scheduled timer to the main run loop's common modes.
-    unsafe {
-        let run_loop = objc2_foundation::NSRunLoop::mainRunLoop();
-        run_loop.addTimer_forMode(&timer, objc2_foundation::NSRunLoopCommonModes);
-    }
+    let fast = indicator.animating();
+    let timer = start_pump_timer(fast);
     PUMP.with(|slot| {
         *slot.borrow_mut() = Some(PumpState {
             pump,
             indicator,
             timer,
+            fast,
             _menu_target: target,
         });
     });
+    // Anything sent before the pump existed is drained now.
+    pump_now();
+}
+
+/// Rebuilds the keyboard layout snapshot after the selected input source
+/// changed, here on the main thread, so a later ⌘V posts the key that types
+/// V now (t1304). Shortcuts on letter keys follow it; the listener rebinds a
+/// shortcut only once its machine is idle, so a recording goes on.
+fn refresh_keyboard_layout(mtm: MainThreadMarker) {
+    match crate::keyboard::refresh_layout(mtm) {
+        Ok(true) => {
+            tracing::info!("keyboard layout changed");
+            crate::app_settings::refresh_layout_hotkeys();
+        }
+        Ok(false) => {}
+        Err(error) => tracing::warn!(%error, "could not read the new keyboard layout"),
+    }
 }
 
 /// Whether the window is on screen.
@@ -808,6 +853,7 @@ impl Pump {
         if now >= self.model_menu_at {
             if let Some(published) = self.runtime.published() {
                 crate::macos_rune::status_item::update_transcription(&published.settings);
+                crate::macos_rune::status_item::update_paste_last(&published.settings);
             }
             self.model_menu_at = now + MODEL_MENU_REFRESH;
         }
@@ -946,7 +992,13 @@ objc2::define_class!(
 
         #[unsafe(method(quitMumble:))]
         fn quit_mumble(&self, _sender: Option<&AnyObject>) {
-            with_window(|window| window.quit());
+            // Labs › ⌘Q closes Settings: the window hides and Mumble keeps
+            // dictating; the status item's Quit Mumble still quits.
+            if crate::labs::quit_closes_window() {
+                with_window(|window| window.close());
+            } else {
+                with_window(|window| window.quit());
+            }
         }
 
         #[unsafe(method(closeWindow:))]
@@ -974,6 +1026,32 @@ objc2::define_class!(
             with_window(|window| show(window, Destination::Settings));
         }
 
+        /// Observed only when the Dock icon is shown and setup is done: a
+        /// manual launch opens the window, a login-item launch stays quiet.
+        #[unsafe(method(applicationDidFinishLaunching:))]
+        fn application_did_finish_launching(&self, _notification: Option<&AnyObject>) {
+            let login_item = launched_as_login_item();
+            if LaunchWindow::OpenUnlessLoginItem.opens(login_item) {
+                with_window(bring_forward);
+            } else {
+                tracing::info!("launched as a login item; starting without the window");
+            }
+        }
+
+        /// ⌘Tab (or any activation) with the window closed opens it where
+        /// it was, as clicking the Dock icon does.
+        #[unsafe(method(applicationDidBecomeActive:))]
+        fn application_did_become_active(&self, _notification: Option<&AnyObject>) {
+            let app = NSApplication::sharedApplication(self.mtm());
+            if !take_login_launch_activation() && reopen_on_activation(
+                app.activationPolicy() == NSApplicationActivationPolicy::Regular,
+                app.keyWindow().is_some(),
+                window_visible(),
+            ) {
+                with_window(bring_forward);
+            }
+        }
+
         /// `-[NSApplication terminate:]` calls `exit` right after this.
         #[unsafe(method(applicationWillTerminate:))]
         fn application_will_terminate(&self, _notification: Option<&AnyObject>) {
@@ -994,80 +1072,4 @@ fn with_window(f: impl FnOnce(&rune::AppHandle<Ui>)) {
     if let Some(window) = WINDOW.get() {
         f(window);
     }
-}
-
-/// The menu bar while the window is active: Mumble, File, View (with the
-/// Labs), Window.
-/// Rune draws no Edit menu items, so ⌘C/⌘V reach its text fields as keys.
-fn install_main_menu(target: &MenuTarget, mtm: MainThreadMarker) {
-    let main = NSMenu::new(mtm);
-    let name = crate::app_paths::app_name();
-    let (hide, quit) = (format!("Hide {name}"), format!("Quit {name}"));
-    let mut application = vec![];
-    if !crate::updater::managed_by_policy() {
-        application.push(Some(("Check for Updates…", sel!(checkForUpdates:), "")));
-        application.push(None);
-    }
-    application.extend([
-        Some(("Settings…", sel!(showSettings:), ",")),
-        None,
-        Some((hide.as_str(), sel!(hideMumble:), "h")),
-        None,
-        Some((quit.as_str(), sel!(quitMumble:), "q")),
-    ]);
-    let mut menus = vec![
-        (name, application),
-        (
-            "File",
-            vec![Some(("Close Window", sel!(closeWindow:), "w"))],
-        ),
-    ];
-    // Rune's own View › Playground item, which this menu bar replaces. A
-    // capital letter adds Shift: ⇧⌘D. It opens the playground only while
-    // Labs › Playground is on.
-    menus.push((
-        "View",
-        vec![Some(("Playground", sel!(togglePlayground:), "D"))],
-    ));
-    menus.push((
-        "Window",
-        vec![Some(("Minimize", sel!(minimizeWindow:), "m"))],
-    ));
-    for (title, items) in menus {
-        let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str(title));
-        for item in items {
-            match item {
-                Some((title, action, key)) => {
-                    menu.addItem(&menu_item(target, title, action, key, mtm));
-                }
-                None => menu.addItem(&NSMenuItem::separatorItem(mtm)),
-            }
-        }
-        let heading = NSMenuItem::new(mtm);
-        heading.setSubmenu(Some(&menu));
-        main.addItem(&heading);
-    }
-    NSApplication::sharedApplication(mtm).setMainMenu(Some(&main));
-}
-
-fn menu_item(
-    target: &MenuTarget,
-    title: &str,
-    action: Sel,
-    key: &str,
-    mtm: MainThreadMarker,
-) -> Retained<NSMenuItem> {
-    // SAFETY: a plain menu item whose action the target implements.
-    let item = unsafe {
-        NSMenuItem::initWithTitle_action_keyEquivalent(
-            NSMenuItem::alloc(mtm),
-            &NSString::from_str(title),
-            Some(action),
-            &NSString::from_str(key),
-        )
-    };
-    item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
-    // SAFETY: the target lives as long as the app (kept in PUMP).
-    unsafe { item.setTarget(Some(target)) };
-    item
 }

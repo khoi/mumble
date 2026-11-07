@@ -1,7 +1,7 @@
 use std::io::Cursor;
 #[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -236,95 +236,102 @@ pub fn preload() -> Result<()> {
     }
     let (sender, receiver) = mpsc::sync_channel::<Request>(32);
     let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let sounds = match Sounds::load() {
-            Ok(sounds) => sounds,
-            Err(error) => {
-                let _ = ready_sender.send(Err(error));
-                LOADER_STARTED.store(false, Ordering::Release);
-                return;
-            }
-        };
-        let mut output = FeedbackOutput::new();
-        // The device opens for the first tone, not at startup, so an idle app
-        // holds no output stream. Publish before any tone arrives.
-        publish_player(&DICTATION_PLAYER, sender, ready_sender, Ok(()));
-        let mut start_tone = ProvisionalStart::default();
-        let mut audition = Auditioning::default();
-        loop {
-            let timeout = start_tone.wait(Instant::now(), OBSERVATION_INTERVAL);
-            let request = match receiver.recv_timeout(timeout) {
-                Ok(request) => Some(request),
-                Err(mpsc::RecvTimeoutError::Timeout) => None,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+    let spawned = thread::Builder::new()
+        .name("feedback".into())
+        .spawn(move || {
+            let sounds = match Sounds::load() {
+                Ok(sounds) => sounds,
+                Err(error) => {
+                    let _ = ready_sender.send(Err(error));
+                    LOADER_STARTED.store(false, Ordering::Release);
+                    return;
+                }
             };
-            let received_at = Instant::now();
-            let timed_out = request.is_none();
-            let enabled = sounds_enabled();
-            output.release_when_idle(enabled, received_at);
-            if !enabled {
-                start_tone.retract();
-                audition.stop();
-                continue;
-            }
-            let tone = match request {
-                Some(Request::Play(tone)) => {
-                    if tone == Tone::DictationStart {
-                        start_tone.cancel_pending();
-                    }
-                    Some(tone)
-                }
-                Some(Request::ProvisionalStart) => {
-                    start_tone.request(received_at);
-                    // Opening during the chord grace keeps a cold device off
-                    // the path to the audible tone.
-                    output.prepare(received_at);
-                    None
-                }
-                Some(Request::RetractStart) => {
+            let mut output = FeedbackOutput::new();
+            // The device opens for the first tone, not at startup, so an idle app
+            // holds no output stream. Publish before any tone arrives.
+            publish_player(&DICTATION_PLAYER, sender, ready_sender, Ok(()));
+            let mut start_tone = ProvisionalStart::default();
+            let mut audition = Auditioning::default();
+            loop {
+                let timeout = start_tone.wait(Instant::now(), OBSERVATION_INTERVAL);
+                let request = match receiver.recv_timeout(timeout) {
+                    Ok(request) => Some(request),
+                    Err(mpsc::RecvTimeoutError::Timeout) => None,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+                let received_at = Instant::now();
+                let timed_out = request.is_none();
+                let enabled = sounds_enabled();
+                output.release_when_idle(enabled, received_at);
+                if !enabled {
                     start_tone.retract();
-                    None
-                }
-                Some(Request::Prepare) => {
-                    output.prepare(received_at);
-                    None
-                }
-                Some(Request::Audition(set, what)) => {
                     audition.stop();
-                    let stopped = audition.begin();
-                    for (sound, at, cue) in sounds.audition(set, what) {
-                        let (sound, _) = Retractable::with_flag(sound.delay(at), stopped.clone());
-                        output.play(sound, (set, cue));
+                    continue;
+                }
+                let tone = match request {
+                    Some(Request::Play(tone)) => {
+                        if tone == Tone::DictationStart {
+                            start_tone.cancel_pending();
+                        }
+                        Some(tone)
                     }
-                    #[cfg(target_os = "macos")]
-                    if what == Audition::Cue(Cue::Error) && !set.has_own_error() {
-                        audition.system = spawn_system_sound("Basso");
+                    Some(Request::ProvisionalStart) => {
+                        start_tone.request(received_at);
+                        // Opening during the chord grace keeps a cold device off
+                        // the path to the audible tone.
+                        output.prepare(received_at);
+                        None
                     }
-                    None
-                }
-                Some(Request::StopAudition) => {
-                    audition.stop();
-                    None
-                }
-                None => None,
-            };
-            if let Some(tone) = tone {
-                if let Some(sound) = sounds.get(sound_set(), tone) {
-                    output.play(sound.clone(), tone);
-                }
-            } else if timed_out && start_tone.is_due(Instant::now()) {
-                // Only an empty queue reaches here, so a retraction sent while
-                // the device opened always wins over the tone.
-                let start = sounds.set(sound_set()).start.clone();
-                let (sound, retracted) = Retractable::new(start);
-                if output.play(sound, Tone::DictationStart) {
-                    start_tone.sounding(retracted);
-                } else {
-                    start_tone.retract();
+                    Some(Request::RetractStart) => {
+                        start_tone.retract();
+                        None
+                    }
+                    Some(Request::Prepare) => {
+                        output.prepare(received_at);
+                        None
+                    }
+                    Some(Request::Audition(set, what)) => {
+                        audition.stop();
+                        let stopped = audition.begin();
+                        for (sound, at, cue) in sounds.audition(set, what) {
+                            let (sound, _) =
+                                Retractable::with_flag(sound.delay(at), stopped.clone());
+                            output.play(sound, (set, cue));
+                        }
+                        #[cfg(target_os = "macos")]
+                        if what == Audition::Cue(Cue::Error) && !set.has_own_error() {
+                            audition.system = spawn_system_sound("Basso");
+                        }
+                        None
+                    }
+                    Some(Request::StopAudition) => {
+                        audition.stop();
+                        None
+                    }
+                    None => None,
+                };
+                if let Some(tone) = tone {
+                    if let Some(sound) = sounds.get(sound_set(), tone) {
+                        output.play(sound.clone(), tone);
+                    }
+                } else if timed_out && start_tone.is_due(Instant::now()) {
+                    // Only an empty queue reaches here, so a retraction sent while
+                    // the device opened always wins over the tone.
+                    let start = sounds.set(sound_set()).start.clone();
+                    let (sound, retracted) = Retractable::new(start);
+                    if output.play(sound, Tone::DictationStart) {
+                        start_tone.sounding(retracted);
+                    } else {
+                        start_tone.retract();
+                    }
                 }
             }
-        }
-    });
+        });
+    if let Err(error) = spawned {
+        LOADER_STARTED.store(false, Ordering::Release);
+        return Err(eyre!("could not start feedback audio: {error}"));
+    }
     let outcome = ready_receiver.recv_timeout(Duration::from_secs(2));
     admission_error(outcome)?;
     Ok(())
@@ -342,6 +349,69 @@ fn done_is_late(stopped: Option<Instant>, now: Instant) -> bool {
     stopped.is_none_or(|at| now.saturating_duration_since(at) >= DONE_MIN_AFTER_STOP)
 }
 
+/// Stop tones counted from release until their output is restored (Lower
+/// audio ramping back up, or a mute lifting) and so still unheard.
+static PENDING_STOPS: PendingStops = PendingStops::new();
+
+/// A done sound waits out any stop sound still waiting on its output: a
+/// dictation pasted before that stop gets the stop sound alone, never a done
+/// before it.
+fn done_plays(pending_stops: usize, stopped: Option<Instant>, now: Instant) -> bool {
+    pending_stops == 0 && done_is_late(stopped, now)
+}
+
+/// The stop tones counted until they play.
+struct PendingStops(AtomicUsize);
+
+// Windows restores a lowered output before the stop tone, so none ever waits.
+#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
+impl PendingStops {
+    const fn new() -> Self {
+        Self(AtomicUsize::new(0))
+    }
+
+    /// Counts one stop tone now and returns the closure that plays it. The
+    /// guard ends the count whether the closure plays, finds sounds off, or is
+    /// dropped uncalled.
+    fn defer<'a>(
+        &'a self,
+        play_stop: impl FnOnce() + Send + Sync + 'a,
+    ) -> impl FnOnce() + Send + Sync + 'a {
+        let stop = self.begin();
+        move || {
+            play_stop();
+            drop(stop);
+        }
+    }
+
+    /// Counts one stop tone from now until its guard drops.
+    fn begin(&self) -> PendingStop<'_> {
+        self.0.fetch_add(1, Ordering::AcqRel);
+        PendingStop(self)
+    }
+
+    fn get(&self) -> usize {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+/// One counted stop tone, ended whether it plays or is dropped instead.
+struct PendingStop<'a>(&'a PendingStops);
+
+impl Drop for PendingStop<'_> {
+    fn drop(&mut self) {
+        self.0.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Counts a stop tone from now, before a lowered or muted output is restored,
+/// and returns what plays it once the output is back. Counting from now keeps
+/// a dictation pasted during the restore to the stop tone alone.
+#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
+pub fn deferred_stop() -> impl FnOnce() + Send + Sync + 'static {
+    PENDING_STOPS.defer(|| play(Tone::DictationStop))
+}
+
 pub fn play(tone: Tone) {
     if !sounds_enabled() {
         return;
@@ -352,7 +422,7 @@ pub fn play(tone: Tone) {
         }
         Tone::DictationDone => {
             let stopped = *LAST_STOP.lock().unwrap_or_else(|e| e.into_inner());
-            if !done_is_late(stopped, Instant::now()) {
+            if !done_plays(PENDING_STOPS.get(), stopped, Instant::now()) {
                 return;
             }
         }
@@ -1716,6 +1786,30 @@ mod tests {
         ));
         assert!(done_is_late(Some(stop), stop + DONE_MIN_AFTER_STOP));
         assert!(done_is_late(None, stop));
+    }
+
+    /// A dictation pasted while its stop tone still waits on the output gets
+    /// the stop tone alone, so done never sounds before stop.
+    #[test]
+    fn done_never_plays_before_a_delayed_stop_tone() {
+        let stop = Instant::now();
+        assert!(done_plays(0, None, stop));
+        assert!(done_plays(0, Some(stop), stop + DONE_MIN_AFTER_STOP));
+        assert!(!done_plays(1, None, stop));
+        assert!(!done_plays(1, Some(stop), stop + DONE_MIN_AFTER_STOP));
+        assert!(!done_plays(2, None, stop));
+
+        // The count ends whether the deferred stop plays or is dropped uncalled.
+        let pending = PendingStops::new();
+        let played = AtomicBool::new(false);
+        pending.defer(|| played.store(true, Ordering::Release))();
+        assert!(played.load(Ordering::Acquire));
+        assert_eq!(pending.get(), 0);
+
+        let uncalled = pending.defer(|| panic!("must not play"));
+        assert_eq!(pending.get(), 1);
+        drop(uncalled);
+        assert_eq!(pending.get(), 0);
     }
 
     /// A dictation audition plays start, stop and done at their moments,

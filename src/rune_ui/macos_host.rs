@@ -132,6 +132,7 @@ impl Backend {
                 operation_error: None,
                 update_status: published.update_status.clone(),
                 update_notes: published.update_notes.clone(),
+                update_blocked: None,
                 editing: false,
             },
             settings: published.settings.clone(),
@@ -452,8 +453,8 @@ pub(super) fn hotkey_key_named(name: &str) -> Result<HotkeyKey, &'static str> {
 }
 
 /// macOS accepts every binding the capture can produce, except that Paste
-/// Last fires only on a key press (`suppression::paste_action`), and the
-/// capture shortcut, pressed once to start and again to finish, and the
+/// Last and the screenshot shortcut fire only on a key press
+/// (`suppression::paste_action`), and the capture shortcut, pressed once to start and again to finish, and the
 /// send-to list's need a key.
 pub(super) fn validate_hotkey(
     target: ShortcutTarget,

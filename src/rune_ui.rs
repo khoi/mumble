@@ -53,7 +53,9 @@ mod vocabulary;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rune::{Anim, AppSpec, Cx, El, Icon, ScrollSpec, Tx, Waker, col, el, icon, row, text};
+use rune::{
+    Anim, AppSpec, Cx, El, Icon, ScrollSpec, TextEdit, Tx, Waker, col, el, icon, row, text,
+};
 
 use crate::app_settings::{AppSettings, HotkeyBinding, HotkeyKey, HotkeyModifiers, ModifierSide};
 use crate::desktop::host::{
@@ -66,7 +68,7 @@ use host::{Backend, Request, ShortcutTarget};
 use onboarding_kit::live::Page;
 use scenes::{SCENES, Scene, fixture, mac_fixture};
 use settings::Capture;
-use sidebar::{BuildKind, Pane, sidebar, title_bar};
+use sidebar::{BuildKind, Pane, pane_header, sidebar};
 
 /// How long typing pauses before a text field's edit is saved.
 const DRAFT_DELAY: Duration = Duration::from_millis(250);
@@ -86,7 +88,9 @@ pub(crate) fn run_app(
 ) {
     use crate::linux::service::{Activation, Control};
     rune::set_app_id(crate::linux::portal::APP_ID);
-    let mut app = self::app(Some(host.clone())).args(Vec::new()).windowless();
+    let mut app = self::app(Some(host.clone()))
+        .args(window_args())
+        .windowless();
     // Tiling window managers float a window that maps at a fixed size.
     // Desktops that float every window need no such map, and KWin on X11
     // keeps a fixed-size window from fitting a small screen, its title bar
@@ -148,6 +152,15 @@ pub(crate) fn app(connect: host::Connect) -> rune::App<Ui> {
     #[cfg(target_os = "macos")]
     let app = app.on_open_url(on_open_url);
     app
+}
+
+/// Rune's flags for the window on Linux and Windows: scroll bars show
+/// whenever there's more to scroll, as those platforms do, so a pointer
+/// without a wheel can reach them (#1209). macOS follows its own "Show scroll
+/// bars" setting.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub(crate) fn window_args() -> Vec<String> {
+    vec!["--scroll-bars".into(), "always".into()]
 }
 
 /// Beside a setting an organization locked (`crate::policy`).
@@ -219,6 +232,8 @@ pub(crate) struct WindowCompositor {
     onboarding: Option<onboarding_kit::gpu_stage::OnboardingGpu>,
     game: Option<onboarding_kit::game_fx::GameFx>,
     sounds: sound_sets::Preview,
+    /// The device whose backend `process.log` names.
+    logged: Option<rune::compose::DeviceKey>,
 }
 
 impl rune::compose::Compositor<Ui> for WindowCompositor {
@@ -228,6 +243,10 @@ impl rune::compose::Compositor<Ui> for WindowCompositor {
     }
 
     fn render(&mut self, f: &mut rune::compose::Frame<'_, Ui>) {
+        if self.logged != Some(f.device_key()) {
+            self.logged = Some(f.device_key());
+            tracing::info!(gpu = %rune::describe_gpu(f.device), "window draws");
+        }
         if f.rt
             .marks
             .iter()
@@ -310,9 +329,7 @@ fn on_close(ui: &mut Ui, _: &mut Tx) {
     settings::cancel_capture(ui);
     ui.open = None;
     models::close(ui);
-    explainer::close(ui);
-    sound_sets::close(ui);
-    vocabulary::close(ui);
+    ui.close_dialogs();
     // HUD Lab's demo would otherwise stay on screen; reopening starts at
     // General, and coming back to HUD Lab starts the demo again.
     if ui.pane == Pane::HudLab {
@@ -355,9 +372,7 @@ pub(crate) fn show(ui: &mut Ui, destination: Destination, tx: &mut Tx) {
         Destination::Modes => Pane::Output,
         Destination::History => Pane::History,
     };
-    explainer::close(ui);
-    sound_sets::close(ui);
-    vocabulary::close(ui);
+    ui.close_dialogs();
     if pane.shown(ui) {
         ui.select_pane(pane, tx);
     }
@@ -526,6 +541,8 @@ struct ServiceView {
     operation_error: Option<String>,
     update_status: DesktopUpdateStatus,
     update_notes: Option<crate::desktop::host::UpdateNotes>,
+    /// Why this Mumble can't update itself, beside Download update (Windows).
+    update_blocked: Option<&'static str>,
     /// The service is recording or saving a shortcut.
     editing: bool,
 }
@@ -571,12 +588,14 @@ pub(crate) struct Ui {
     microphones_listing:
         Option<std::sync::mpsc::Receiver<Result<crate::audio::InputDevices, String>>>,
     mic_level: general::MicLevel,
+    /// General's search, while Labs › Settings search is on.
+    general_search: TextEdit,
     /// The panes whose Advanced fold is open.
     advanced: Vec<Pane>,
     /// The Labs page shows in place of a pane.
     labs_open: bool,
-    /// The Labs row a link just opened, pulsing until it is cleared.
-    lab_flash: Option<(crate::labs::Feature, Instant)>,
+    /// The Labs store's search, tab, and chip.
+    lab_store: labs::Store,
     /// A scene previewing the badge of a build kind this binary is not.
     build_preview: Option<BuildKind>,
     capture: Capture,
@@ -681,9 +700,10 @@ impl Ui {
             microphones_listed_at: 0.0,
             microphones_listing: None,
             mic_level: general::MicLevel::default(),
+            general_search: TextEdit::default(),
             advanced: Vec::new(),
             labs_open: false,
-            lab_flash: None,
+            lab_store: labs::Store::default(),
             build_preview: None,
             capture: Capture::Idle,
             vocabulary,
@@ -918,6 +938,14 @@ impl Ui {
         }
     }
 
+    /// Closes the dialogs and sheets a pane switch or window close ends.
+    fn close_dialogs(&mut self) {
+        explainer::close(self);
+        sound_sets::close(self);
+        vocabulary::close(self);
+        history::close_stats(self);
+    }
+
     /// Switches panes at once: the new pane replaces the old without a fade,
     /// already at rest (a grant's morph doesn't replay).
     fn select_pane(&mut self, pane: Pane, tx: &mut Tx) {
@@ -929,10 +957,9 @@ impl Ui {
         self.flush_drafts();
         settings::cancel_capture(self);
         self.open = None;
+        self.general_search.clear();
         models::close(self);
-        explainer::close(self);
-        sound_sets::close(self);
-        vocabulary::close(self);
+        self.close_dialogs();
         self.output.prompt_copied = false;
         if self.pane == Pane::HudLab {
             self.ask(platform::PlatformRequest::EndHudDemo);
@@ -965,11 +992,16 @@ fn on_key(ui: &mut Ui, event: &rune::KeyEvent, tx: &mut Tx) -> bool {
         ui.quit();
         return true;
     }
+    // ⌘F (Ctrl+F off macOS) searches Labs or General.
+    if general::focus_search_key(ui, event) {
+        return true;
+    }
     if let rune::Key::Command(digit @ '1'..='9') = event.key
         && !event.mods.alt
         && !ui.explainer.open
         && !ui.sound_sets.open
         && !ui.vocabulary.open
+        && !ui.history.stats_open
         && ui.tour.is_none()
     {
         let index = digit as usize - '1' as usize;
@@ -1028,8 +1060,8 @@ fn poll(ui: &mut Ui, clock: f64, tx: &mut Tx) -> bool {
     let now = Instant::now();
     let mut changed = ui.save_drafts(now);
     changed |= paste_access::poll(ui);
-    changed |= labs::poll_flash(ui, now);
-    // The OpenCode catalog is read only while the pane that uses it shows.
+    // The OpenCode catalog is read only while a pane that uses it shows:
+    // Modes.
     changed |= ui.models.poll(
         ui.live()
             && ui.pane == Pane::Modes
@@ -1125,7 +1157,7 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
     // Menus and popovers mount above the page (rune-kit overlays).
     let mut layer = Vec::new();
     let (actions, body) = match ui.pane {
-        _ if ui.labs_open => (Vec::new(), labs::page(ui, p)),
+        _ if ui.labs_open => (vec![labs::tabs(ui, p)], labs::page(ui, p)),
         Pane::General => (Vec::new(), general::pane(ui, p, &mut layer)),
         Pane::Output => (Vec::new(), output::pane(ui, p, cx.is_reduced_motion())),
         Pane::Modes => modes::pane(ui, p, &mut layer),
@@ -1136,6 +1168,7 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
     };
     let panel = col()
         .key("panel")
+        .role("main")
         .grow(1.0)
         .shrink()
         .mt(8.0)
@@ -1154,12 +1187,15 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
             } else {
                 ui.pane.title()
             },
+            ui.labs_open.then(|| labs::search_field(ui, p)),
             actions,
         ))
         .child(body);
+    // The OS window is the accessibility tree's root; this box adds nothing
+    // to it.
     let window = row()
         .key("window")
-        .role("window")
+        .role("none")
         .fill(p.k.c.bg_deep)
         .hover_motion_within(Anim::INSTANT, Anim::INSTANT)
         .child(sidebar(ui, p))
@@ -1186,27 +1222,6 @@ fn window_focused(ui: &mut Ui, focused: bool, tx: &mut Tx) {
     }
 }
 
-/// The title bar of the content panel: the title, and the pane's actions on
-/// the right.
-fn pane_header(p: Paint, title: &str, actions: Vec<El>) -> El {
-    title_bar(row())
-        .key("pane-header")
-        .h(52.0)
-        .px(METRICS.gutter)
-        .gap(8.0)
-        .center_y()
-        .child(
-            text(title)
-                .key("pane-title")
-                .font(p.k.ty.body_medium)
-                .color(p.text())
-                .shrink()
-                .truncate(),
-        )
-        .child(el().key("header-spacer").grow(1.0))
-        .children(actions)
-}
-
 /// How far a scroll body's top and bottom edges fade out.
 const SCROLL_FADE: (f32, f32) = (4.0, 24.0);
 
@@ -1214,23 +1229,14 @@ const SCROLL_FADE: (f32, f32) = (4.0, 24.0);
 /// sits clear of the fades, so the first and last borders, rings, and fills
 /// are never cut; content needing room beside the edges (bordered cards)
 /// pads itself horizontally.
-fn scroll_body(key: &str, content: El) -> El {
-    faded_body(key, content, SCROLL_FADE)
+fn scroll_body(k: &rune_kit::Kit, key: &str, content: El) -> El {
+    faded_body(k, key, content, SCROLL_FADE)
 }
 
-/// A [`scroll_body`] with its own top and bottom fades.
-fn faded_body(key: &str, content: El, (top, bottom): (f32, f32)) -> El {
-    col()
-        .key(key)
-        .grow(1.0)
-        .shrink()
-        // Shrinks below its content in a fixed-height parent (#906).
-        .min_h(0.0)
-        .clip_fade(0.0, top, 0.0, bottom)
-        .scroll(ScrollSpec {
-            stick_bottom: false,
-        })
-        .child(col().key("inset").pt(top).pb(bottom).child(content))
+/// A [`scroll_body`] with its own top and bottom fades, and a scroll bar to
+/// drag while it overflows (#1209).
+fn faded_body(k: &rune_kit::Kit, key: &str, content: El, fades: (f32, f32)) -> El {
+    list_detail::faded_body_sticky(k, key, content, fades, false)
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -1238,6 +1244,9 @@ mod tests;
 
 #[cfg(test)]
 mod offscreen;
+
+#[cfg(test)]
+mod accessibility_tests;
 
 #[cfg(test)]
 mod snap_isolation;

@@ -39,6 +39,9 @@ pub(super) struct Models {
     retry_at: Option<Instant>,
     /// The model popover: open, its search, and its highlight.
     pub(super) picker: ComboboxState,
+    /// Whether the popover was open at the last poll, so opening it reads
+    /// the catalog again.
+    picker_was_open: bool,
 }
 
 impl Default for Models {
@@ -48,6 +51,7 @@ impl Default for Models {
             receiver: None,
             retry_at: None,
             picker: ComboboxState::default(),
+            picker_was_open: false,
         }
     }
 }
@@ -70,6 +74,13 @@ impl Models {
     /// shows), loads it the first time and looks for a stopped OpenCode
     /// now and then; otherwise touches nothing.
     pub(super) fn poll(&mut self, wanted: bool) -> bool {
+        let opened = self.picker.open && !self.picker_was_open;
+        self.picker_was_open = self.picker.open;
+        // Opening the picker reads the catalog again, keeping the models it
+        // shows until the new list arrives.
+        if wanted && opened && self.receiver.is_none() {
+            self.start_load();
+        }
         if let Some(receiver) = &self.receiver {
             let Ok(state) = receiver.try_recv() else {
                 return false;
@@ -294,11 +305,13 @@ pub(super) fn rows(ui: &Ui, p: Paint, target: Target, layer: &mut Vec<El>) -> Ve
                 .grow(1.0),
         ),
     };
-    field = field.child(
-        rune::icon(p.k.glyph.chevron_down, 16.0)
-            .key("chevron")
-            .color(c.icon_muted),
-    );
+    field = field
+        .child(
+            rune::icon(p.k.glyph.chevron_down, 16.0)
+                .key("chevron")
+                .color(c.icon_muted),
+        )
+        .label(tr("OpenCode model"));
     let picker = model_picker(ui, p, target, field, layer);
     let refresh = ui.models.available().then(|| {
         button(
@@ -351,7 +364,9 @@ pub(super) fn rows(ui: &Ui, p: Paint, target: Target, layer: &mut Vec<El>) -> Ve
                 let variant = (choice != tr("Default")).then(|| choice.to_owned());
                 choose_variant(ui, target, variant);
             })
-            .build(p.k, layer);
+            .build(p.k, layer)
+            .label(tr("Thinking"))
+            .a11y_value(current.clone());
         rows.push(setting_row(
             p,
             "thinking",

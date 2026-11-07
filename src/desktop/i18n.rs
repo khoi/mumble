@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 mod french;
 mod portuguese;
+mod russian;
+mod text_language;
 mod traditional_chinese;
 
 /// A persisted interface-language code (`None` follows the system) and its
@@ -19,8 +21,8 @@ pub(crate) type LanguageChoice = (Option<&'static str>, &'static str);
 
 /// The selectable interface languages: persisted code and native name. The
 /// leading `None` entry follows the system display language. Português
-/// (Brasil), Français, and 繁體中文 have not had a native speaker's review
-/// yet.
+/// (Brasil), Français, 繁體中文, and Русский have not had a native
+/// speaker's review yet.
 pub(crate) const LANGUAGE_CHOICES: &[LanguageChoice] = &[
     (None, "System"),
     (Some("en"), "English"),
@@ -33,6 +35,7 @@ pub(crate) const LANGUAGE_CHOICES: &[LanguageChoice] = &[
     (Some("uk"), "Українська"),
     (Some("pt"), "Português (Brasil)"),
     (Some("fr"), "Français"),
+    (Some("ru"), "Русский"),
 ];
 
 /// Active language column into [`TRANSLATIONS`]; 255 means English.
@@ -51,14 +54,14 @@ fn current() -> u8 {
     CURRENT.load(Ordering::Relaxed)
 }
 
-#[cfg(not(test))]
-fn set_current(code: u8) {
-    CURRENT.store(code, Ordering::Relaxed);
-}
-
 #[cfg(test)]
 fn current() -> u8 {
     CURRENT.get()
+}
+
+#[cfg(not(test))]
+fn set_current(code: u8) {
+    CURRENT.store(code, Ordering::Relaxed);
 }
 
 #[cfg(test)]
@@ -74,9 +77,11 @@ const FRENCH_COLUMN: u8 = 7;
 /// Traditional Chinese, drawn from the Simplified column
 /// ([`traditional_chinese::table`]).
 const TRADITIONAL_CHINESE_COLUMN: u8 = 8;
+/// Russian, kept in its own table ([`russian::TRANSLATIONS`]).
+const RUSSIAN_COLUMN: u8 = 9;
 
 /// The column for a persisted code; `pt` (any Portuguese system language)
-/// is Brazilian Portuguese, and `fr` any French one.
+/// is Brazilian Portuguese, `fr` any French one, and `ru` any Russian one.
 fn column_for_code(code: &str) -> u8 {
     match code {
         "pl" => 0,
@@ -88,6 +93,7 @@ fn column_for_code(code: &str) -> u8 {
         "uk" => 5,
         "pt" => PORTUGUESE_COLUMN,
         "fr" => FRENCH_COLUMN,
+        "ru" => RUSSIAN_COLUMN,
         _ => ENGLISH,
     }
 }
@@ -95,11 +101,15 @@ fn column_for_code(code: &str) -> u8 {
 /// Resolve and activate the persisted language choice; `None` follows the
 /// system locale. Safe to call again whenever the setting changes.
 pub(crate) fn apply(setting: Option<&str>) {
+    let locale = preferred_locale();
     let code = match setting {
         Some(code) => column_for_code(code),
-        None => column_for_language_tag(&preferred_locale()),
+        None => column_for_language_tag(&locale),
     };
     set_current(code);
+    // Tests keep a language per thread; Rune's is the process's.
+    #[cfg(not(test))]
+    rune::text::set_language(text_language::for_interface(code, &locale));
 }
 
 /// The column for a system locale such as `zh-Hans-CN`, `zh_TW.UTF-8`, or
@@ -217,6 +227,7 @@ pub(crate) fn tr(english: &str) -> &str {
     let table = match column {
         PORTUGUESE_COLUMN => portuguese::table(),
         FRENCH_COLUMN => french::table(),
+        RUSSIAN_COLUMN => russian::table(),
         _ => &tables()[column as usize],
     };
     table.get(english).copied().unwrap_or(english)
@@ -254,26 +265,53 @@ fn tables() -> &'static [HashMap<&'static str, &'static str>; 6] {
     static TABLES: OnceLock<[HashMap<&'static str, &'static str>; 6]> = OnceLock::new();
     TABLES.get_or_init(|| {
         std::array::from_fn(|column| {
-            TRANSLATIONS
-                .iter()
+            all_translations()
                 .map(|(english, translated)| (*english, translated[column]))
                 .collect()
         })
     })
 }
 
+/// Every translated string in the main table.
+pub(super) fn all_translations() -> impl Iterator<Item = &'static (&'static str, [&'static str; 6])>
+{
+    TRANSLATIONS.iter()
+}
+
 /// Columns: Polish, Chinese (Simplified), Japanese, German, Spanish, Ukrainian.
 #[rustfmt::skip]
 const TRANSLATIONS: &[(&str, [&str; 6])] = &[
+    ("Summary model", ["Model podsumowań", "摘要模型", "要約モデル", "Modell für Zusammenfassungen", "Modelo de resúmenes", "Модель підсумків"]),
+    ("Shortcuts", ["Skróty", "快捷键", "ショートカット", "Tastenkürzel", "Atajos", "Комбінації клавіш"]),
+    ("Mumble picks a fast model", ["Mumble wybiera szybki model", "由 Mumble 选择快速模型", "Mumble が高速なモデルを選ぶ", "Mumble wählt ein schnelles Modell", "Mumble elige un modelo rápido", "Mumble вибирає швидку модель"]),
+    ("Summary models show once Mumble connects to OpenCode.", ["Modele podsumowań pojawią się, gdy Mumble połączy się z OpenCode.", "Mumble 连接到 OpenCode 后会显示摘要模型。", "Mumble が OpenCode に接続すると要約モデルが表示されます。", "Modelle für Zusammenfassungen erscheinen, sobald Mumble mit OpenCode verbunden ist.", "Los modelos de resumen aparecen cuando Mumble se conecta a OpenCode.", "Моделі для підсумків з'являться, щойно Mumble під'єднається до OpenCode."]),
+    ("Start OpenCode to choose a summary model. Mumble keeps the saved one.", ["Uruchom OpenCode, aby wybrać model podsumowań. Mumble zachowuje zapisany.", "启动 OpenCode 以选择摘要模型。Mumble 会保留已保存的模型。", "要約モデルを選ぶには OpenCode を起動してください。保存済みのモデルはそのまま残ります。", "Starte OpenCode, um ein Modell für Zusammenfassungen zu wählen. Mumble behält das gespeicherte.", "Inicia OpenCode para elegir un modelo de resumen. Mumble conserva el guardado.", "Запустіть OpenCode, щоб вибрати модель для підсумків. Mumble зберігає збережену."]),
+    ("Your answer", ["Twoja odpowiedź", "你的回答", "あなたの回答", "Deine Antwort", "Tu respuesta", "Ваша відповідь"]),
+    ("History retention", ["Przechowywanie historii", "历史记录保留时间", "履歴の保存期間", "Aufbewahrung des Verlaufs", "Conservación del historial", "Зберігання історії"]),
+    ("Earlier versions", ["Wcześniejsze wersje", "早期版本", "以前のバージョン", "Frühere Versionen", "Versiones anteriores", "Попередні версії"]),
+    ("Unknown model", ["Nieznany model", "未知模型", "不明なモデル", "Unbekanntes Modell", "Modelo desconocido", "Невідома модель"]),
+    ("Use this version", ["Użyj tej wersji", "使用此版本", "このバージョンを使う", "Diese Version verwenden", "Usar esta versión", "Використати цю версію"]),
     ("Transcribe", ["Transkrybuj", "转写", "文字起こし", "Transkribieren", "Transcribir", "Розпізнати"]),
+    ("Writing a title and summary with OpenCode…", ["Piszę tytuł i podsumowanie za pomocą OpenCode…", "正在用 OpenCode 撰写标题和摘要…", "OpenCode でタイトルと要約を作成中…", "Titel und Zusammenfassung werden mit OpenCode geschrieben…", "Escribiendo un título y un resumen con OpenCode…", "Пишемо назву та підсумок за допомогою OpenCode…"]),
     ("Mumble is up to date", ["Mumble jest aktualny", "Mumble 已是最新版本", "Mumble は最新です", "Mumble ist auf dem neuesten Stand", "Mumble está actualizado", "Mumble має останню версію"]),
     ("Couldn't check for updates", ["Nie udało się sprawdzić aktualizacji", "无法检查更新", "アップデートを確認できませんでした", "Updates konnten nicht gesucht werden", "No se pudieron buscar actualizaciones", "Не вдалося перевірити оновлення"]),
-        ("Hide menu bar icon", ["Ukryj ikonę na pasku menu", "隐藏菜单栏图标", "メニューバーのアイコンを隠す", "Menüleistensymbol ausblenden", "Ocultar el icono de la barra de menús", "Приховати значок у рядку меню"]),
+    ("Hide menu bar icon", ["Ukryj ikonę na pasku menu", "隐藏菜单栏图标", "メニューバーのアイコンを隠す", "Menüleistensymbol ausblenden", "Ocultar el icono de la barra de menús", "Приховати значок у рядку меню"]),
+    ("Notch indicator", ["Wskaźnik w wycięciu", "刘海指示器", "ノッチインジケーター", "Notch-Anzeige", "Indicador en el notch", "Індикатор у вирізі"]),
+    ("On a screen with a notch, the recording indicator grows out of the notch instead of sitting below the menu bar", ["Na ekranie z wycięciem wskaźnik nagrywania wyrasta z wycięcia zamiast pojawiać się pod paskiem menu", "在带刘海的屏幕上，录音指示器从刘海中展开，而不是显示在菜单栏下方", "ノッチのある画面では、録音インジケーターがメニューバーの下ではなくノッチから広がって表示されます", "Auf einem Bildschirm mit Notch wächst die Aufnahmeanzeige aus der Notch, statt unter der Menüleiste zu sitzen", "En una pantalla con notch, el indicador de grabación sale del notch en lugar de aparecer bajo la barra de menús", "На екрані з вирізом індикатор запису виростає з вирізу, а не з'являється під рядком меню"]),
     ("Hide Mumble's icon from the menu bar. Shortcuts keep working; open Mumble again from Finder or Spotlight for Settings", ["Ukrywa ikonę Mumble na pasku menu. Skróty nadal działają; otwórz Mumble ponownie z Findera lub Spotlight, aby przejść do Ustawień", "从菜单栏隐藏 Mumble 的图标。快捷键仍然有效；从访达或聚焦搜索再次打开 Mumble 即可进入设置", "メニューバーから Mumble のアイコンを隠します。ショートカットは引き続き使えます。設定を開くには Finder や Spotlight から Mumble をもう一度開きます", "Blendet das Mumble-Symbol in der Menüleiste aus. Kürzel funktionieren weiter; öffne Mumble erneut über den Finder oder Spotlight, um zu den Einstellungen zu gelangen", "Oculta el icono de Mumble en la barra de menús. Los atajos siguen funcionando; vuelve a abrir Mumble desde el Finder o Spotlight para ir a Ajustes", "Приховує значок Mumble у рядку меню. Комбінації клавіш і далі працюють; щоб відкрити Налаштування, знову відкрийте Mumble із Finder або Spotlight"]),
-                ("Transcribe again", ["Transkrybuj ponownie", "重新转写", "もう一度文字起こし", "Erneut transkribieren", "Transcribir de nuevo", "Розпізнати знову"]),
-                ("Replace", ["Zastąp", "替换", "置き換える", "Ersetzen", "Reemplazar", "Замінити"]),
-                        ("Section key alone", ["Klawisz § bez modyfikatora", "单独使用 § 键", "§ キーを単独で使う", "§-Taste allein", "Tecla § sola", "Клавіша § окремо"]),
+    ("Transcribe again", ["Transkrybuj ponownie", "重新转写", "もう一度文字起こし", "Erneut transkribieren", "Transcribir de nuevo", "Розпізнати знову"]),
+    ("Replace", ["Zastąp", "替换", "置き換える", "Ersetzen", "Reemplazar", "Замінити"]),
+    ("Section key alone", ["Klawisz § bez modyfikatora", "单独使用 § 键", "§ キーを単独で使う", "§-Taste allein", "Tecla § sola", "Клавіша § окремо"]),
+    ("⌘Q closes Settings", ["⌘Q zamyka Ustawienia", "⌘Q 关闭设置", "⌘Q で設定を閉じる", "⌘Q schließt die Einstellungen", "⌘Q cierra Ajustes", "⌘Q закриває Налаштування"]),
+    ("⌘Q closes the Settings window instead of quitting Mumble. Dictation keeps running; quit from the menu bar icon", ["⌘Q zamyka okno Ustawień zamiast kończyć Mumble. Dyktowanie działa dalej; aby zakończyć, użyj ikony na pasku menu", "按 ⌘Q 关闭设置窗口而不退出 Mumble。听写会继续运行；要退出请使用菜单栏图标", "⌘Q は Mumble を終了せず、設定ウインドウを閉じます。音声入力はそのまま続きます。終了するにはメニューバーのアイコンから操作してください", "⌘Q schließt das Einstellungsfenster, statt Mumble zu beenden. Das Diktieren läuft weiter; beenden kannst du Mumble über das Menüleistensymbol", "⌘Q cierra la ventana de Ajustes en lugar de salir de Mumble. El dictado sigue funcionando; para salir, usa el icono de la barra de menús", "⌘Q закриває вікно налаштувань, а не завершує Mumble. Диктування працює далі; щоб вийти, скористайтеся значком у рядку меню"]),
+    ("Model", ["Model", "模型", "モデル", "Modell", "Modelo", "Модель"]),
     ("Use the § key, left of 1 on ISO keyboards, as a shortcut without a modifier. Mumble takes § from every app while it's bound", ["Pozwala użyć klawisza § (na lewo od 1 na klawiaturach ISO) jako skrótu bez modyfikatora. Gdy jest przypisany, Mumble przejmuje § od wszystkich aplikacji", "将 § 键（ISO 键盘上 1 左侧的键）单独用作快捷键。设为快捷键期间，所有应用都收不到 § 键，由 Mumble 使用", "§ キー（ISO キーボードで 1 の左にあるキー）を修飾キーなしのショートカットとして使います。割り当てている間、Mumble はすべてのアプリから § を受け取ります", "Die §-Taste links neben der 1 auf ISO-Tastaturen ohne Zusatztaste als Kürzel verwenden. Solange sie zugewiesen ist, nimmt Mumble allen Apps die §-Taste weg", "Usa la tecla §, a la izquierda del 1 en teclados ISO, como atajo sin modificador. Mientras esté asignada, Mumble toma la tecla § de todas las apps", "Використовуйте клавішу § (ліворуч від 1 на клавіатурах ISO) як комбінацію без модифікатора. Поки її призначено, Mumble забирає § у всіх програм"]),
+    ("Follow live transcript", ["Śledzenie transkrypcji na żywo", "跟随实时转写", "ライブ文字起こしを追う", "Live-Transkript folgen", "Seguir la transcripción en vivo", "Стежити за розшифровкою наживо"]),
+    ("More call apps", ["Więcej aplikacji do rozmów", "更多通话应用", "その他の通話アプリ", "Mehr Anruf-Apps", "Más apps de llamadas", "Більше програм для дзвінків"]),
+    ("Offer to record calls in Signal, Telegram, WeChat, LINE, Webex, Element and the Phone app, and name calls on more websites.", ["Proponuj nagrywanie rozmów w Signal, Telegram, WeChat, LINE, Webex, Element i aplikacji Telefon oraz nazywaj rozmowy na większej liczbie stron", "在 Signal、Telegram、WeChat、LINE、Webex、Element 和“电话”应用中提议录制通话，并在更多网站上识别通话", "Signal、Telegram、WeChat、LINE、Webex、Element、電話アプリの通話を録音するか提案し、より多くのウェブサイトで通話を判別します", "Biete an, Anrufe in Signal, Telegram, WeChat, LINE, Webex, Element und der Telefon-App aufzunehmen, und erkenne Anrufe auf mehr Websites", "Ofrece grabar llamadas en Signal, Telegram, WeChat, LINE, Webex, Element y la app Teléfono, y nombra llamadas en más sitios web", "Пропонуйте записувати дзвінки в Signal, Telegram, WeChat, LINE, Webex, Element і програмі Телефон та розпізнавайте дзвінки на більшій кількості сайтів"]),
+    ("While a meeting records, the transcript scrolls to the newest line. Scroll up to read earlier text; scroll back to the bottom to follow again.", ["Podczas nagrywania spotkania transkrypcja przewija się do najnowszej linii. Przewiń w górę, aby przeczytać wcześniejszy tekst; przewiń z powrotem na dół, aby znów śledzić.", "会议录制期间，转写会滚动到最新一行。向上滚动可阅读之前的内容；滚回底部即可继续跟随。", "会議の録音中、文字起こしは最新の行までスクロールします。前の内容を読むには上にスクロールし、再び追うには一番下まで戻します。", "Während ein Meeting aufgenommen wird, scrollt das Transkript zur neuesten Zeile. Scrolle nach oben, um früheren Text zu lesen; scrolle wieder ganz nach unten, um erneut zu folgen.", "Mientras se graba una reunión, la transcripción se desplaza a la línea más reciente. Desplázate hacia arriba para leer texto anterior; vuelve al final para seguirla de nuevo.", "Поки зустріч записується, розшифровка прокручується до найновішого рядка. Прокрутіть угору, щоб прочитати попередній текст; прокрутіть донизу, щоб знову стежити."]),
+    ("Floating meeting capsules on GNOME", ["Pływające kapsułki spotkań w GNOME", "在 GNOME 上显示悬浮会议胶囊", "GNOME でフローティング会議カプセル", "Schwebende Meeting-Kapseln unter GNOME", "Cápsulas de reunión flotantes en GNOME", "Плаваючі панелі зустрічей у GNOME"]),
+    ("Show the recording offer and recording indicator floating over your call, through XWayland. Works only while XWayland is already running", ["Pokazuje propozycję nagrania i wskaźnik nagrywania nad rozmową, przez XWayland. Działa tylko, gdy XWayland już działa", "通过 XWayland 在通话上方悬浮显示录制提示和录制指示器。仅在 XWayland 已运行时有效", "録音の提案と録音インジケーターを XWayland 経由で通話の上に表示します。XWayland がすでに動作しているときだけ使えます", "Zeigt das Aufnahmeangebot und die Aufnahmeanzeige schwebend über dem Anruf, über XWayland. Funktioniert nur, wenn XWayland bereits läuft", "Muestra la oferta de grabación y el indicador de grabación flotando sobre tu llamada, a través de XWayland. Solo funciona si XWayland ya se está ejecutando", "Показує пропозицію запису та індикатор запису поверх дзвінка через XWayland. Працює, лише коли XWayland уже запущено"]),
     ("Restore clipboard on GNOME", ["Przywracanie schowka w GNOME", "在 GNOME 上恢复剪贴板", "GNOME でクリップボードを復元", "Zwischenablage unter GNOME wiederherstellen", "Restaurar el portapapeles en GNOME", "Відновлення буфера обміну в GNOME"]),
     ("Put back what you copied before a dictation, through XWayland. Works only while XWayland is already running", ["Przywraca przez XWayland to, co było skopiowane przed dyktowaniem. Działa tylko, gdy XWayland już działa", "通过 XWayland 恢复听写前复制的内容。仅在 XWayland 已运行时有效", "ディクテーション前にコピーしていた内容を XWayland 経由で戻します。XWayland がすでに動作しているときだけ使えます", "Stellt über XWayland wieder her, was vor dem Diktat kopiert war. Funktioniert nur, wenn XWayland bereits läuft", "Devuelve lo que copiaste antes de dictar, a través de XWayland. Solo funciona si XWayland ya se está ejecutando", "Повертає через XWayland те, що було скопійовано перед диктуванням. Працює, лише коли XWayland уже запущено"]),
     ("This desktop doesn't let Mumble put your clipboard back after a paste. Turn on Labs › Restore clipboard on GNOME to try it.", ["To środowisko nie pozwala Mumble przywrócić schowka po wklejeniu. Aby spróbować, włącz Laboratorium › Przywracanie schowka w GNOME.", "此桌面不允许 Mumble 在粘贴后恢复剪贴板。要试用，请打开实验室 › 在 GNOME 上恢复剪贴板。", "このデスクトップでは、Mumble は貼り付け後にクリップボードを元に戻せません。試すには ラボ › GNOME でクリップボードを復元 をオンにしてください。", "Auf diesem Desktop kann Mumble die Zwischenablage nach dem Einfügen nicht wiederherstellen. Zum Ausprobieren Labs › Zwischenablage unter GNOME wiederherstellen einschalten.", "Este escritorio no deja que Mumble restaure tu portapapeles después de pegar. Para probarlo, activa Labs › Restaurar el portapapeles en GNOME.", "Це середовище не дає Mumble відновити буфер обміну після вставлення. Щоб спробувати, увімкніть Лабораторію › Відновлення буфера обміну в GNOME."]),
@@ -295,7 +333,7 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Scene and story browser in the window", ["Przeglądarka scen i makiet w oknie", "窗口内的场景与示例浏览器", "ウィンドウ内のシーンとストーリーのブラウザー", "Szenen- und Story-Browser im Fenster", "Explorador de escenas e historias en la ventana", "Переглядач сцен та історій у вікні"]),
         ("Try unfinished features. They may change or break.", ["Wypróbuj niedokończone funkcje. Mogą się zmienić lub przestać działać.", "试用尚未完成的功能。它们可能会变化或出错。", "未完成の機能を試せます。変更されたり、動かなくなったりすることがあります。", "Probiere unfertige Funktionen aus. Sie können sich ändern oder kaputtgehen.", "Prueba funciones sin terminar. Pueden cambiar o fallar.", "Спробуйте незавершені функції. Вони можуть змінитися або зламатися."]),
     ("On while the Mumble Microphone driver is installed. Uninstall the driver in Voice Filter to turn it off.", ["Włączony, dopóki zainstalowany jest sterownik Mumble Microphone. Odinstaluj sterownik w Filtrze głosu, aby go wyłączyć.", "安装 Mumble Microphone 驱动期间保持开启。在声音滤镜中卸载驱动即可关闭。", "Mumble Microphone ドライバーがインストールされている間はオンです。オフにするにはボイスフィルターでドライバーをアンインストールしてください。", "Eingeschaltet, solange der Mumble-Microphone-Treiber installiert ist. Deinstalliere den Treiber im Stimmfilter, um ihn auszuschalten.", "Activado mientras el controlador Mumble Microphone esté instalado. Desinstala el controlador en Filtro de voz para desactivarlo.", "Увімкнено, доки встановлено драйвер Mumble Microphone. Видаліть драйвер у Голосовому фільтрі, щоб вимкнути."]),
-                ("Mouse shortcuts", ["Skróty myszy", "鼠标快捷键", "マウスショートカット", "Maus-Kürzel", "Atajos de ratón", "Комбінації з мишею"]),
+    ("Mouse shortcuts", ["Skróty myszy", "鼠标快捷键", "マウスショートカット", "Maus-Kürzel", "Atajos de ratón", "Комбінації з мишею"]),
     ("Record mouse buttons as shortcuts", ["Nagrywaj przyciski myszy jako skróty", "将鼠标按键录制为快捷键", "マウスボタンをショートカットとして記録します", "Maustasten als Kürzel aufnehmen", "Graba botones del ratón como atajos", "Записувати кнопки миші як комбінації"]),
     ("While dictating with Pause media: YouTube and other tabs, resumed only if Mumble paused them", ["Podczas dyktowania z Wstrzymaj multimedia: YouTube i inne karty, wznawiane tylko, jeśli wstrzymał je Mumble", "听写时搭配“暂停媒体”：YouTube 等标签页，仅在由 Mumble 暂停时才会恢复", "「メディアを一時停止」での音声入力中：YouTube などのタブ。Mumble が止めた場合だけ再開します", "Beim Diktieren mit „Medien pausieren“: YouTube und andere Tabs, nur fortgesetzt, wenn Mumble sie pausiert hat", "Al dictar con Pausar multimedia: YouTube y otras pestañas, reanudadas solo si Mumble las pausó", "Під час диктування з «Призупиняти медіа»: YouTube та інші вкладки, відновлюються, лише якщо їх призупинив Mumble"]),
     ("Mouse shortcuts are in Labs now, so your mouse-button shortcut went back to the default. Turn on Labs › Mouse shortcuts to use one again.", ["Skróty myszy są teraz w Laboratorium, więc skrót przycisku myszy wrócił do domyślnego. Włącz Laboratorium › Skróty myszy, aby znów go używać.", "鼠标快捷键已移至实验室，因此你的鼠标按键快捷键已恢复为默认值。开启实验室 › 鼠标快捷键即可再次使用。", "マウスショートカットはラボに移ったため、マウスボタンのショートカットは既定に戻りました。再び使うにはラボ › マウスショートカットをオンにしてください。", "Maus-Kürzel sind jetzt in Labs, daher wurde dein Maustasten-Kürzel auf den Standard zurückgesetzt. Schalte Labs › Maus-Kürzel ein, um wieder eines zu nutzen.", "Los atajos de ratón están ahora en Labs, así que tu atajo con botón del ratón volvió al predeterminado. Activa Labs › Atajos de ratón para volver a usar uno.", "Комбінації з мишею тепер у Лабораторії, тож вашу комбінацію з кнопкою миші повернуто до типової. Увімкніть Лабораторія › Комбінації з мишею, щоб знову її використати."]),
@@ -317,7 +355,8 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
                 ("Special keys alone", ["Klawisze specjalne bez modyfikatora", "单独使用特殊键", "特殊キーを単独で使う", "Sondertasten allein", "Teclas especiales solas", "Спеціальні клавіші окремо"]),
     ("Use Menu, Pause, or Scroll Lock as a shortcut without a modifier, such as Caps Lock remapped to Menu", ["Używaj klawisza Menu, Pause lub Scroll Lock jako skrótu bez modyfikatora, np. Caps Lock przemapowanego na Menu", "将 Menu、Pause 或 Scroll Lock 单独用作快捷键，例如重新映射为 Menu 的 Caps Lock", "Menu、Pause、Scroll Lock を修飾キーなしでショートカットに使います。Menu に割り当て直した Caps Lock など", "Menu, Pause oder Scroll Lock ohne Modifikator als Kürzel verwenden, etwa Caps Lock, das auf Menu umgelegt ist", "Usa Menu, Pause o Scroll Lock como atajo sin modificador, como Bloq Mayús reasignado a Menu", "Використовуйте Menu, Pause або Scroll Lock як комбінацію без модифікатора, наприклад Caps Lock, перепризначений на Menu"]),
     ("Dictation stats", ["Statystyki dyktowania", "听写统计", "音声入力の統計", "Diktatstatistik", "Estadísticas de dictado", "Статистика диктування"]),
-    ("Show a summary of your retained dictations at the top of History, with mumble history stats", ["Pokazuje podsumowanie zachowanych dyktowań na górze Historii, także poleceniem mumble history stats", "在历史记录顶部显示已保留听写的摘要，也可使用 mumble history stats", "履歴の上部に保存済みの音声入力の概要を表示します。mumble history stats でも確認できます", "Zeigt oben im Verlauf eine Zusammenfassung deiner behaltenen Diktate, auch mit mumble history stats", "Muestra un resumen de tus dictados conservados en la parte superior del Historial, también con mumble history stats", "Показує підсумок збережених диктувань угорі Історії, а також командою mumble history stats"]),
+    ("Stats", ["Statystyki", "统计", "統計", "Statistik", "Estadísticas", "Статистика"]),
+    ("Add a Stats button to History that shows a summary of your retained dictations, with mumble history stats", ["Dodaje przycisk Statystyki w Historii, który pokazuje podsumowanie zachowanych dyktowań, także poleceniem mumble history stats", "在历史记录中添加“统计”按钮，显示已保留听写的摘要，也可使用 mumble history stats", "履歴に [統計] ボタンを追加し、保存済みの音声入力の概要を表示します。mumble history stats でも確認できます", "Fügt im Verlauf eine Schaltfläche „Statistik“ hinzu, die eine Zusammenfassung deiner behaltenen Diktate zeigt, auch mit mumble history stats", "Añade un botón Estadísticas al Historial que muestra un resumen de tus dictados conservados, también con mumble history stats", "Додає в Історію кнопку «Статистика», що показує підсумок збережених диктувань, а також команду mumble history stats"]),
     ("Dictations: {count} · Words: {words} · Words per minute: {wpm}", ["Dyktowania: {count} · Słowa: {words} · Słowa na minutę: {wpm}", "听写：{count} · 字词：{words} · 每分钟字词：{wpm}", "音声入力: {count} · 単語: {words} · 毎分の単語数: {wpm}", "Diktate: {count} · Wörter: {words} · Wörter pro Minute: {wpm}", "Dictados: {count} · Palabras: {words} · Palabras por minuto: {wpm}", "Диктувань: {count} · Слів: {words} · Слів за хвилину: {wpm}"]),
     ("Changed by Output: {percent}% · Daily streak: {days}", ["Zmienione przez Wyjście: {percent}% · Seria dni: {days}", "被输出更改：{percent}% · 连续天数：{days}", "出力による変更: {percent}% · 連続日数: {days}", "Von der Ausgabe geändert: {percent} % · Tage in Folge: {days}", "Cambiados por Salida: {percent} % · Días seguidos: {days}", "Змінено Виведенням: {percent}% · Днів поспіль: {days}"]),
     ("Top apps: {}", ["Najczęstsze aplikacje: {}", "常用应用：{}", "よく使うアプリ: {}", "Häufigste Apps: {}", "Apps principales: {}", "Найчастіші програми: {}"]),
@@ -342,7 +381,7 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Run setup again", ["Uruchom konfigurację ponownie", "重新运行设置", "セットアップをもう一度実行", "Einrichtung erneut ausführen", "Volver a ejecutar la configuración", "Запустити налаштування знову"]),
     ("Play the first run again. Settings, models, and permissions stay", ["Przejdź pierwsze uruchomienie jeszcze raz. Ustawienia, modele i uprawnienia zostają", "再次体验首次运行。设置、模型和权限保持不变", "初回起動をもう一度行います。設定、モデル、権限はそのままです", "Den ersten Start noch einmal durchlaufen. Einstellungen, Modelle und Berechtigungen bleiben", "Repite el primer inicio. La configuración, los modelos y los permisos se conservan", "Пройти перший запуск ще раз. Налаштування, моделі й дозволи залишаться"]),
     ("Run", ["Uruchom", "运行", "実行", "Ausführen", "Ejecutar", "Запустити"]),
-                ("Add application", ["Dodaj aplikację", "添加应用", "アプリを追加", "App hinzufügen", "Añadir aplicación", "Додати програму"]),
+    ("Add application", ["Dodaj aplikację", "添加应用", "アプリを追加", "App hinzufügen", "Añadir aplicación", "Додати програму"]),
     ("Add transformation", ["Dodaj transformację", "添加转换", "変換を追加", "Transformation hinzufügen", "Añadir transformación", "Додати перетворення"]),
     ("Close", ["Zamknij", "关闭", "閉じる", "Schließen", "Cerrar", "Закрити"]),
     ("All files", ["Wszystkie pliki", "所有文件", "すべてのファイル", "Alle Dateien", "Todos los archivos", "Усі файли"]),
@@ -382,8 +421,8 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Output", ["Wyjście", "输出", "出力", "Ausgabe", "Salida", "Виведення"]),
     ("GPU", ["GPU", "GPU", "GPU", "GPU", "GPU", "GPU"]),
     ("CPU", ["CPU", "CPU", "CPU", "CPU", "CPU", "CPU"]),
-                ("Dictation HUD", ["Wskaźnik dyktowania", "听写指示器", "音声入力インジケーター", "Diktatanzeige", "Indicador de dictado", "HUD диктування"]),
-        ("Check for updates", ["Sprawdź aktualizacje", "检查更新", "アップデートを確認", "Nach Updates suchen", "Buscar actualizaciones", "Перевірити оновлення"]),
+    ("Dictation HUD", ["Wskaźnik dyktowania", "听写指示器", "音声入力インジケーター", "Diktatanzeige", "Indicador de dictado", "HUD диктування"]),
+    ("Check for updates", ["Sprawdź aktualizacje", "检查更新", "アップデートを確認", "Nach Updates suchen", "Buscar actualizaciones", "Перевірити оновлення"]),
     ("Checking for updates…", ["Sprawdzanie aktualizacji…", "正在检查更新…", "アップデートを確認中…", "Suche nach Updates…", "Buscando actualizaciones…", "Перевірка оновлень…"]),
     ("Start listening when Mumble opens", ["Zacznij nasłuchiwać po otwarciu Mumble", "Mumble 打开时开始监听", "Mumble の起動時に待ち受けを開始", "Beim Öffnen von Mumble zuhören", "Empezar a escuchar al abrir Mumble", "Починати слухати, коли Mumble відкривається"]),
                 ("Modes", ["Tryby", "模式", "モード", "Modi", "Modos", "Режими"]),
@@ -400,8 +439,15 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Term (e.g. cappuccino)", ["Termin (np. cappuccino)", "术语（如 cappuccino）", "用語（例: cappuccino）", "Begriff (z. B. cappuccino)", "Término (p. ej., cappuccino)", "Термін (напр., cappuccino)"]),
     ("Sounds like (e.g. capuchin, cap a chino)", ["Brzmi jak (np. capuchin, cap a chino)", "听起来像（如 capuchin, cap a chino）", "聞こえ方（例: capuchin, cap a chino）", "Klingt wie (z. B. capuchin, cap a chino)", "Suena como (p. ej., capuchin, cap a chino)", "Звучить як (напр., capuchin, cap a chino)"]),
     ("Up to 16 spellings per term are saved, and 64 characters per term or spelling.", ["Zapisywanych jest do 16 pisowni na termin i do 64 znaków na termin lub pisownię.", "每个术语最多保存 16 种拼写，每个术语或拼写最多 64 个字符。", "保存されるのは用語ごとに最大 16 個の表記、用語や表記ごとに最大 64 文字です。", "Gespeichert werden bis zu 16 Schreibweisen pro Begriff und 64 Zeichen pro Begriff oder Schreibweise.", "Se guardan hasta 16 grafías por término y 64 caracteres por término o grafía.", "Зберігається до 16 написань для кожного терміна й до 64 символів у терміні чи написанні."]),
-    ("Clear all", ["Wyczyść wszystko", "全部清除", "すべて消去", "Alle löschen", "Borrar todo", "Очистити все"]),
-    ("Really clear all?", ["Na pewno wyczyścić?", "确定全部清除？", "本当にすべて消去？", "Wirklich alle löschen?", "¿Borrar todo?", "Справді очистити все?"]),
+    ("History off", ["Historia wyłączona", "历史记录已关闭", "履歴オフ", "Verlauf aus", "Historial desactivado", "Історію вимкнено"]),
+    ("Kept forever", ["Przechowywane bezterminowo", "永久保留", "無期限に保持", "Unbegrenzt behalten", "Se conserva para siempre", "Зберігається завжди"]),
+    ("Kept {}", ["Przechowywane {}", "保留 {}", "{}保持", "{} behalten", "Se conserva {}", "Зберігається {}"]),
+    ("Keeps no new dictations", ["Nie zachowuje nowych dyktowań", "不保留新的听写", "新しい音声入力を保持しません", "Behält keine neuen Diktate", "No conserva dictados nuevos", "Не зберігає нових диктувань"]),
+    ("Keep audio too", ["Zachowuj też dźwięk", "同时保留音频", "音声も保存", "Auch Audio behalten", "Conservar también el audio", "Зберігати й аудіо"]),
+    ("Lab", ["Lab", "实验", "ラボ", "Lab", "Lab", "Лаб"]),
+    ("Lets you transcribe a dictation again", ["Pozwala ponownie przetranskrybować dyktowanie", "可重新转写听写", "音声入力をもう一度文字起こしできます", "Damit lässt sich ein Diktat erneut transkribieren", "Permite volver a transcribir un dictado", "Дає змогу знову транскрибувати диктування"]),
+    ("Clear all history…", ["Wyczyść całą historię…", "清除全部历史记录…", "履歴をすべて消去…", "Gesamten Verlauf löschen…", "Borrar todo el historial…", "Очистити всю історію…"]),
+    ("Clear all history", ["Wyczyść całą historię", "清除全部历史记录", "履歴をすべて消去", "Gesamten Verlauf löschen", "Borrar todo el historial", "Очистити всю історію"]),
     ("Copy", ["Kopiuj", "复制", "コピー", "Kopieren", "Copiar", "Копіювати"]),
     ("(nothing)", ["(nic)", "（无）", "（なし）", "(nichts)", "(nada)", "(нічого)"]),
     ("Replace words", ["Zamień słowa", "替换词语", "単語を置き換え", "Wörter ersetzen", "Reemplazar palabras", "Замінити слова"]),
@@ -646,8 +692,8 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
                             ("Context", ["Kontekst", "上下文", "コンテキスト", "Kontext", "Contexto", "Контекст"]),
         ("None", ["Brak", "无", "なし", "Keine", "Ninguno", "Немає"]),
     ("Keyboard", ["Klawiatura", "键盘", "キーボード", "Tastatur", "Teclado", "Клавіатура"]),
-                        ("Screen & System Audio Recording", ["Nagrywanie ekranu i dźwięku systemu", "屏幕与系统音频录制", "画面とシステムオーディオの収録", "Bildschirm- und Systemaudioaufnahme", "Grabación de pantalla y audio del sistema", "Записування системного звуку й екрана"]),
-        ("Starting…", ["Uruchamianie…", "正在启动…", "開始中…", "Wird gestartet…", "Iniciando…", "Запуск…"]),
+    ("Screen & System Audio Recording", ["Nagrywanie ekranu i dźwięku systemu", "屏幕与系统音频录制", "画面とシステムオーディオの収録", "Bildschirm- und Systemaudioaufnahme", "Grabación de pantalla y audio del sistema", "Записування системного звуку й екрана"]),
+    ("Starting…", ["Uruchamianie…", "正在启动…", "開始中…", "Wird gestartet…", "Iniciando…", "Запуск…"]),
     ("Open", ["Otwórz", "打开", "開く", "Öffnen", "Abrir", "Відкрити"]),
     ("Failed", ["Niepowodzenie", "失败", "失敗", "Fehlgeschlagen", "Fallido", "Не вдалося"]),
     ("Rename", ["Zmień nazwę", "重命名", "名前を変更", "Umbenennen", "Cambiar nombre", "Перейменувати"]),
@@ -667,6 +713,9 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Mumble Dictation: transcribing", ["Dyktowanie Mumble: transkrypcja", "Mumble 听写：转写中", "Mumble 音声入力: 文字起こし中", "Mumble-Diktat: transkribiert", "Dictado de Mumble: transcribiendo", "Диктування Mumble: розпізнавання"]),
     ("Mumble Dictation: update available", ["Dyktowanie Mumble: dostępna aktualizacja", "Mumble 听写：有可用更新", "Mumble 音声入力: アップデートがあります", "Mumble-Diktat: Update verfügbar", "Dictado de Mumble: actualización disponible", "Диктування Mumble: доступне оновлення"]),
     ("Download update", ["Pobierz aktualizację", "下载更新", "アップデートをダウンロード", "Update herunterladen", "Descargar actualización", "Завантажити оновлення"]),
+    ("This copy of Mumble can't update itself because the Mumble installer didn't install it. Install Mumble from anoma.ly/mumble to get updates in the app.", ["Ta kopia Mumble nie może się sama aktualizować, bo nie zainstalował jej instalator Mumble. Zainstaluj Mumble ze strony anoma.ly/mumble, aby otrzymywać aktualizacje w aplikacji.", "此 Mumble 副本无法自动更新，因为它不是由 Mumble 安装程序安装的。请从 anoma.ly/mumble 安装 Mumble，以便在应用内获取更新。", "この Mumble は Mumble インストーラーでインストールされていないため、自動でアップデートできません。アプリ内でアップデートを受け取るには、anoma.ly/mumble から Mumble をインストールしてください。", "Diese Mumble-Kopie kann sich nicht selbst aktualisieren, weil sie nicht mit dem Mumble-Installer installiert wurde. Installiere Mumble von anoma.ly/mumble, um Updates in der App zu bekommen.", "Esta copia de Mumble no puede actualizarse sola porque no la instaló el instalador de Mumble. Instala Mumble desde anoma.ly/mumble para recibir actualizaciones en la app.", "Ця копія Mumble не може оновлюватися сама, бо її не встановив інсталятор Mumble. Встановіть Mumble з anoma.ly/mumble, щоб отримувати оновлення в застосунку."]),
+    ("This copy of Mumble can't update itself because it's installed outside your user folder. Reinstall Mumble from anoma.ly/mumble to get updates in the app.", ["Ta kopia Mumble nie może się sama aktualizować, bo jest zainstalowana poza Twoim folderem użytkownika. Zainstaluj Mumble ponownie ze strony anoma.ly/mumble, aby otrzymywać aktualizacje w aplikacji.", "此 Mumble 副本无法自动更新，因为它安装在你的用户文件夹之外。请从 anoma.ly/mumble 重新安装 Mumble，以便在应用内获取更新。", "この Mumble はユーザーフォルダーの外にインストールされているため、自動でアップデートできません。アプリ内でアップデートを受け取るには、anoma.ly/mumble から Mumble をインストールし直してください。", "Diese Mumble-Kopie kann sich nicht selbst aktualisieren, weil sie außerhalb deines Benutzerordners installiert ist. Installiere Mumble neu von anoma.ly/mumble, um Updates in der App zu bekommen.", "Esta copia de Mumble no puede actualizarse sola porque está instalada fuera de tu carpeta de usuario. Vuelve a instalar Mumble desde anoma.ly/mumble para recibir actualizaciones en la app.", "Ця копія Mumble не може оновлюватися сама, бо встановлена поза вашою папкою користувача. Перевстановіть Mumble з anoma.ly/mumble, щоб отримувати оновлення в застосунку."]),
+    ("This copy of Mumble can't update itself because its install record is from another installer. Reinstall Mumble from anoma.ly/mumble to get updates in the app.", ["Ta kopia Mumble nie może się sama aktualizować, bo jej zapis instalacji pochodzi z innego instalatora. Zainstaluj Mumble ponownie ze strony anoma.ly/mumble, aby otrzymywać aktualizacje w aplikacji.", "此 Mumble 副本无法自动更新，因为它的安装记录来自其他安装程序。请从 anoma.ly/mumble 重新安装 Mumble，以便在应用内获取更新。", "この Mumble のインストール記録は別のインストーラーのものなので、自動でアップデートできません。アプリ内でアップデートを受け取るには、anoma.ly/mumble から Mumble をインストールし直してください。", "Diese Mumble-Kopie kann sich nicht selbst aktualisieren, weil ihr Installationseintrag von einem anderen Installer stammt. Installiere Mumble neu von anoma.ly/mumble, um Updates in der App zu bekommen.", "Esta copia de Mumble no puede actualizarse sola porque su registro de instalación es de otro instalador. Vuelve a instalar Mumble desde anoma.ly/mumble para recibir actualizaciones en la app.", "Ця копія Mumble не може оновлюватися сама, бо її запис про встановлення походить з іншого інсталятора. Перевстановіть Mumble з anoma.ly/mumble, щоб отримувати оновлення в застосунку."]),
     ("What's new", ["Co nowego", "新功能", "新機能", "Neuigkeiten", "Novedades", "Що нового"]),
     ("Downloading update", ["Pobieranie aktualizacji", "正在下载更新", "アップデートをダウンロード中", "Update wird geladen", "Descargando actualización", "Завантаження оновлення"]),
     ("Managed by your organization", ["Zarządzane przez Twoją organizację", "由你的组织管理", "組織によって管理されています", "Von deiner Organisation verwaltet", "Gestionado por tu organización", "Керується вашою організацією"]),
@@ -683,7 +732,6 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
             ("Enable Mumble to dictate into any app with {}", ["Włącz Mumble, aby dyktować w dowolnej aplikacji za pomocą {}", "启用 Mumble 后，可用 {} 在任意应用中听写", "Mumble を有効にすると、{} でどのアプリにも音声入力できます", "Aktiviere Mumble, um mit {} in jede App zu diktieren", "Activa Mumble para dictar en cualquier app con {}", "Увімкніть Mumble, щоб диктувати в будь-якій програмі за допомогою {}"]),
     ("Ready anywhere · Hold {} to dictate", ["Gotowy wszędzie · Przytrzymaj {}, aby dyktować", "随处可用 · 按住 {} 进行听写", "どこでも使えます · {} を押している間に音声入力", "Überall bereit · {} halten zum Diktieren", "Listo en cualquier lugar · Mantén {} para dictar", "Готово всюди · Утримуйте {}, щоб диктувати"]),
     ("Ready anywhere · Press {} to start and stop dictating", ["Gotowy wszędzie · Naciśnij {}, aby zacząć i zakończyć dyktowanie", "随处可用 · 按 {} 开始和停止听写", "どこでも使えます · {} を押して音声入力を開始・停止", "Überall bereit · {} drücken zum Starten und Beenden des Diktats", "Listo en cualquier lugar · Pulsa {} para empezar y terminar de dictar", "Готово всюди · Натисніть {}, щоб почати й завершити диктування"]),
-    ("Keep: {}", ["Przechowuj: {}", "保留：{}", "保持: {}", "Behalten: {}", "Conservar: {}", "Зберігати: {}"]),
     ("No applications match \"{}\".", ["Żadna aplikacja nie pasuje do „{}”.", "没有与“{}”匹配的应用。", "「{}」に一致するアプリはありません。", "Keine App passt zu „{}“.", "Ninguna aplicación coincide con «{}».", "Програм, що відповідають запиту «{}», не знайдено."]),
     ("OpenCode models unavailable: {}", ["Modele OpenCode są niedostępne: {}", "OpenCode 模型不可用：{}", "OpenCode のモデルを利用できません: {}", "OpenCode-Modelle nicht verfügbar: {}", "Modelos de OpenCode no disponibles: {}", "Моделі OpenCode недоступні: {}"]),
     ("{} available models", ["Dostępne modele: {}", "{} 个可用模型", "利用可能なモデル {} 件", "{} verfügbare Modelle", "{} modelos disponibles", "Доступні моделі: {}"]),
@@ -704,7 +752,9 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Paste into apps", ["Wklejanie w aplikacjach", "粘贴到应用", "アプリへの貼り付け", "In Apps einfügen", "Pegar en apps", "Вставлення в застосунки"]),
     ("Mumble only sends the paste keystroke. It never sees your screen.", ["Mumble wysyła tylko skrót wklejania. Nigdy nie widzi twojego ekranu.", "Mumble 只发送粘贴按键，从不查看你的屏幕。", "Mumble は貼り付けのキー操作を送るだけで、画面を見ることはありません。", "Mumble sendet nur den Einfüge-Tastendruck. Deinen Bildschirm sieht es nie.", "Mumble solo envía la tecla de pegar. Nunca ve tu pantalla.", "Mumble лише надсилає комбінацію вставлення. Він ніколи не бачить ваш екран."]),
     ("Without it, Mumble copies your words and you press Ctrl+V.", ["Bez tego Mumble kopiuje twoje słowa, a ty naciskasz Ctrl+V.", "没有此权限时，Mumble 会复制你的话，由你按 Ctrl+V。", "許可しない場合、Mumble が言葉をコピーし、あなたが Ctrl+V を押します。", "Ohne das kopiert Mumble deine Worte und du drückst Strg+V.", "Sin esto, Mumble copia tus palabras y tú pulsas Ctrl+V.", "Без цього Mumble копіює ваші слова, а ви натискаєте Ctrl+V."]),
-    ("Hears you only while you hold the shortcut", ["Słyszy cię tylko, gdy trzymasz skrót", "仅在按住快捷键时收听", "ショートカットを押している間だけ聞き取ります", "Hört nur zu, während du das Kürzel hältst", "Solo te escucha mientras mantienes el atajo", "Слухає вас, лише поки ви утримуєте комбінацію клавіш"]),
+    ("Ready the moment you press the shortcut. macOS shows the mic in use while Mumble runs; you can change that in Settings", ["Gotowy, gdy tylko naciśniesz skrót. macOS pokazuje, że mikrofon jest używany, dopóki działa Mumble; możesz to zmienić w Ustawieniach", "按下快捷键即可开始。Mumble 运行时，macOS 会显示麦克风正在使用；你可以在设置中更改", "ショートカットを押した瞬間から使えます。Mumble の実行中、macOS はマイクを使用中と表示します。設定で変更できます", "Bereit, sobald du das Kürzel drückst. macOS zeigt das Mikrofon als aktiv, solange Mumble läuft; das kannst du in den Einstellungen ändern", "Listo en cuanto pulsas el atajo. macOS muestra el micrófono en uso mientras Mumble está abierto; puedes cambiarlo en Ajustes", "Готовий, щойно ви натиснете комбінацію клавіш. Поки Mumble працює, macOS показує, що мікрофон використовується; це можна змінити в Налаштуваннях"]),
+    ("Ready the moment you press the shortcut", ["Gotowy, gdy tylko naciśniesz skrót", "按下快捷键即可开始", "ショートカットを押した瞬間から使えます", "Bereit, sobald du das Kürzel drückst", "Listo en cuanto pulsas el atajo", "Готовий, щойно ви натиснете комбінацію клавіш"]),
+    ("Opens only while you dictate", ["Otwiera się tylko podczas dyktowania", "只在听写时打开", "音声入力中だけ開きます", "Öffnet sich nur beim Diktieren", "Solo se abre mientras dictas", "Відкривається лише під час диктування"]),
     ("Let Mumble hear you and type for you", ["Pozwól Mumble słyszeć cię i pisać za ciebie", "让 Mumble 听见你并替你输入", "Mumble が聞き取り、入力できるようにする", "Lass Mumble zuhören und für dich tippen", "Deja que Mumble te escuche y escriba por ti", "Дозвольте Mumble слухати вас і друкувати за вас"]),
     ("Notices the shortcut and pastes your words in any app", ["Rozpoznaje skrót i wkleja słowa w każdej aplikacji", "在所有应用中识别快捷键并粘贴文字", "どのアプリでもショートカットを認識し、言葉を貼り付けます", "Erkennt das Kürzel und fügt deine Worte in jeder App ein", "Detecta el atajo y pega tus palabras en cualquier app", "Помічає сполучення клавіш і вставляє ваші слова в будь-якій програмі"]),
     ("Quit and reopen Mumble to finish setup. macOS applies some permissions only after a restart.", ["Zamknij i ponownie otwórz Mumble, aby dokończyć konfigurację. macOS stosuje niektóre uprawnienia dopiero po ponownym uruchomieniu.", "请退出并重新打开 Mumble 以完成设置。macOS 的部分权限需要重启后才会生效。", "設定を完了するには Mumble を終了して開き直してください。macOS の一部の許可は再起動後に有効になります。", "Beende Mumble und öffne es erneut, um die Einrichtung abzuschließen. macOS übernimmt manche Berechtigungen erst nach einem Neustart.", "Cierra y vuelve a abrir Mumble para terminar la configuración. macOS aplica algunos permisos solo tras reiniciar.", "Завершіть роботу Mumble і відкрийте його знову, щоб завершити налаштування. macOS застосовує деякі дозволи лише після перезапуску."]),
@@ -718,7 +768,7 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
             ("{} s", ["{} s", "{} 秒", "{} 秒", "{} s", "{} s", "{} с"]),
                                     ("of {}", ["z {}", "共 {}", "/ {}", "von {}", "de {}", "з {}"]),
     ("In use", ["W użyciu", "使用中", "使用中", "In Verwendung", "En uso", "Використовується"]),
-                                                                                                        ("Start using Mumble", ["Zacznij używać Mumble", "开始使用 Mumble", "Mumble を使い始める", "Mumble verwenden", "Empezar a usar Mumble", "Почати користуватися Mumble"]),
+    ("Start using Mumble", ["Zacznij używać Mumble", "开始使用 Mumble", "Mumble を使い始める", "Mumble verwenden", "Empezar a usar Mumble", "Почати користуватися Mumble"]),
     ("Transcribing…", ["Transkrybowanie…", "正在转写…", "文字起こし中…", "Transkribiert …", "Transcribiendo…", "Розпізнавання мовлення…"]),
     // Fun / Mumble Microphone (experimental)
     ("Available", ["Dostępny", "可用", "利用可能", "Verfügbar", "Disponible", "Доступний"]),
@@ -789,6 +839,7 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Turns your voice down to a whisper while you dictate", ["Ścisza twój głos do szeptu podczas dyktowania", "听写时将你的声音压低到耳语音量", "ディクテーション中、声をささやき声まで下げます", "Senkt deine Stimme beim Diktieren auf Flüstern ab", "Baja tu voz a un susurro mientras dictas", "Знижує гучність вашого голосу до шепоту під час диктування"]),
     ("Underwater", ["Pod wodą", "水下", "水中", "Unter Wasser", "Bajo el agua", "Під водою"]),
     ("Virtual microphone driver", ["Sterownik wirtualnego mikrofonu", "虚拟麦克风驱动", "仮想マイクドライバ", "Virtueller Mikrofontreiber", "Controlador de micrófono virtual", "Драйвер віртуального мікрофона"]),
+    ("Voice Filter isn't in this version of Mumble. Uninstall its driver to remove Mumble Microphone from your inputs.", ["Filtra głosu nie ma w tej wersji Mumble. Odinstaluj jego sterownik, aby usunąć Mumble Microphone z listy wejść.", "此版本的 Mumble 没有声音滤镜。卸载它的驱动，即可从输入设备中移除 Mumble Microphone。", "このバージョンの Mumble にはボイスフィルターがありません。ドライバをアンインストールすると、入力から Mumble Microphone が消えます。", "Diese Mumble-Version hat keinen Stimmfilter. Deinstalliere seinen Treiber, um Mumble Microphone aus deinen Eingängen zu entfernen.", "Esta versión de Mumble no incluye el filtro de voz. Desinstala su controlador para quitar Mumble Microphone de tus entradas.", "У цій версії Mumble немає голосового фільтра. Видаліть його драйвер, щоб прибрати Mumble Microphone зі списку входів."]),
     ("Walkie", ["Krótkofalówka", "对讲机", "トランシーバー", "Walkie-Talkie", "Walkie", "Рація"]),
     ("Wall", ["Tłumienie", "闷音滤波", "こもり具合", "Dämpfung", "Filtro", "Приглушення"]),
     ("You", ["Ty", "你", "あなた", "Du", "Tú", "Ви"]),
@@ -846,11 +897,80 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Lives quietly in your menu bar", ["Działa po cichu na pasku menu", "安静地待在菜单栏中", "メニューバーで静かに待機します", "Wartet leise in deiner Menüleiste", "Vive tranquilo en tu barra de menús", "Тихо живе в рядку меню"]),
     ("Lives quietly in your system tray", ["Działa po cichu w zasobniku systemowym", "安静地待在系统托盘中", "システムトレイで静かに待機します", "Wartet leise im Infobereich", "Vive tranquilo en la bandeja del sistema", "Тихо живе в системному лотку"]),
     ("Open it again from your app launcher", ["Otworzysz go ponownie z programu uruchamiającego", "可从应用启动器中再次打开", "アプリランチャーからいつでも開けます", "Öffne es jederzeit wieder über deinen App-Starter", "Ábrelo de nuevo desde tu lanzador de apps", "Відкрийте його знову з панелі запуску програм"]),
+    ("Discover", ["Odkrywaj", "发现", "見つける", "Entdecken", "Descubrir", "Огляд"]),
+    ("Turned on · {}", ["Włączone · {}", "已开启 · {}", "オン · {}", "Aktiviert · {}", "Activados · {}", "Увімкнені · {}"]),
+    ("Search {} labs", ["Szukaj wśród {} eksperymentów", "搜索 {} 项实验功能", "{} 件のラボを検索", "{} Labs durchsuchen", "Buscar en {} labs", "Пошук серед {} експериментів"]),
+    ("All", ["Wszystkie", "全部", "すべて", "Alle", "Todos", "Усі"]),
+    ("Models", ["Modele", "模型", "モデル", "Modelle", "Modelos", "Моделі"]),
+    ("New in Labs", ["Nowości w Laboratorium", "实验室新功能", "ラボの新機能", "Neu in Labs", "Novedades en Labs", "Нове в Лабораторії"]),
+    ("New", ["Nowe", "新", "新着", "Neu", "Nuevo", "Нове"]),
+    ("Unfinished features. They may change or break.", ["Niedokończone funkcje. Mogą się zmienić lub zepsuć.", "未完成的功能，可能会变化或出错。", "未完成の機能です。変更されたり動かなくなったりすることがあります。", "Unfertige Funktionen. Sie können sich ändern oder kaputtgehen.", "Funciones sin terminar. Pueden cambiar o fallar.", "Незавершені функції. Вони можуть змінитися або зламатися."]),
+    ("No labs match", ["Brak pasujących eksperymentów", "没有匹配的实验功能", "一致するラボはありません", "Keine passenden Labs", "Ningún lab coincide", "Немає відповідних експериментів"]),
+    ("Settings search", ["Wyszukiwanie w ustawieniach", "设置搜索", "設定の検索", "Suche in den Einstellungen", "Búsqueda en Ajustes", "Пошук у налаштуваннях"]),
+    ("Find any setting in General with a search field", ["Znajdź dowolne ustawienie w sekcji Ogólne za pomocą pola wyszukiwania", "使用搜索框查找“通用”中的任何设置", "検索欄で一般設定の項目を探します", "Finde jede Einstellung unter Allgemein über ein Suchfeld", "Encuentra cualquier ajuste en General con un campo de búsqueda", "Знаходьте будь-яке налаштування в розділі Загальні за допомогою поля пошуку"]),
+    ("Search settings", ["Szukaj w ustawieniach", "搜索设置", "設定を検索", "Einstellungen durchsuchen", "Buscar en Ajustes", "Пошук налаштувань"]),
+    ("No settings match", ["Brak pasujących ustawień", "没有匹配的设置", "一致する設定はありません", "Keine passenden Einstellungen", "Ningún ajuste coincide", "Немає відповідних налаштувань"]),
+    ("Try another search", ["Spróbuj innego wyszukiwania", "试试其他搜索", "別の検索をお試しください", "Versuche eine andere Suche", "Prueba otra búsqueda", "Спробуйте інший запит"]),
+    ("Nothing turned on yet", ["Nic jeszcze nie włączono", "还没有开启任何功能", "まだ何もオンにしていません", "Noch nichts aktiviert", "Aún no has activado nada", "Ще нічого не увімкнено"]),
+    ("Record your screen, draw on it, and talk over it with a shortcut", ["Nagrywaj ekran, rysuj na nim i komentuj go głosem za pomocą skrótu", "用快捷键录制屏幕、在上面绘制并配上讲解", "ショートカットで画面を録画し、描き込みながら話せます", "Bildschirm per Kürzel aufnehmen, darauf zeichnen und dazu sprechen", "Graba tu pantalla, dibuja sobre ella y coméntala con un atajo", "Записуйте екран, малюйте на ньому й коментуйте голосом за допомогою комбінації"]),
+    ("Discard", ["Odrzuć", "丢弃", "破棄", "Verwerfen", "Descartar", "Відкинути"]),
+    ("Next", ["Dalej", "下一个", "次へ", "Weiter", "Siguiente", "Далі"]),
+    ("Search", ["Szukaj", "搜索", "検索", "Suchen", "Buscar", "Пошук"]),
+    ("Search {}", ["Szukaj {}", "搜索 {}", "検索 {}", "Suchen {}", "Buscar {}", "Пошук {}"]),
+    ("Paste", ["Wklej", "粘贴", "貼り付け", "Einfügen", "Pegar", "Вставити"]),
+    ("Paste the capture", ["Wklej nagranie", "粘贴采集内容", "キャプチャを貼り付け", "Aufnahme einfügen", "Pegar la captura", "Вставити запис"]),
+    ("Inspect", ["Sprawdź", "查看", "確認", "Ansehen", "Inspeccionar", "Переглянути"]),
+    ("Open the capture", ["Otwórz nagranie", "打开采集内容", "キャプチャを開く", "Aufnahme öffnen", "Abrir la captura", "Відкрити запис"]),
+    ("Send to…", ["Wyślij do…", "发送到…", "送信先…", "Senden an…", "Enviar a…", "Надіслати до…"]),
+    ("Send to", ["Wyślij do", "发送到", "送信先", "Senden an", "Enviar a", "Надіслати до"]),
+    ("⇧ remembers", ["⇧ zapamiętuje", "⇧ 记住", "⇧ で記憶", "⇧ merkt es sich", "⇧ lo recuerda", "⇧ запам'ятовує"]),
+    ("Remember", ["Zapamiętaj", "记住", "記憶", "Merken", "Recordar", "Запам'ятати"]),
+    ("New capture", ["Nowe nagranie", "新建采集", "新しいキャプチャ", "Neue Aufnahme", "Nueva captura", "Новий запис"]),
+    ("Always send", ["Zawsze wysyłaj", "始终发送", "常に送信", "Immer senden", "Enviar siempre", "Завжди надсилати"]),
+    ("to", ["do", "到", "→", "an", "a", "до"]),
+    ("to…", ["do…", "到…", "→…", "an…", "a…", "до…"]),
+    ("Area", ["Obszar", "区域", "範囲", "Bereich", "Área", "Область"]),
+    ("Window", ["Okno", "窗口", "ウインドウ", "Fenster", "Ventana", "Вікно"]),
+    ("Screen", ["Ekran", "屏幕", "画面", "Bildschirm", "Pantalla", "Екран"]),
+    ("no speech", ["brak mowy", "无语音", "音声なし", "keine Sprache", "sin voz", "немає мовлення"]),
+    ("Couldn't start", ["Nie udało się rozpocząć", "无法开始", "開始できませんでした", "Start fehlgeschlagen", "No se pudo iniciar", "Не вдалося почати"]),
+    ("Couldn't save", ["Nie udało się zapisać", "无法保存", "保存できませんでした", "Speichern fehlgeschlagen", "No se pudo guardar", "Не вдалося зберегти"]),
+    ("Taken back", ["Cofnięto", "已撤回", "取り消しました", "Zurückgenommen", "Retirado", "Скасовано"]),
+    ("Kept", ["Zachowano", "已保留", "保持しました", "Behalten", "Conservado", "Залишено"]),
+    ("to see your screen", ["aby widzieć ekran", "以查看你的屏幕", "画面を見るため", "um deinen Bildschirm zu sehen", "para ver tu pantalla", "щоб бачити ваш екран"]),
+    ("to hear you", ["aby cię słyszeć", "以听到你的声音", "声を聞くため", "um dich zu hören", "para oírte", "щоб чути вас"]),
+    ("to follow your clicks", ["aby śledzić kliknięcia", "以跟随你的点击", "クリックを追うため", "um deinen Klicks zu folgen", "para seguir tus clics", "щоб стежити за вашими клацаннями"]),
+    ("turn Mumble on in System Settings", ["włącz Mumble w Ustawieniach systemowych", "在系统设置中开启 Mumble", "システム設定で Mumble をオンに", "Mumble in den Systemeinstellungen einschalten", "activa Mumble en Ajustes del Sistema", "увімкніть Mumble у Системних параметрах"]),
+    ("turns on when Mumble restarts", ["włączy się po ponownym uruchomieniu Mumble", "Mumble 重启后开启", "Mumble の再起動後にオン", "aktiv nach dem Neustart von Mumble", "se activa al reiniciar Mumble", "увімкнеться після перезапуску Mumble"]),
+    ("All sessions", ["Wszystkie sesje", "所有会话", "すべてのセッション", "Alle Sitzungen", "Todas las sesiones", "Усі сесії"]),
+    ("always", ["zawsze", "始终", "常に", "immer", "siempre", "завжди"]),
+    ("taken back", ["cofnięto", "已撤回", "取り消し済み", "zurückgenommen", "retirado", "скасовано"]),
+    ("Couldn't reach OpenCode", ["Nie udało się połączyć z OpenCode", "无法连接 OpenCode", "OpenCode に接続できませんでした", "OpenCode nicht erreichbar", "No se pudo conectar con OpenCode", "Не вдалося зв'язатися з OpenCode"]),
+    ("Couldn't send to {}", ["Nie udało się wysłać do {}", "无法发送到 {}", "{} に送信できませんでした", "Senden an {} fehlgeschlagen", "No se pudo enviar a {}", "Не вдалося надіслати до {}"]),
+    ("Mumble needs {}", ["Mumble potrzebuje: {}", "Mumble 需要{}", "Mumble には{}が必要です", "Mumble braucht {}", "Mumble necesita {}", "Mumble потребує: {}"]),
+    ("{} is on", ["{}: włączone", "{}已开启", "{}はオンです", "{} ist an", "{} activado", "{}: увімкнено"]),
+    ("Sending to {}", ["Wysyłanie do {}", "正在发送到 {}", "{} に送信中", "Wird an {} gesendet", "Enviando a {}", "Надсилання до {}"]),
+    ("Send to {}", ["Wyślij do {}", "发送到 {}", "{} に送信", "An {} senden", "Enviar a {}", "Надіслати до {}"]),
+    ("Sent to {}", ["Wysłano do {}", "已发送到 {}", "{} に送信しました", "An {} gesendet", "Enviado a {}", "Надіслано до {}"]),
+    ("Processing…", ["Przetwarzanie…", "处理中…", "処理中…", "Wird verarbeitet…", "Procesando…", "Обробка…"]),
+    ("Undo", ["Cofnij", "撤销", "取り消す", "Widerrufen", "Deshacer", "Скасувати"]),
+    ("already sent", ["już wysłano", "已发送", "送信済み", "schon gesendet", "ya enviado", "вже надіслано"]),
+    ("no suggestions", ["brak sugestii", "没有建议", "候補なし", "keine Vorschläge", "sin sugerencias", "немає пропозицій"]),
+    ("No sessions match", ["Brak pasujących sesji", "没有匹配的会话", "一致するセッションはありません", "Keine passenden Sitzungen", "Ninguna sesión coincide", "Немає відповідних сесій"]),
+    ("session", ["sesja", "会话", "セッション", "Sitzung", "sesión", "сесія"]),
+    ("Already sent to {}", ["Już wysłano do {}", "已发送到 {}", "{} に送信済み", "Schon an {} gesendet", "Ya enviado a {}", "Вже надіслано до {}"]),
+    ("OpenCode didn't answer", ["OpenCode nie odpowiedział", "OpenCode 没有响应", "OpenCode が応答しませんでした", "OpenCode hat nicht geantwortet", "OpenCode no respondió", "OpenCode не відповів"]),
+    ("Screenshots", ["Zrzuty ekranu", "截图", "スクリーンショット", "Bildschirmfotos", "Capturas de pantalla", "Знімки екрана"]),
+    ("Press ⌘⇧4 to capture an area, or press Space for a window. The shot goes on the clipboard and into a folder", ["Naciśnij ⌘⇧4, aby uchwycić obszar, lub naciśnij spację, aby wybrać okno. Zrzut trafia do schowka i do folderu", "按 ⌘⇧4 截取一块区域，或按空格键截取窗口。截图会放到剪贴板并存入文件夹", "⌘⇧4 で範囲を撮影し、スペースキーでウインドウに切り替えます。撮影した画像はクリップボードとフォルダに入ります", "Drücke ⌘⇧4, um einen Bereich aufzunehmen, oder die Leertaste für ein Fenster. Die Aufnahme landet in der Zwischenablage und in einem Ordner", "Pulsa ⌘⇧4 para capturar un área o la barra espaciadora para una ventana. La captura va al portapapeles y a una carpeta", "Натисніть ⌘⇧4, щоб зняти область, або пробіл, щоб зняти вікно. Знімок потрапляє в буфер обміну й у теку"]),
+    ("Saves to", ["Zapisuje w", "保存到", "保存先", "Speichert in", "Guarda en", "Зберігає в"]),
+    ("macOS takes this shortcut first. Turn off its screenshot shortcuts in Keyboard Shortcuts › Screenshots, or choose another", ["macOS przechwytuje ten skrót pierwszy. Wyłącz jego skróty zrzutów ekranu w Skróty klawiszowe › Zrzuty ekranu albo wybierz inny", "macOS 会先占用这个快捷键。请在“键盘快捷键 › 截屏”中关闭它的截屏快捷键，或换一个", "このショートカットは macOS が先に使います。「キーボードショートカット › スクリーンショット」で macOS のショートカットをオフにするか、別のものを選んでください", "macOS belegt dieses Kürzel zuerst. Schalte seine Bildschirmfoto-Kürzel unter Tastaturkurzbefehle › Bildschirmfotos aus oder wähle ein anderes", "macOS usa este atajo primero. Desactiva sus atajos de captura en Funciones rápidas de teclado › Capturas de pantalla o elige otro", "macOS перехоплює цю комбінацію першою. Вимкніть її комбінації для знімків у Сполучення клавіш › Знімки екрана або виберіть іншу"]),
+    ("Open Keyboard Settings", ["Otwórz ustawienia klawiatury", "打开键盘设置", "キーボード設定を開く", "Tastatureinstellungen öffnen", "Abrir ajustes de teclado", "Відкрити налаштування клавіатури"]),
+    ("Full screen · Click to capture", ["Cały ekran · Kliknij, aby uchwycić", "全屏 · 点按以截图", "全画面 · クリックで撮影", "Ganzer Bildschirm · Klicken zum Aufnehmen", "Pantalla completa · Haz clic para capturar", "Увесь екран · Клацніть, щоб зняти"]),
 ];
 
 #[cfg(test)]
 mod tests {
-    use super::TRANSLATIONS;
+    use super::all_translations;
     use super::primary_subtag;
 
     #[test]
@@ -870,6 +990,13 @@ mod tests {
         assert_eq!(column_for_language_tag("fr_CA"), super::FRENCH_COLUMN);
         assert_eq!(column_for_code("fr"), super::FRENCH_COLUMN);
         assert!(LANGUAGE_CHOICES.contains(&(Some("fr"), "Français")));
+        assert_eq!(column_for_language_tag("ru-RU"), super::RUSSIAN_COLUMN);
+        assert_eq!(
+            column_for_language_tag("ru_RU.UTF-8"),
+            super::RUSSIAN_COLUMN
+        );
+        assert_eq!(column_for_code("ru"), super::RUSSIAN_COLUMN);
+        assert!(LANGUAGE_CHOICES.contains(&(Some("ru"), "Русский")));
     }
 
     #[test]
@@ -931,6 +1058,15 @@ mod tests {
     }
 
     #[test]
+    fn russian_translates_with_its_column() {
+        super::set_current(super::RUSSIAN_COLUMN);
+        assert_eq!(super::tr("Don't switch"), "Не переключать");
+        assert_eq!(super::tr_fill("Remove {}?", "x"), "Удалить x?");
+        super::set_current(super::ENGLISH);
+        assert_eq!(super::tr("Don't switch"), "Don't switch");
+    }
+
+    #[test]
     fn portuguese_translates_with_its_column() {
         super::set_current(super::PORTUGUESE_COLUMN);
         assert_eq!(super::tr("Labs"), "Labs");
@@ -950,7 +1086,7 @@ mod tests {
 
     #[test]
     fn templates_keep_their_placeholder_in_every_language() {
-        for (english, translated) in TRANSLATIONS {
+        for (english, translated) in all_translations() {
             if english.contains("{}") {
                 for translation in translated {
                     assert!(
@@ -970,9 +1106,12 @@ mod tests {
         include_str!("../rune_ui/explainer.rs"),
         include_str!("../rune_ui/fun.rs"),
         include_str!("../rune_ui/general.rs"),
+        include_str!("../rune_ui/general/search.rs"),
         include_str!("../rune_ui/history.rs"),
         include_str!("../rune_ui/hud_lab.rs"),
         include_str!("../rune_ui/labs.rs"),
+        include_str!("../rune_ui/labs/group.rs"),
+        include_str!("../rune_ui/labs/store.rs"),
         include_str!("../rune_ui/linux_host.rs"),
         include_str!("../rune_ui/list_detail.rs"),
         include_str!("../rune_ui/lists.rs"),
@@ -997,6 +1136,7 @@ mod tests {
         include_str!("tray_menu.rs"),
         include_str!("../windows/app.rs"),
         include_str!("../windows/rune.rs"),
+        include_str!("../rune_hud.rs"),
     ];
 
     /// The string literals passed to `tr`, `tr_fill`, and `tr_named`.
@@ -1032,7 +1172,7 @@ mod tests {
 
     #[test]
     fn every_translated_string_has_every_language() {
-        let table: std::collections::HashMap<_, _> = TRANSLATIONS.iter().copied().collect();
+        let table: std::collections::HashMap<_, _> = all_translations().copied().collect();
         let mut checked = 0;
         for source in SOURCES {
             for literal in translated_literals(source) {
@@ -1056,7 +1196,7 @@ mod tests {
     #[test]
     fn every_sound_set_string_has_every_language() {
         use crate::feedback::{Cue, SoundSet};
-        let table: std::collections::HashMap<_, _> = TRANSLATIONS.iter().copied().collect();
+        let table: std::collections::HashMap<_, _> = all_translations().copied().collect();
         let strings = SoundSet::ALL
             .into_iter()
             .flat_map(|set| [set.name(), set.character()])
@@ -1075,7 +1215,7 @@ mod tests {
 
     #[test]
     fn named_placeholders_survive_translation() {
-        for (english, translated) in TRANSLATIONS {
+        for (english, translated) in all_translations() {
             let names = english
                 .split('{')
                 .skip(1)
@@ -1096,7 +1236,7 @@ mod tests {
     #[test]
     fn keys_are_unique() {
         let mut seen = std::collections::HashSet::new();
-        for (english, _) in TRANSLATIONS {
+        for (english, _) in all_translations() {
             assert!(
                 seen.insert(english),
                 "duplicate translation key {english:?}"

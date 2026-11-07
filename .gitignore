@@ -16,3 +16,4 @@ __pycache__/
 /ios/MumbleMobile.xcodeproj
 /result
 /result-*
+/perf/seeds/.generated/

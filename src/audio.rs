@@ -1,5 +1,6 @@
 #[cfg(target_os = "macos")]
 pub(crate) mod browser_media;
+mod fixture;
 pub(crate) mod idle_sleep;
 mod input_format;
 pub(crate) mod input_level;
@@ -30,6 +31,12 @@ static AUDIO_SERVICE_RESTART_GENERATION: AtomicU64 = AtomicU64::new(0);
 static INPUT_ROUTE_GENERATION: AtomicU64 = AtomicU64::new(0);
 static STREAM_GLITCHED_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static AVOID_BLUETOOTH_MICROPHONE: AtomicBool = AtomicBool::new(true);
+
+/// Whether `MUMBLE_AUDIO_FIXTURE` names a WAV file that stands in for every
+/// microphone (benchmarks and tests; see `audio/fixture.rs`).
+pub fn uses_fixture() -> bool {
+    fixture::path().is_some()
+}
 
 /// Whether System default passes over a Bluetooth default input, whose
 /// microphone drops the headset into low-quality call audio. A change
@@ -216,7 +223,17 @@ pub struct AudioInput {
     watch_service_restarts: bool,
     restart_generation: u64,
     mumble_microphone: crate::audio::mumble_microphone::CaptureFeedSwitch,
+    /// How long the stream may go without delivering audio before it counts
+    /// as failed; `None` for test inputs fed by hand.
+    stall_after: Option<Duration>,
+    /// When the stream opened or last delivered a chunk.
+    last_delivery: Mutex<Instant>,
 }
+
+/// A running stream delivers audio every few milliseconds, even silence. One
+/// that has delivered nothing for this long has stopped without reporting an
+/// error (seen after a burst of overruns, #1206) and is reopened.
+const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub enum AudioInputEvent {
     Chunk {
@@ -282,6 +299,9 @@ pub struct RecoveringAudioInput {
     opener: Opener,
     route_generation_source: fn() -> u64,
     outage: Option<Option<String>>, // why no input opens; `Some(None)` once taken
+    /// The retry error last logged, so a microphone that stays gone (a closed
+    /// lid, an unplugged headset) logs once, not on every retry.
+    retry_warning: Option<String>,
 }
 
 /// Whether a listener's capture is idle, so [`RecoveringAudioInput`] may
@@ -421,9 +441,20 @@ impl AudioInput {
                 watch_service_restarts: false,
                 restart_generation: audio_service_restart_generation(),
                 mumble_microphone: crate::audio::mumble_microphone::capture_feed(48_000).1,
+                stall_after: None,
+                last_delivery: Mutex::new(Instant::now()),
             },
             sender,
         )
+    }
+
+    #[cfg(test)]
+    fn watch_stalls_for_test(&mut self, after: Duration) {
+        self.stall_after = Some(after);
+        *self
+            .last_delivery
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Instant::now();
     }
 
     #[cfg(test)]
@@ -482,6 +513,8 @@ impl AudioInput {
             watch_service_restarts: true,
             restart_generation,
             mumble_microphone: started.mumble_microphone,
+            stall_after: Some(STREAM_STALL_TIMEOUT),
+            last_delivery: Mutex::new(Instant::now()),
         })
     }
 
@@ -513,11 +546,32 @@ impl AudioInput {
             return AudioInputEvent::StreamFailed(error);
         }
         match received {
-            Ok((samples, captured_through)) => AudioInputEvent::Chunk {
-                samples,
-                captured_through,
-            },
-            Err(RecvTimeoutError::Timeout) => AudioInputEvent::Timeout,
+            Ok((samples, captured_through)) => {
+                if self.stall_after.is_some() {
+                    *self
+                        .last_delivery
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()) = Instant::now();
+                }
+                AudioInputEvent::Chunk {
+                    samples,
+                    captured_through,
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                let stalled = self.stall_after.is_some_and(|after| {
+                    self.last_delivery
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .elapsed()
+                        >= after
+                });
+                if stalled {
+                    AudioInputEvent::StreamFailed("microphone stopped delivering audio".into())
+                } else {
+                    AudioInputEvent::Timeout
+                }
+            }
             Err(RecvTimeoutError::Disconnected) => {
                 AudioInputEvent::StreamFailed("microphone audio channel disconnected".into())
             }
@@ -579,6 +633,7 @@ impl RecoveringAudioInput {
             opener: Arc::new(open_configured_input),
             route_generation_source: input_route_generation,
             outage: None,
+            retry_warning: None,
         }
     }
 
@@ -645,6 +700,7 @@ impl RecoveringAudioInput {
         input.feed_mumble_microphone(true);
         self.input = Some(input);
         self.outage = None;
+        self.retry_warning = None;
     }
 
     pub fn close(&mut self) {
@@ -654,6 +710,7 @@ impl RecoveringAudioInput {
         self.replacement = None;
         self.recovery.recovered();
         self.outage = None;
+        self.retry_warning = None;
     }
 
     pub fn is_open(&self) -> bool {
@@ -738,10 +795,13 @@ impl RecoveringAudioInput {
                         return RecoveringAudioInputEvent::OpenFailed(error);
                     }
                     self.recovery.failed(now);
-                    tracing::warn!(
-                        %error,
-                        "could not reopen dictation microphone; retrying"
-                    );
+                    if self.retry_warning.as_ref() != Some(&error) {
+                        tracing::warn!(
+                            %error,
+                            "could not reopen dictation microphone; retrying"
+                        );
+                        self.retry_warning = Some(error.clone());
+                    }
                     if self.recovery.blocks_audio() {
                         self.outage.get_or_insert(Some(error));
                     }
@@ -875,7 +935,8 @@ enum InputTarget {
     /// A real input standing in for a default that is Mumble Microphone, the
     /// built-in microphone with the lid closed, a passed-over Bluetooth
     /// headset, or missing: the built-in microphone while the lid is open,
-    /// else the first usable one listed.
+    /// else the first usable one listed, never a virtual input or an
+    /// iPhone's Continuity microphone.
     StandIn(usize),
 }
 
@@ -906,8 +967,8 @@ struct InputPlan {
 /// default is passed over for the built-in microphone, else the first other
 /// real input, and kept only when nothing else is usable. Saved microphones
 /// and `--device` are never passed over for being Bluetooth. A virtual or
-/// aggregate input never stands in, though a virtual default, saved
-/// microphone, or `--device` is used as named.
+/// aggregate input, or an iPhone's Continuity microphone, never stands in,
+/// though such a default, saved microphone, or `--device` is used as named.
 fn resolve_input(
     device_override: Option<&str>,
     selected: Option<&str>,
@@ -957,11 +1018,14 @@ fn resolve_input(
             selection,
         });
     }
-    // A virtual device is used only as the default or by name, never as a
-    // stand-in: it can record silence while its app is idle.
+    // A virtual device or an iPhone's Continuity microphone is used only as
+    // the default or by name, never as a stand-in: a virtual one can record
+    // silence while its app is idle, and the iPhone prompts and can fail.
     let usable = || {
         (0..names.len()).filter(|&index| {
-            !is_mumble(&names[index]) && !off(index) && transport(index) != Transport::Virtual
+            !is_mumble(&names[index])
+                && !off(index)
+                && !matches!(transport(index), Transport::Virtual | Transport::Continuity)
         })
     };
     usable()
@@ -1043,6 +1107,14 @@ fn description_name<E: std::fmt::Display>(
 /// the same device. A listed saved microphone that will not open falls back
 /// to the system default.
 fn open_configured_input(request: &OpenRequest) -> Result<Opened> {
+    if let Some(path) = fixture::path() {
+        if request.keep.as_deref() == Some(fixture::NAME) {
+            return Ok(Opened::Unchanged {
+                selection: Selection::InUse,
+            });
+        }
+        return Ok(Opened::Input(Box::new(fixture::open(path)?)));
+    }
     let host = cpal::default_host();
     let (devices, names) = input_devices_of(&host)?;
     let (default, default_name) = default_input_of(&host).unzip();
@@ -1638,6 +1710,80 @@ mod tests {
         assert_eq!(
             resolve_input(
                 Some("Microsoft Teams Audio"),
+                None,
+                &headset,
+                Some("AirPods Pro"),
+                headset_transports,
+                OPEN
+            ),
+            found(Named(0), Selection::InUse)
+        );
+    }
+
+    #[test]
+    fn an_iphone_microphone_never_stands_in() {
+        use InputTarget::{Named, SystemDefault};
+        use Transport::{Bluetooth, BuiltIn, Continuity};
+        let found = |target, selection| Ok(InputPlan { target, selection });
+
+        // Lid closed, only the built-in microphone and the iPhone: say why.
+        let lid = listed(&["MacBook Pro Microphone", "iPhone Microphone"]);
+        let lid_transports = |index: usize| [BuiltIn, Continuity][index];
+        assert_eq!(
+            resolve_input(
+                None,
+                None,
+                &lid,
+                Some("MacBook Pro Microphone"),
+                lid_transports,
+                CLOSED
+            ),
+            Err(LID_CLOSED_ERROR.into())
+        );
+        // A Bluetooth default is kept rather than passed over for the iPhone.
+        let headset = listed(&["iPhone Microphone", "AirPods Pro"]);
+        let headset_transports = |index: usize| [Continuity, Bluetooth][index];
+        let avoid = Route {
+            lid_closed: false,
+            avoid_bluetooth: true,
+        };
+        assert_eq!(
+            resolve_input(
+                None,
+                None,
+                &headset,
+                Some("AirPods Pro"),
+                headset_transports,
+                avoid
+            ),
+            found(SystemDefault, Selection::InUse)
+        );
+        // An iPhone default, saved microphone, or `--device` is used as named.
+        assert_eq!(
+            resolve_input(
+                None,
+                None,
+                &headset,
+                Some("iPhone Microphone"),
+                headset_transports,
+                OPEN
+            ),
+            found(SystemDefault, Selection::InUse)
+        );
+        assert_eq!(
+            resolve_input(
+                None,
+                Some("iPhone Microphone"),
+                &headset,
+                Some("AirPods Pro"),
+                headset_transports,
+                OPEN
+            ),
+            found(Named(0), Selection::InUse)
+        );
+        assert_eq!(
+            resolve_input(
+                Some("iPhone Microphone"),
                 None,
                 &headset,
                 Some("AirPods Pro"),
@@ -2347,5 +2493,36 @@ mod tests {
             RecoveringAudioInputEvent::Chunk { samples, captured_through }
                 if samples == vec![0.5; 240] && captured_through == at
         ));
+    }
+
+    #[test]
+    fn a_stream_that_stops_delivering_audio_is_reopened() {
+        let stall = Duration::from_millis(400);
+        let mut input = RecoveringAudioInput::closed(None, 1, Some("Test microphone"));
+        let (mut opened, samples) = AudioInput::channel_for_test();
+        opened.watch_stalls_for_test(stall);
+        input.finish_initial_open(Ok(opened), Instant::now());
+
+        // Delivering audio keeps the stream alive.
+        let at = CaptureInstant::from_nanos(10_000_000_000);
+        std::thread::sleep(stall / 4);
+        samples.send((vec![0.5; 240], at)).unwrap();
+        assert!(matches!(
+            input.recv_timeout(Duration::ZERO, true),
+            RecoveringAudioInputEvent::Chunk { .. }
+        ));
+        std::thread::sleep(stall / 4);
+        assert!(matches!(
+            input.recv_timeout(Duration::ZERO, true),
+            RecoveringAudioInputEvent::Timeout
+        ));
+
+        // A quiet stream with no error counts as failed and recovers.
+        std::thread::sleep(stall);
+        assert!(matches!(
+            input.recv_timeout(Duration::ZERO, true),
+            RecoveringAudioInputEvent::Interrupted
+        ));
+        assert!(input.is_recovering());
     }
 }

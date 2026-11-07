@@ -109,6 +109,7 @@ impl Backend {
                 operation_error: published.operation_error.clone(),
                 update_status: published.update_status.clone(),
                 update_notes: published.update_notes.clone(),
+                update_blocked: published.update_blocked,
                 editing: false,
             },
             settings: published.settings.clone(),

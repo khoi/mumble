@@ -17,6 +17,7 @@ for file in "$in"/*/*; do
       "mumble-$v-linux-arm64" | "mumble-$v-linux-arm64.deb" | "mumble-$v-linux-arm64.rpm" | \
       "mumble-$v-macos-arm64.zip" | "mumble-$v-macos-arm64.dmg" | \
       "mumble-$v-windows-x64.exe" | "mumble-$v-windows-arm64.exe" | \
+      "mumble-$v-windows-x64.com" | "mumble-$v-windows-arm64.com" | \
       "mumble-setup-$v-windows-x64.exe" | "mumble-setup-$v-windows-arm64.exe") ;;
     *) die "$name is not a release file of Mumble $v." ;;
   esac

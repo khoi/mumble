@@ -296,6 +296,21 @@ const KEYS: &[Key] = &[
         "Labs: a Copy Recent Dictation submenu in the menu bar that copies one of the last five dictations (macOS)",
     ),
     key(
+        "labs.settings_search",
+        Kind::Bool,
+        "Labs: a search field at the top of General that filters its rows",
+    ),
+    key(
+        "labs.quit_closes_window",
+        Kind::Bool,
+        "Labs: the app menu's Quit Mumble (⌘Q) closes the Settings window instead of quitting Mumble; dictation keeps running, and the menu bar icon still quits (macOS)",
+    ),
+    key(
+        "labs.notch_indicator",
+        Kind::Bool,
+        "Labs: with indicator_position top, the recording indicator grows out of the notch on a screen that has one, and sits below the menu bar elsewhere (macOS)",
+    ),
+    key(
         "labs.hide_menu_bar_icon",
         Kind::Bool,
         "Labs: hide Mumble's menu bar icon while nothing records; shortcuts keep working, and opening Mumble again from Finder or Spotlight shows Settings (macOS)",
@@ -363,7 +378,7 @@ const KEYS: &[Key] = &[
     optional(
         "ui_language",
         Kind::Choice(&[
-            "en", "pl", "zh", "zh-Hant", "ja", "de", "es", "uk", "pt", "fr",
+            "en", "pl", "zh", "zh-Hant", "ja", "de", "es", "uk", "pt", "fr", "ru",
         ]),
         "Interface language; none follows the system",
     ),
@@ -386,6 +401,7 @@ const NEEDS: &[(&str, &str)] = &[
     ("experimental.mumble_microphone", "fun"),
     ("show_dock_icon", "dock_icon"),
     ("labs.hide_menu_bar_icon", "dock_icon"),
+    ("labs.quit_closes_window", "dock_icon"),
     ("enable_on_launch", "listener_control"),
     ("share_dictation_shortcut", "share_shortcut"),
 ];
@@ -415,6 +431,16 @@ fn unavailable_under(name: &str, policy: crate::policy::Policy) -> Option<Contro
             format!("`{name}` belongs to a Labs feature that only dev builds have"),
         ));
     }
+    // A `labs.` key is only its feature's switch, so off its OS it does nothing.
+    if let Some(feature) = crate::labs::Feature::for_settings_key(name)
+        && name.starts_with("labs.")
+        && !feature.on_this_os()
+    {
+        return Some(ControlError::new(
+            "unsupported",
+            format!("`{name}` belongs to a Labs feature this OS doesn't have"),
+        ));
+    }
     let capability = needs(name).filter(|capability| !crate::rune_ui::capability(capability))?;
     Some(ControlError::new(
         "unsupported",
@@ -438,7 +464,7 @@ fn keys() -> impl Iterator<Item = &'static Key> {
 
 /// Settings `mumble settings` never shows: Mumble's own bookkeeping.
 #[cfg(test)]
-const INTERNAL: &[&str] = &["migrations", "mouse_shortcut_notice"];
+const INTERNAL: &[&str] = &["migrations", "mouse_shortcut_notice", "labs.groups"];
 
 /// Settings another `mumble` command edits instead (`mumble vocabulary`).
 #[cfg(test)]
@@ -941,6 +967,17 @@ mod tests {
         assert!(error.message.contains("managed by your organization"));
         assert!(unavailable_under("sound_effects", policy).is_none());
         assert!(unavailable_under("labs.live_text", Policy::default()).is_none());
+    }
+
+    #[test]
+    fn a_labs_switch_for_another_os_is_refused() {
+        let refused = unavailable_under("labs.notch_indicator", crate::policy::Policy::default())
+            .map(|error| error.code);
+        if cfg!(target_os = "macos") {
+            assert_eq!(refused, None);
+        } else {
+            assert_eq!(refused, Some("unsupported"));
+        }
     }
 
     fn rules() -> ShortcutRules {

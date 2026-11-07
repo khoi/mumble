@@ -71,9 +71,8 @@ remapped to Menu with GNOME's keyboard options and
 reach X11 grabs as keysyms 0xff67/0xff13/0xff14 and the portal as `Menu`,
 `Pause`, `Scroll_Lock`. Off, `mumble settings` refuses them, the window's
 recorder refuses them, and a saved shortcut on one goes back to its default
-when settings load or the toggle turns off. Limit: Rune doesn't report these
-keys to the window's recorder, so set them with `mumble settings`. Details and
-checks in [labs.md](labs.md).
+when settings load or the toggle turns off. On, the window's recorder takes
+them too (#1187). Details and checks in [labs.md](labs.md).
 
 Linux with Labs › Section key alone on (`labs.section_key_alone`, off by
 default; issue 1050): the ISO § key, left of 1, may be a shortcut with no
@@ -192,7 +191,18 @@ Alt alone never matches there; bind Right Ctrl instead. Checks:
 `one_modifier_alone_is_a_shortcut_and_alt_or_windows_mask_their_release`,
 `a_key_joining_a_held_modifier_ends_it_quietly_unless_it_records` in
 [windows/input.rs](../../src/windows/input.rs), cross-compiled only; the menu
-mask and AltGr behavior have not run on a Windows PC. Linux
+mask and AltGr behavior have not run on a Windows PC.
+
+**Fixed November 4, 2026 (issue 1254):** a Windows key chord holding Alt or
+Windows (Alt+0, say) swallows its key, so the app saw Alt pressed and released
+alone. Chrome took that as a menu tap and moved focus to its menu button, and
+the paste landed there instead of the page. When Mumble swallows the key of a
+chord (dictation, Dictate without processing, Paste Last, Annotate) that holds
+Alt or Windows, that modifier's release is now masked like a modifier-only
+shortcut's: swallowed, VK 0xE8 tapped, release replayed (not with Share
+shortcut). Check: the `holds_menu_modifier` assertions in
+`one_modifier_alone_is_a_shortcut_and_alt_or_windows_mask_their_release`
+(cross-compiled only; not run in Chrome on a Windows PC). Linux
 binds what the portal and X11 grabs take, a key with modifiers and no side:
 releasing modifiers pressed alone in the recorder says Linux needs a key (or
 can't bind both sides) and suggests adding one, such as Space.
@@ -355,6 +365,58 @@ Output shows a note pointing to it. Checks:
 [linux/clipboard.rs](../../src/linux/clipboard.rs);
 `gnome_desktops_point_to_the_clipboard_lab_until_it_is_on` (constructed state;
 not run on GNOME).
+
+**Fixed November 3, 2026 (issue 1158):** on Linux with PipeWire, Mumble's
+microphone stream (held open while the microphone is kept ready) was named
+by the ALSA plugin after the binary, with spaces and varying by packaging,
+so audio idle inhibitors couldn't be told to ignore it and the screen never
+locked. Every ALSA stream Mumble opens now carries `application.name` and
+`node.name` `mumble` (`PIPEWIRE_ALSA`, set at startup beside
+`state.restore-target`). Check: `streams_carry_a_stable_name_without_spaces`
+in [linux/input_route.rs](../../src/linux/input_route.rs) (property string
+only; not run against PipeWire or an inhibitor).
+
+**Fixed November 4, 2026 (issue 1309):** on Linux (PipeWire), about a second
+of speech or background audio from before the press was transcribed. The
+press was placed at the end of the newest microphone chunk, and ALSA's default
+period can be most of a second, so the 450 ms pre-roll counted from there.
+Mumble now asks for a 20 ms period (falling back to the device default), places
+presses and releases on the stream clock (`StreamClock` in
+[linux/dictation.rs](../../src/linux/dictation.rs)), and keeps exactly the
+pre-roll before the press, dropping earlier audio from chunks still to arrive
+(`DictationCapture::start_at_press`). The hold threshold counts from the
+press, and a replaced or reopened stream starts its clock over; a press
+before its first chunk records from that chunk. Checks:
+`a_press_inside_a_large_chunk_keeps_exactly_the_pre_roll` and
+`a_press_ahead_of_large_chunks_measures_the_hold_from_the_press` in
+[dictation.rs](../../src/dictation.rs),
+`a_press_between_large_chunks_is_placed_on_the_stream_clock` and
+`a_reopened_stream_carries_no_old_clock` in linux/dictation.rs (constructed
+chunks; not run against PipeWire or a physical microphone).
+
+**Changed November 4, 2026 (issue 1309 follow-up):** with "While dictating"
+set to Mute or Pause media, the pre-roll came from before the mute took
+effect and picked up whatever was playing. On every OS, those hotkey captures
+now keep no pre-roll (`dictation::hotkey_pre_roll`); Do nothing keeps 450 ms
+(Duck kept it until issue 1468, below). There is no separate setting. Check:
+`suppressing_audio_while_dictating_keeps_no_pre_roll` in
+[dictation.rs](../../src/dictation.rs) (constructed audio; not run on a
+device).
+
+**Changed November 7, 2026 (issue 1468):** with "While dictating" set to
+Lower audio, lowering ramped over a full second after the 300 ms hold
+threshold, and the 450 ms pre-roll came from before the lower took effect, so
+the start of every dictation stayed loud. Lowering now reaches its target in
+about 120 ms (`LOWER` in
+[audio/output_ducking.rs](../../src/audio/output_ducking.rs)), Duck keeps no
+pre-roll like Mute and Pause media, and restoring still eases back over one
+second. Checks:
+`ducking_preserves_balance_silence_and_restores` and
+`lowering_finishes_at_its_own_duration_while_restoring_is_still_ramping` in
+audio/output_ducking.rs, and
+`suppressing_audio_while_dictating_keeps_no_pre_roll` in
+[dictation.rs](../../src/dictation.rs) (constructed audio; not run on a device
+or physical output).
 
 **Fixed November 2, 2026 (issue 978):** a Windows paste refused to run when
 the clipboard held only a format Mumble can't snapshot (an app's private
@@ -562,6 +624,9 @@ These cover gesture decisions, not hardware keyboard-layout or remapping equival
 ```ts
 Keep ready -> Press shortcut                          // dictate.boundaries
   -> Include up to 450 ms of available pre-roll
+     └── "While dictating" mutes, pauses, or lowers -> No pre-roll (it predates it)
+  -> Linux: press and release placed on the stream clock (newest chunk's end
+     plus the time since it arrived), so large chunks add no pre-press audio
   -> Delayed handling still uses original event boundaries
   -> Release excludes audio captured after physical release + 200 ms
 
@@ -870,6 +935,7 @@ Record -> Release -> Transcribing/processing/paste -> Finished // dictate.feedba
         the microphone is open and the hold counts
   Dictation pasted >= 2 s after the stop tone -> Done tone      // dictate.done-tone
      -> Pasted sooner (the usual case) -> Stop tone only; `DONE_MIN_AFTER_STOP`
+     -> Stop tone still waiting on Lower audio -> Stop only, never done first
      -> Empty, failed, cancelled, Paste Last, programmatic -> No done tone
   Failure -> Error tone; wake/sleep keep macOS Pop/Tink      // dictate.error-tone
      -> Classic has none: macOS Basso, Signature's error on Windows and Linux
@@ -948,7 +1014,8 @@ restored from git; it has no done tone, errors play macOS Basso as they
 did, and onboarding success plays its stop sound (the other sets have their own).
 The done sound of every set plays only when the paste lands at least
 `DONE_MIN_AFTER_STOP` (2 s) after the stop sound, as after a slow rewrite; the
-Sounds sheet's demo still plays it. Checked by `done_plays_only_after_a_slow_paste`.
+Sounds sheet's demo still plays it. Checked by
+`done_plays_only_after_a_slow_paste` and `done_never_plays_before_a_delayed_stop_tone`.
 
 Each set is a folder in `resources/audio/sounds/` made by
 [`scripts/sounds/synth.py`](../../scripts/sounds/synth.py)
@@ -1079,7 +1146,10 @@ capture starts, as macOS does (#486; `rune_hud::display`). Windows and X11
 read the pointer and pick its monitor; Windows keeps it inside that
 monitor's work area and draws it at that monitor's scale. A layer-shell
 surface pins no output, so niri, Sway and Hyprland put it on the focused
-output. GNOME and KDE keep the primary display. On Windows and X11, while
+output. GNOME and KDE on Wayland keep the primary display; on X11 they
+follow the pointer like any other X11 desktop (#1200; check
+`only_gnome_and_kde_on_wayland_keep_the_primary_display`, not run on a
+two-monitor GNOME X11 session). On Windows and X11, while
 the HUD shows it checks the pointer's display every 250 ms (`Hud::follow_pointer`,
 Rune's `refollow_pointer`), and the HUD and live text move there, without
 animating or taking focus, once two checks in a row find the pointer on the
@@ -1096,8 +1166,8 @@ a DX12 DirectComposition swapchain composites alpha on Windows: a Vulkan
 surface is a swapchain on the HWND, which this window shows black (#499) or
 not at all (#510, a hybrid laptop where the integrated GPU's Vulkan driver
 claimed premultiplied alpha). Rune draws transparent Windows surfaces only
-through DX12, on the lowest-power adapter, and fails the overlay when none
-can (93c7a04b; from reading the code and Windows' rules, not yet observed on
+through DX12, on the lowest-power adapter that drives a display, and fails
+the overlay when none can (93c7a04b; from reading the code and Windows' rules, not yet observed on
 Windows). If the window, its GPU surface or the show fails (including a
 cloaked window), Rune reports why (`OverlayHandle::failure`). Mumble logs the
 HUD's surface (backend, adapter, alpha mode) once, and treats a dictation

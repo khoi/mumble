@@ -5,10 +5,10 @@ use color_eyre::eyre::{Result, eyre};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObjectProtocol, Sel};
 use objc2::{AnyThread, DefinedClass, MainThreadOnly, msg_send, sel};
-use objc2_app_kit::{NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem};
+use objc2_app_kit::{NSEventModifierFlags, NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem};
 use objc2_foundation::{MainThreadMarker, NSData, NSObject, NSSize, NSString};
 
-use crate::app_settings::AppSettings;
+use crate::app_settings::{AppSettings, HotkeyBinding};
 
 const IDLE_ICON_PNG: &[u8] = include_bytes!("../../assets/icons/menubar-idle@2x.png");
 const STATUS_ICON_POINTS: f64 = 18.0;
@@ -92,9 +92,124 @@ impl StatusItemTarget {
     }
 }
 
+/// One row of the status menu, top to bottom: things to do, then the app.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Row {
+    PasteLast,
+    /// Labs › Copy recent dictations: hidden until the menu opens with it on.
+    CopyRecentDictation,
+    Settings,
+    /// The transcription service and language; opens Settings › General,
+    /// where they are chosen.
+    Transcription,
+    Separator,
+    Update,
+    Quit,
+}
+
+const ROWS: [Row; 7] = [
+    Row::PasteLast,
+    Row::CopyRecentDictation,
+    Row::Settings,
+    Row::Transcription,
+    Row::Separator,
+    Row::Update,
+    Row::Quit,
+];
+
+impl Row {
+    /// The title it is built with; `None` for a separator.
+    fn title(self) -> Option<String> {
+        let title = match self {
+            Row::Separator => return None,
+            Row::PasteLast => "Paste Last Dictation",
+            Row::CopyRecentDictation => "Copy Recent Dictation",
+            Row::Settings => "Settings…",
+            Row::Transcription => "Transcription…",
+            Row::Update => "Check for Updates…",
+            Row::Quit => return Some(format!("Quit {}", crate::app_paths::app_name())),
+        };
+        Some(title.into())
+    }
+
+    fn action(self) -> Option<Sel> {
+        Some(match self {
+            Row::PasteLast => sel!(pasteLast:),
+            Row::Settings => sel!(openSettings:),
+            Row::Transcription => sel!(openModels:),
+            Row::Update => sel!(checkForUpdates:),
+            Row::Quit => sel!(quit:),
+            Row::Separator | Row::CopyRecentDictation => return None,
+        })
+    }
+
+    /// A fixed ⌘ key equivalent. Paste Last Dictation follows the saved
+    /// binding instead ([`update_paste_last`]).
+    fn command_key(self) -> Option<&'static str> {
+        match self {
+            Row::Settings => Some(","),
+            Row::Quit => Some("q"),
+            _ => None,
+        }
+    }
+
+    /// Rows shown only by a Lab, from the first refresh on.
+    fn starts_hidden(self) -> bool {
+        matches!(self, Row::CopyRecentDictation)
+    }
+}
+
+/// A menu item's key equivalent: the key and its modifiers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct KeyEquivalent {
+    key: String,
+    modifiers: NSEventModifierFlags,
+}
+
+/// What Paste Last Dictation shows for the saved binding: nothing when it is
+/// unbound, modifier-only, or a key a menu can't name (a mouse button).
+fn paste_last_key(binding: Option<&HotkeyBinding>) -> Option<KeyEquivalent> {
+    let binding = binding?;
+    let key = menu_key(&binding.key.as_ref()?.label)?;
+    let shortcut = binding.modifiers;
+    let mut modifiers = NSEventModifierFlags::empty();
+    for (held, flag) in [
+        (shortcut.control.is_some(), NSEventModifierFlags::Control),
+        (shortcut.option.is_some(), NSEventModifierFlags::Option),
+        (shortcut.shift.is_some(), NSEventModifierFlags::Shift),
+        (shortcut.command.is_some(), NSEventModifierFlags::Command),
+        (shortcut.function, NSEventModifierFlags::Function),
+    ] {
+        if held {
+            modifiers |= flag;
+        }
+    }
+    Some(KeyEquivalent { key, modifiers })
+}
+
+/// The key equivalent string for a keycap label: one character in lowercase
+/// (the modifier mask carries Shift), Space, or F1 to F20.
+fn menu_key(label: &str) -> Option<String> {
+    let mut characters = label.chars();
+    if let (Some(character), None) = (characters.next(), characters.next()) {
+        return Some(character.to_lowercase().collect());
+    }
+    if label == "Space" {
+        return Some(" ".into());
+    }
+    let number = label.strip_prefix('F')?.parse::<u32>().ok()?;
+    // NSF1FunctionKey and on.
+    (1..=20)
+        .contains(&number)
+        .then(|| char::from_u32(0xF704 + number - 1))
+        .flatten()
+        .map(String::from)
+}
+
 struct StatusItemController {
     item: Retained<NSStatusItem>,
-    /// Labs › Copy recent dictations: hidden until the menu opens with it on.
+    paste_last: Retained<NSMenuItem>,
+    paste_last_key: RefCell<Option<KeyEquivalent>>,
     recent: Retained<NSMenuItem>,
     recent_menu: Retained<NSMenu>,
     update: Option<Retained<NSMenuItem>>,
@@ -114,47 +229,51 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
     let (actions, receiver) = sync_channel(8);
     let target = StatusItemTarget::new(actions, mtm);
     let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Mumble"));
-    add_item(
-        &menu,
-        &target,
-        "Paste Last Dictation",
-        sel!(pasteLast:),
-        mtm,
-    );
     let recent_menu = NSMenu::initWithTitle(
         NSMenu::alloc(mtm),
         &NSString::from_str("Copy Recent Dictation"),
     );
-    let recent = plain_item("Copy Recent Dictation", mtm);
-    recent.setSubmenu(Some(&recent_menu));
-    recent.setHidden(true);
-    menu.addItem(&recent);
-    add_item(&menu, &target, "Settings…", sel!(openSettings:), mtm);
-    // Read-only line showing the transcription service and language; opens
-    // Settings › General, where it is chosen.
-    let transcription = add_item(&menu, &target, "Transcription…", sel!(openModels:), mtm);
-    menu.addItem(&NSMenuItem::separatorItem(mtm));
-    let update = if crate::updater::managed_by_policy() {
-        // An item without an action is shown disabled.
-        menu.addItem(&plain_item(crate::updater::MANAGED_LABEL, mtm));
-        None
-    } else {
-        Some(add_item(
-            &menu,
-            &target,
-            &update_title(&crate::desktop::host::DesktopUpdateStatus::Checking),
-            sel!(checkForUpdates:),
-            mtm,
-        ))
+
+    let update_managed = crate::updater::managed_by_policy();
+    let mut rows = Vec::with_capacity(ROWS.len());
+    for row in ROWS {
+        let item = match (row, row.title()) {
+            (_, None) => NSMenuItem::separatorItem(mtm),
+            // An item without an action is shown disabled.
+            (Row::Update, Some(_)) if update_managed => {
+                plain_item(crate::updater::MANAGED_LABEL, mtm)
+            }
+            (Row::Update, Some(_)) => action_item(
+                &target,
+                &update_title(&crate::desktop::host::DesktopUpdateStatus::Checking),
+                sel!(checkForUpdates:),
+                mtm,
+            ),
+            (row, Some(title)) => match row.action() {
+                Some(action) => action_item(&target, &title, action, mtm),
+                None => {
+                    let item = plain_item(&title, mtm);
+                    if row == Row::CopyRecentDictation {
+                        item.setSubmenu(Some(&recent_menu));
+                    }
+                    item
+                }
+            },
+        };
+        if let Some(key) = row.command_key() {
+            item.setKeyEquivalent(&NSString::from_str(key));
+            item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        }
+        item.setHidden(row.starts_hidden());
+        menu.addItem(&item);
+        rows.push((row, item));
+    }
+    let row = |wanted: Row| {
+        rows.iter()
+            .find(|(row, _)| *row == wanted)
+            .map(|(_, item)| item.clone())
+            .expect("every row is built")
     };
-    menu.addItem(&NSMenuItem::separatorItem(mtm));
-    add_item(
-        &menu,
-        &target,
-        &format!("Quit {}", crate::app_paths::app_name()),
-        sel!(quit:),
-        mtm,
-    );
 
     let item = NSStatusBar::systemStatusBar().statusItemWithLength(-2.0);
     let button = item
@@ -174,13 +293,15 @@ pub fn install() -> Result<Receiver<StatusItemAction>> {
     STATUS_ITEM.with(|status_item| {
         *status_item.borrow_mut() = Some(StatusItemController {
             item,
-            recent,
+            paste_last: row(Row::PasteLast),
+            paste_last_key: RefCell::new(None),
+            recent: row(Row::CopyRecentDictation),
             recent_menu,
-            update,
+            update: (!update_managed).then(|| row(Row::Update)),
             update_title: RefCell::new("Check for Updates…".into()),
+            transcription: row(Row::Transcription),
             _menu: menu,
             target,
-            transcription,
         });
     });
     Ok(receiver)
@@ -207,8 +328,7 @@ fn plain_item(title: &str, mtm: MainThreadMarker) -> Retained<NSMenuItem> {
     }
 }
 
-fn add_item(
-    menu: &NSMenu,
+fn action_item(
     target: &StatusItemTarget,
     title: &str,
     action: Sel,
@@ -223,6 +343,17 @@ fn add_item(
         )
     };
     unsafe { item.setTarget(Some(target)) };
+    item
+}
+
+fn add_item(
+    menu: &NSMenu,
+    target: &StatusItemTarget,
+    title: &str,
+    action: Sel,
+    mtm: MainThreadMarker,
+) -> Retained<NSMenuItem> {
+    let item = action_item(target, title, action, mtm);
     menu.addItem(&item);
     item
 }
@@ -263,7 +394,7 @@ fn menu_title(title: &str) -> String {
 const RECENT_DICTATIONS: usize = 5;
 
 /// A dictation on one menu line: whitespace and line breaks collapsed, then
-/// cut to fit.
+/// cut like a long title.
 fn recent_title(text: &str) -> String {
     menu_title(&text.split_whitespace().collect::<Vec<_>>().join(" "))
 }
@@ -320,6 +451,32 @@ fn update_title(status: &crate::desktop::host::DesktopUpdateStatus) -> String {
     }
 }
 
+/// Shows the saved Paste Last binding beside Paste Last Dictation, or
+/// nothing when it is unbound.
+pub fn update_paste_last(settings: &AppSettings) {
+    let key = paste_last_key(settings.paste_last_hotkey.as_ref());
+    STATUS_ITEM.with(|controller| {
+        let controller = controller.borrow();
+        let Some(controller) = controller.as_ref() else {
+            return;
+        };
+        if *controller.paste_last_key.borrow() == key {
+            return;
+        }
+        let (equivalent, modifiers) = key
+            .as_ref()
+            .map(|key| (key.key.as_str(), key.modifiers))
+            .unwrap_or(("", NSEventModifierFlags::empty()));
+        controller
+            .paste_last
+            .setKeyEquivalent(&NSString::from_str(equivalent));
+        controller
+            .paste_last
+            .setKeyEquivalentModifierMask(modifiers);
+        controller.paste_last_key.replace(key);
+    });
+}
+
 /// Retitles the update item after the updater's status, so an update ready
 /// or available stays reachable from the menu bar.
 pub fn update_software(status: &crate::desktop::host::DesktopUpdateStatus) {
@@ -355,6 +512,58 @@ pub fn update_visibility() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_menu_reads_actions_then_the_app() {
+        let titles = ROWS
+            .iter()
+            .map(|row| row.title().unwrap_or_else(|| "—".into()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            titles,
+            [
+                "Paste Last Dictation".to_string(),
+                "Copy Recent Dictation".into(),
+                "Settings…".into(),
+                "Transcription…".into(),
+                "—".into(),
+                "Check for Updates…".into(),
+                format!("Quit {}", crate::app_paths::app_name()),
+            ]
+        );
+        assert_eq!(Row::Settings.command_key(), Some(","));
+        assert_eq!(Row::Quit.command_key(), Some("q"));
+        // Every row with neither a submenu nor a separator does something.
+        for row in ROWS {
+            let opens_submenu = row == Row::CopyRecentDictation;
+            assert_eq!(
+                row.action().is_some(),
+                row.title().is_some() && !opens_submenu,
+                "{row:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn paste_last_shows_the_saved_binding_or_nothing() {
+        let default = paste_last_key(Some(&HotkeyBinding::paste_last_default())).unwrap();
+        assert_eq!(default.key, "v");
+        assert_eq!(
+            default.modifiers,
+            NSEventModifierFlags::Option | NSEventModifierFlags::Shift
+        );
+        assert_eq!(paste_last_key(None), None);
+        let modifier_only = HotkeyBinding {
+            key: None,
+            ..HotkeyBinding::paste_last_default()
+        };
+        assert_eq!(paste_last_key(Some(&modifier_only)), None);
+        assert_eq!(menu_key("F12").as_deref(), Some("\u{F70F}"));
+        assert_eq!(menu_key("Space").as_deref(), Some(" "));
+        assert_eq!(menu_key(","), Some(",".into()));
+        assert_eq!(menu_key("Mouse 4"), None);
+        assert_eq!(menu_key("F99"), None);
+    }
 
     #[test]
     fn recent_dictations_show_on_one_short_line() {

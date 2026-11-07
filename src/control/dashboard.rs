@@ -31,7 +31,14 @@ fn run_loop(terminal: &mut ratatui::DefaultTerminal, path: PathBuf) -> io::Resul
     let mut events = EventReader::open(&path);
     loop {
         events.refresh()?;
-        terminal.draw(|frame| draw(frame, events.events(), &path))?;
+        terminal.draw(|frame| {
+            draw(
+                frame,
+                events.events(),
+                events.current_context().cloned().flatten(),
+                &path,
+            )
+        })?;
         if event::poll(Duration::from_millis(100))?
             && let TerminalEvent::Key(key) = event::read()?
             && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
@@ -41,7 +48,12 @@ fn run_loop(terminal: &mut ratatui::DefaultTerminal, path: PathBuf) -> io::Resul
     }
 }
 
-fn draw(frame: &mut ratatui::Frame, events: &VecDeque<VoiceEvent>, path: &Path) {
+fn draw(
+    frame: &mut ratatui::Frame,
+    events: &VecDeque<VoiceEvent>,
+    application: Option<String>,
+    path: &Path,
+) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -86,17 +98,10 @@ fn draw(frame: &mut ratatui::Frame, events: &VecDeque<VoiceEvent>, path: &Path) 
         VoiceEvent::Dictation { phase, text, .. } => Some(RecentAction::Dictation(phase, text)),
         _ => None,
     });
-    let context = events
-        .iter()
-        .rev()
-        .find_map(|event| match event {
-            VoiceEvent::Context { application, .. } => Some(ContextSnapshot {
-                application: application.clone(),
-                ..ContextSnapshot::default()
-            }),
-            _ => None,
-        })
-        .unwrap_or_default();
+    let context = ContextSnapshot {
+        application,
+        ..ContextSnapshot::default()
+    };
 
     frame.render_widget(
         Paragraph::new(vec![

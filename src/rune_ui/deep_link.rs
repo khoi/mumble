@@ -1,22 +1,45 @@
 //! Links that open the window on a page: `mumble://labs`,
 //! `mumble://labs/<feature>` (`mumble labs link <feature>` prints it), and
 //! `mumble://settings/<pane>` (`mumble-test://` in a test build). A Labs link
-//! scrolls to the feature's row and pulses it; it never turns the feature on.
-//! Story links live in `story_link`.
+//! opens the store, on Turned on with `?tab=on`, on a chip with
+//! `?category=<id>`, searching with `?search=<words>`, and on a lab's group
+//! chip when it names one; it never turns a lab on. Story links live
+//! in `story_link`.
 
 use rune::Tx;
 
+use super::labs::LabsLink;
 use super::story_link::{MAX_LINK, percent_decode};
 use super::{Pane, Ui};
 
 /// Where a link opens the window.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Target {
-    /// The Labs page, at a feature's row when it names one. The name is
-    /// checked when the link opens, so an unknown one still opens Labs.
-    Labs(Option<String>),
+    /// The Labs store. Names are checked when the link opens, so an
+    /// unknown lab or category still opens Labs.
+    Labs(LabsLink),
     /// A main pane, by its link name.
     Settings(String),
+}
+
+impl LabsLink {
+    fn read(name: String, url: &url::Url) -> Self {
+        let mut link = Self {
+            lab: (!name.is_empty()).then_some(name),
+            ..Self::default()
+        };
+        for (key, value) in url.query_pairs() {
+            match &*key {
+                "tab" => link.turned_on = value.eq_ignore_ascii_case("on"),
+                "category" if !value.is_empty() => {
+                    link.category = Some(value.to_ascii_lowercase());
+                }
+                "search" if !value.trim().is_empty() => link.search = Some(value.into_owned()),
+                _ => {}
+            }
+        }
+        link
+    }
 }
 
 /// The main panes a `mumble://settings/<pane>` link names.
@@ -27,7 +50,7 @@ const PANES: [(&str, Pane); 4] = [
     ("voice-filter", Pane::VoiceFilter),
 ];
 
-/// Reads `scheme://labs[/<feature>]` and `scheme://settings/<pane>`. `None`
+/// Reads `scheme://labs[/<feature>][?…]` and `scheme://settings/<pane>`. `None`
 /// means it is not one of these (a story link, or not ours), for the caller
 /// to read another way.
 pub(crate) fn parse(link: &str, scheme: &str) -> Option<Result<Target, String>> {
@@ -54,14 +77,13 @@ pub(crate) fn parse(link: &str, scheme: &str) -> Option<Result<Target, String>> 
     };
     let name = segments.join("/").to_ascii_lowercase();
     Some(match (host, name.is_empty()) {
-        ("labs", true) => Ok(Target::Labs(None)),
-        ("labs", false) => Ok(Target::Labs(Some(name))),
+        ("labs", _) => Ok(Target::Labs(LabsLink::read(name, &url))),
         (_, true) => Err("the link names no settings pane".into()),
         (_, false) => Ok(Target::Settings(name)),
     })
 }
 
-/// The link that opens Labs at `feature`'s row.
+/// The link that opens Labs on `feature`'s group.
 pub(crate) fn labs_link(scheme: &str, feature: crate::labs::Feature) -> String {
     format!("{scheme}://labs/{}", feature.name())
 }
@@ -69,7 +91,7 @@ pub(crate) fn labs_link(scheme: &str, feature: crate::labs::Feature) -> String {
 /// Opens the window's page for `target`; the caller brings the window forward.
 pub(crate) fn open(ui: &mut Ui, target: Target, tx: &mut Tx) {
     match target {
-        Target::Labs(name) => super::labs::reveal(ui, name.as_deref(), tx),
+        Target::Labs(link) => super::labs::reveal(ui, &link, tx),
         Target::Settings(name) => {
             let pane = PANES
                 .iter()
@@ -98,21 +120,67 @@ mod tests {
         parse(link, "mumble")
     }
 
+    fn lab(id: &str) -> Target {
+        Target::Labs(LabsLink {
+            lab: Some(id.into()),
+            ..LabsLink::default()
+        })
+    }
+
     #[test]
     fn reads_labs_links() {
-        assert_eq!(read("mumble://labs"), Some(Ok(Target::Labs(None))));
-        assert_eq!(read("mumble://labs/"), Some(Ok(Target::Labs(None))));
-        assert_eq!(
-            read("mumble://labs/live-text"),
-            Some(Ok(Target::Labs(Some("live-text".into()))))
-        );
-        assert_eq!(
-            read("mumble://labs/Live-Text/"),
-            Some(Ok(Target::Labs(Some("live-text".into()))))
-        );
+        let store = Target::Labs(LabsLink::default());
+        assert_eq!(read("mumble://labs"), Some(Ok(store.clone())));
+        assert_eq!(read("mumble://labs/"), Some(Ok(store)));
+        assert_eq!(read("mumble://labs/live-text"), Some(Ok(lab("live-text"))));
+        assert_eq!(read("mumble://labs/Live-Text/"), Some(Ok(lab("live-text"))));
         assert_eq!(
             parse("mumble-test://labs/playground", "mumble-test"),
-            Some(Ok(Target::Labs(Some("playground".into()))))
+            Some(Ok(lab("playground")))
+        );
+    }
+
+    #[test]
+    fn reads_the_labs_stores_tab_chip_and_search() {
+        let labs = |link: LabsLink| Some(Ok(Target::Labs(link)));
+        assert_eq!(
+            read("mumble://labs?tab=on"),
+            labs(LabsLink {
+                turned_on: true,
+                ..LabsLink::default()
+            })
+        );
+        assert_eq!(
+            read("mumble://labs?tab=discover"),
+            labs(LabsLink::default())
+        );
+        assert_eq!(
+            read("mumble://labs?category=Dictation"),
+            labs(LabsLink {
+                category: Some("dictation".into()),
+                ..LabsLink::default()
+            })
+        );
+        assert_eq!(
+            read("mumble://labs?search=paste%20last&tab=on"),
+            labs(LabsLink {
+                turned_on: true,
+                search: Some("paste last".into()),
+                ..LabsLink::default()
+            })
+        );
+        assert_eq!(
+            read("mumble://labs/live-text?category=dictation&search=live+text"),
+            labs(LabsLink {
+                lab: Some("live-text".into()),
+                category: Some("dictation".into()),
+                search: Some("live text".into()),
+                ..LabsLink::default()
+            })
+        );
+        assert_eq!(
+            read("mumble://labs?search=&category=&other=1"),
+            labs(LabsLink::default())
         );
     }
 
@@ -146,11 +214,7 @@ mod tests {
     fn every_feature_has_a_link_that_reads_back() {
         for feature in Feature::ALL {
             let link = labs_link("mumble", feature);
-            assert_eq!(
-                read(&link),
-                Some(Ok(Target::Labs(Some(feature.name().into())))),
-                "{link}"
-            );
+            assert_eq!(read(&link), Some(Ok(lab(feature.name()))), "{link}");
         }
     }
 

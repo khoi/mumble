@@ -78,5 +78,5 @@ After Ctrl-C, `mumble` starts the installed Mumble again.
 
 Include the commit from the artifact name, the OS and architecture, and the
 logs: `~/Library/Application Support/mumble/logs/` on macOS,
-`%APPDATA%\mumble\logs\` on Windows, and
+`%LOCALAPPDATA%\mumble\logs\` on Windows, and
 `~/.local/share/mumble/logs/` on Linux.

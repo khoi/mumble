@@ -79,7 +79,37 @@ pub(crate) struct WindowsDesktopHost {
 /// Names the event that marks the running Mumble app in this login session.
 const APP_INSTANCE_EVENT: &str = r"Local\anomaly.mumble.app";
 
-/// Ownership of the one Mumble app in this login session.
+/// The data root `MUMBLE_APPLICATION_SUPPORT_DIR` names, unless it is the
+/// default one, which keeps the default event.
+fn custom_root() -> Option<std::path::PathBuf> {
+    let canonical = |path: std::path::PathBuf| path.canonicalize().unwrap_or(path);
+    let root = canonical(std::env::var_os("MUMBLE_APPLICATION_SUPPORT_DIR")?.into());
+    let default = dirs::data_dir().map(|data| canonical(data.join("mumble")));
+    (default.as_ref() != Some(&root)).then_some(root)
+}
+
+/// The instance event for a data root: [`APP_INSTANCE_EVENT`] for the
+/// default one, and its own event for another root that
+/// `MUMBLE_APPLICATION_SUPPORT_DIR` names, so a copy of Mumble with its own data,
+/// such as a benchmark, neither signals nor yields to the person's Mumble.
+fn instance_event_name(custom_root: Option<&std::path::Path>) -> String {
+    use sha2::{Digest, Sha256};
+    match custom_root {
+        None => APP_INSTANCE_EVENT.into(),
+        Some(root) => {
+            // Windows paths compare without case.
+            let path = root.to_string_lossy().to_lowercase();
+            let digest = Sha256::digest(path.as_bytes());
+            let hash: String = digest[..8]
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!("{APP_INSTANCE_EVENT}.{hash}")
+        }
+    }
+}
+
+/// Ownership of the one Mumble app in this login session (per data root).
 ///
 /// Windows does not bring a running app forward when it is launched again, so
 /// a Start menu launch while the login item runs in the tray would start a
@@ -93,7 +123,8 @@ impl AppInstance {
     /// asking it to show its window unless this launch is a hidden (login)
     /// launch, which must never pop up an app that is already running.
     pub(crate) fn claim(start_hidden: bool) -> Result<Option<Self>> {
-        let name: Vec<u16> = APP_INSTANCE_EVENT.encode_utf16().chain([0]).collect();
+        let name = instance_event_name(custom_root().as_deref());
+        let name: Vec<u16> = name.encode_utf16().chain([0]).collect();
         // SAFETY: `name` is a NUL-terminated UTF-16 string that outlives the call.
         let event = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) };
         if event.is_null() {
@@ -208,9 +239,13 @@ impl WindowsDesktopHost {
             Request::PasteLast => {
                 if let Some(listener) = &self.listener {
                     self.foreground.activate();
-                    let _ = listener
+                    if listener
                         .commands
-                        .send(crate::windows::dictation::ListenerCommand::PasteLast);
+                        .send(crate::windows::dictation::ListenerCommand::PasteLast)
+                        .is_ok()
+                    {
+                        crate::windows::dictation::wake();
+                    }
                 }
             }
             Request::Quit => return true,
@@ -497,6 +532,7 @@ impl WindowsDesktopHost {
             operation_error: self.error.clone(),
             update_status: self.updater.status(),
             update_notes: self.updater.notes(),
+            update_blocked: self.updater.blocked(),
             settings: self.settings.clone(),
             state: self.activity.state.filter(|_| self.is_running()),
         }
@@ -521,9 +557,8 @@ fn last_completed_at<'a>(events: impl DoubleEndedIterator<Item = &'a VoiceEvent>
             VoiceEvent::Transcript {
                 timestamp_ms,
                 phase: TranscriptPhase::Completed,
-                text,
                 ..
-            } if !text.trim().is_empty() => return Some(*timestamp_ms),
+            } => return Some(*timestamp_ms),
             _ => {}
         }
     }
@@ -614,9 +649,24 @@ mod tests {
             VoiceEvent::SessionStarted { timestamp_ms: 2 },
             transcript(3, "First"),
             transcript(4, "Second"),
-            transcript(5, "  "),
         ];
         assert_eq!(last_completed_at(events.iter()), Some(4));
+    }
+
+    #[test]
+    fn an_isolated_data_root_has_its_own_instance_event() {
+        assert_eq!(instance_event_name(None), APP_INSTANCE_EVENT);
+        let isolated = instance_event_name(Some(std::path::Path::new(r"C:\bench\home\mumble")));
+        assert!(isolated.starts_with(r"Local\anomaly.mumble.app."));
+        assert_eq!(isolated.len(), APP_INSTANCE_EVENT.len() + 17);
+        assert_eq!(
+            isolated,
+            instance_event_name(Some(std::path::Path::new(r"c:\Bench\Home\MUMBLE")))
+        );
+        assert_ne!(
+            isolated,
+            instance_event_name(Some(std::path::Path::new(r"C:\bench\other\hex")))
+        );
     }
 
     #[test]

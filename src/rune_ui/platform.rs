@@ -446,7 +446,9 @@ pub(super) fn poll_voice_filter(state: &mut PlatformState, refresh: bool) -> boo
             state.tuning = tuning;
             changed = true;
         }
-        let status = on.then(mic::status);
+        // A stable build has no filter, but an installed driver still needs
+        // its Uninstall.
+        let status = (on || mic::driver_bundle_installed()).then(mic::status);
         if state.mumble_microphone != status {
             state.mumble_microphone = status;
             changed = true;

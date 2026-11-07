@@ -168,7 +168,13 @@ impl WindowsHotkey {
     /// Releasing Alt or Windows pressed alone opens the menu bar or Start,
     /// so a modifier-only shortcut holding either masks its release.
     fn masks_release(&self) -> bool {
-        self.key.is_none() && (self.alt.is_some() || self.windows.is_some())
+        self.key.is_none() && self.holds_menu_modifier()
+    }
+
+    /// The chord holds Alt or Windows, whose release Chrome reads as a menu
+    /// tap once Mumble swallows the chord's key, so that release is masked.
+    fn holds_menu_modifier(&self) -> bool {
+        self.alt.is_some() || self.windows.is_some()
     }
 }
 
@@ -258,8 +264,9 @@ struct CallbackState {
     share_trigger: bool,
     capture: CaptureState,
     dirty: bool,
-    /// A modifier-only shortcut with Alt or Windows was pressed with no
-    /// other key since, so its release would open the menu bar or Start.
+    /// A modifier-only shortcut with Alt or Windows was pressed, or a chord
+    /// holding either had its key swallowed, with no other key since, so
+    /// its release would open the menu bar or Start.
     mask_release: bool,
 }
 
@@ -763,6 +770,22 @@ fn process_button(vk: u32, is_down: bool, time: u32) -> Disposition {
             if !modifier_event && is_down {
                 state.mask_release = false;
             }
+            // A dictation shortcut's modifiers are down and its key may
+            // follow: the HUD's GPU device and pipelines start on a thread
+            // now, so the HUD shows at once rather than after them (#1229).
+            if modifier_event
+                && is_down
+                && !state.capture.active
+                && [Some(&state.binding), state.raw.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|binding| state.modifiers.matches(binding))
+            {
+                rune::warm_gpu_with(
+                    crate::rune_hud::Painter::FEATURES,
+                    crate::rune_hud::prepare_gpu,
+                );
+            }
             // Toggle's cancel key discards the recording. Mumble takes it only
             // while a toggled capture records, and keeps its repeats and
             // release, so the app in front never acts on it.
@@ -797,6 +820,7 @@ fn process_button(vk: u32, is_down: bool, time: u32) -> Disposition {
                             .as_ref()
                             .is_some_and(|binding| state.modifiers.matches(binding))));
             if raw_event {
+                state.mask_release |= is_down && holds_menu(state.raw.as_ref());
                 if is_down && !state.raw_trigger_down {
                     state.raw_trigger_down = true;
                     state.capture.claim(true);
@@ -839,6 +863,7 @@ fn process_button(vk: u32, is_down: bool, time: u32) -> Disposition {
                             .is_some_and(|binding| state.modifiers.matches(binding))));
             if paste_event {
                 suppressed = true;
+                state.mask_release |= is_down && holds_menu(state.paste_last.as_ref());
                 if is_down && !state.paste_trigger_down {
                     state.paste_trigger_down = true;
                     send_event(state, HotkeyAction::PasteLast, time);
@@ -867,6 +892,9 @@ fn process_button(vk: u32, is_down: bool, time: u32) -> Disposition {
                             }
                             send_event(state, action, time);
                         }
+                    }
+                    if suppressed && state.binding.holds_menu_modifier() {
+                        state.mask_release = true;
                     }
                 } else if state.trigger_down {
                     state.trigger_down = false;
@@ -968,13 +996,18 @@ fn process_button(vk: u32, is_down: bool, time: u32) -> Disposition {
     }
 }
 
+/// A swallowed key leaves this chord's Alt or Windows alone (#1254).
+fn holds_menu(binding: Option<&WindowsHotkey>) -> bool {
+    binding.is_some_and(WindowsHotkey::holds_menu_modifier)
+}
+
 fn send_event(state: &mut CallbackState, action: HotkeyAction, timestamp_ms: u32) {
     match state.events.try_send(HotkeyEvent {
         action,
         raw: state.capture.raw,
         timestamp_ms,
     }) {
-        Ok(()) => {}
+        Ok(()) => crate::windows::dictation::wake(),
         Err(TrySendError::Full(_)) => {
             let _ = state
                 .errors
@@ -1572,7 +1605,12 @@ mod tests {
             key: Some("space".into()),
             ..right_alt
         };
-        assert!(!alt_space.masks_release(), "its key already masks it");
+        assert!(!alt_space.masks_release(), "not a modifier-only shortcut");
+        assert!(
+            alt_space.holds_menu_modifier(),
+            "a swallowed key leaves Alt alone, so its release is masked (#1254)"
+        );
+        assert!(!WindowsHotkey::default().holds_menu_modifier());
 
         let mut held = ModifierState::default();
         held.update(u32::from(VK_RMENU), true);

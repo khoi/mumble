@@ -14,8 +14,10 @@ https://anoma.ly/release/mumble/              the service (its dev stage, dev.an
       ├─ macos-arm64          Mumble.zip         ditto zip, root Mumble.app (updater)
       ├─ macos-arm64-dmg      Mumble.dmg         notarized DMG (download page)
       ├─ windows-x64          mumble.exe         bare executable (updater)
+      ├─ windows-x64-cli      mumble.com         console entry point beside mumble.exe (updater)
       ├─ windows-x64-setup    MumbleSetup.exe    Inno Setup installer (download page)
       ├─ windows-arm64        mumble.exe
+      ├─ windows-arm64-cli    mumble.com
       ├─ windows-arm64-setup  MumbleSetup.exe
       ├─ linux-x64            mumble             bare executable (updater, installer, AUR)
       ├─ linux-x64-deb        mumble.deb         Debian/Ubuntu package (package manager updates it)

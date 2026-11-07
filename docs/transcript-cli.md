@@ -130,8 +130,9 @@ History reads one file descriptor, so an atomic replacement yields a complete
 old or new snapshot. Malformed history produces an error without recovery writes.
 
 Data comes from `~/Library/Application Support/mumble`. `MUMBLE_APPLICATION_SUPPORT_DIR` overrides the
-root for fixtures or a mirrored copy. These CLI commands currently target macOS;
-Linux and Windows retain their existing command surfaces.
+root for fixtures or a mirrored copy (`%APPDATA%\mumble` on Windows,
+`~/.local/share/mumble` or `$XDG_DATA_HOME/mumble` on Linux). These commands are
+available on every OS.
 
 ## Retention stays bounded in one store
 

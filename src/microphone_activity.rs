@@ -151,6 +151,27 @@ fn canonical_bundle_id_for(bundle_id: &str, name: Option<&str>) -> Option<&'stat
         // Gather V2 and its Electron helpers, and Gather V1.
         ("com.gather.gatherv2", "com.gather.GatherV2"),
         ("com.gather.gather", "com.gather.GatherV2"),
+        // Discord and its helpers, and its Canary and PTB builds.
+        ("com.hnc.discord", "com.hnc.Discord"),
+        ("com.hnc.discordcanary", "com.hnc.Discord"),
+        ("com.hnc.discordptb", "com.hnc.Discord"),
+        // The apps Labs › More call apps adds, their Electron helpers and
+        // alternative bundle IDs included.
+        (
+            "org.whispersystems.signal-desktop",
+            "org.whispersystems.signal-desktop",
+        ),
+        ("ru.keepcoder.telegram", "ru.keepcoder.Telegram"),
+        ("com.tdesktop.telegram", "ru.keepcoder.Telegram"),
+        ("org.telegram.desktop", "ru.keepcoder.Telegram"),
+        ("com.tencent.xinwechat", "com.tencent.xinWeChat"),
+        ("jp.naver.line.mac", "jp.naver.line.mac"),
+        ("com.webex.meetingmanager", "com.webex.meetingmanager"),
+        ("com.cisco.webexmeetingsapp", "com.webex.meetingmanager"),
+        // The current Webex app uses Spark's bundle id, helpers included.
+        ("cisco-systems.spark", "com.webex.meetingmanager"),
+        ("im.riot.app", "im.riot.app"),
+        ("com.apple.mobilephone", "com.apple.mobilephone"),
         ("com.google.chrome", "com.google.Chrome"),
         ("com.brave.browser", "com.brave.Browser"),
         ("com.apple.safari", "com.apple.Safari"),
@@ -177,6 +198,14 @@ pub(crate) fn canonical_application_name(canonical_bundle_id: &str) -> Option<&'
         "com.apple.FaceTime" => Some("FaceTime"),
         "net.whatsapp.WhatsApp" => Some("WhatsApp"),
         "com.gather.GatherV2" => Some("Gather"),
+        "com.hnc.Discord" => Some("Discord"),
+        "org.whispersystems.signal-desktop" => Some("Signal"),
+        "ru.keepcoder.Telegram" => Some("Telegram"),
+        "com.tencent.xinWeChat" => Some("WeChat"),
+        "jp.naver.line.mac" => Some("LINE"),
+        "com.webex.meetingmanager" => Some("Webex"),
+        "im.riot.app" => Some("Element"),
+        "com.apple.mobilephone" => Some("Phone"),
         "com.google.Chrome" => Some("Google Chrome"),
         "com.brave.Browser" => Some("Brave Browser"),
         "com.apple.Safari" => Some("Safari"),
@@ -800,5 +829,57 @@ mod tests {
             assert_eq!(app.canonical_bundle_id(), expected, "bundle {bundle_id}");
             assert_eq!(app.is_browser(), browser, "browser {bundle_id}");
         }
+    }
+
+    #[test]
+    fn more_call_app_bundle_variants_and_executables_canonicalize() {
+        for (bundle_id, expected) in [
+            (
+                "org.whispersystems.signal-desktop",
+                "org.whispersystems.signal-desktop",
+            ),
+            (
+                "org.whispersystems.signal-desktop.helper.Renderer",
+                "org.whispersystems.signal-desktop",
+            ),
+            ("ru.keepcoder.Telegram", "ru.keepcoder.Telegram"),
+            ("com.tdesktop.Telegram", "ru.keepcoder.Telegram"),
+            ("com.tdesktop.Telegram.helper", "ru.keepcoder.Telegram"),
+            ("org.telegram.desktop", "ru.keepcoder.Telegram"),
+            ("com.tencent.xinWeChat", "com.tencent.xinWeChat"),
+            ("jp.naver.line.mac", "jp.naver.line.mac"),
+            ("com.webex.meetingmanager", "com.webex.meetingmanager"),
+            ("com.cisco.webexmeetingsapp", "com.webex.meetingmanager"),
+            ("Cisco-Systems.Spark", "com.webex.meetingmanager"),
+            ("Cisco-Systems.Spark.helper", "com.webex.meetingmanager"),
+            ("im.riot.app", "im.riot.app"),
+            ("com.apple.mobilephone", "com.apple.mobilephone"),
+            ("Signal.exe", "org.whispersystems.signal-desktop"),
+            ("signal-desktop", "org.whispersystems.signal-desktop"),
+            ("Telegram.exe", "ru.keepcoder.Telegram"),
+            ("telegram-desktop", "ru.keepcoder.Telegram"),
+            ("Element.exe", "im.riot.app"),
+            ("element-desktop", "im.riot.app"),
+            ("webex", "com.webex.meetingmanager"),
+            ("CiscoCollabHost.exe", "com.webex.meetingmanager"),
+            ("ciscocollabhost", "com.webex.meetingmanager"),
+            ("WeChat.exe", "com.tencent.xinWeChat"),
+            ("Weixin.exe", "com.tencent.xinWeChat"),
+            ("LINE.exe", "jp.naver.line.mac"),
+        ] {
+            assert_eq!(
+                canonical_bundle_id_for(bundle_id, None),
+                Some(expected),
+                "{bundle_id}"
+            );
+        }
+        assert_eq!(
+            canonical_application_name("ru.keepcoder.Telegram"),
+            Some("Telegram")
+        );
+        assert_eq!(
+            canonical_application_name("jp.naver.line.mac"),
+            Some("LINE")
+        );
     }
 }

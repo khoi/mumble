@@ -50,8 +50,10 @@ publish() {
     "macos-arm64=mumble-$version-macos-arm64.zip=Mumble.zip" \
     "macos-arm64-dmg=mumble-$version-macos-arm64.dmg=Mumble.dmg" \
     "windows-x64=mumble-$version-windows-x64.exe=mumble.exe" \
+    "windows-x64-cli=mumble-$version-windows-x64.com=mumble.com" \
     "windows-x64-setup=mumble-setup-$version-windows-x64.exe=MumbleSetup.exe" \
     "windows-arm64=mumble-$version-windows-arm64.exe=mumble.exe" \
+    "windows-arm64-cli=mumble-$version-windows-arm64.com=mumble.com" \
     "windows-arm64-setup=mumble-setup-$version-windows-arm64.exe=MumbleSetup.exe" \
     "linux-x64=mumble-$version-linux-x64=mumble" \
     "linux-x64-sig=mumble-$version-linux-x64.sig=mumble.sig" \

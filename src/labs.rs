@@ -1,6 +1,7 @@
 //! Labs: features we're unsure about, especially ones people asked for,
 //! each behind its own switch, off by default. There is no master switch:
-//! Settings › Labs lists every feature as a row with a toggle. A feature
+//! Settings › Labs lists every feature as a card with a toggle, under its
+//! group's collapsible header (`Feature::group`). A feature
 //! with its own pane (Voice Filter, Playground) joins the sidebar as a
 //! normal item while on and is hidden while off; a behaviour-only feature is
 //! just its toggle.
@@ -20,6 +21,10 @@ use color_eyre::Result;
 use color_eyre::eyre::eyre;
 
 use crate::app_settings::{AppSettings, LabsSettings};
+
+mod group;
+
+pub use self::group::Group;
 
 /// Where people send feedback on Labs features.
 pub const FEEDBACK_URL: &str = "https://github.com/supabitapp/mumble/issues/new";
@@ -75,12 +80,15 @@ pub enum Feature {
     RecentDictations,
     OutputFixes,
     SectionKeyAlone,
+    SettingsSearch,
     HideMenuBarIcon,
     GnomeClipboardRestore,
+    NotchIndicator,
+    QuitClosesWindow,
 }
 
 impl Feature {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 27] = [
         Self::VoiceFilter,
         Self::Playground,
         Self::LiveText,
@@ -103,8 +111,11 @@ impl Feature {
         Self::RecentDictations,
         Self::OutputFixes,
         Self::SectionKeyAlone,
+        Self::SettingsSearch,
         Self::HideMenuBarIcon,
         Self::GnomeClipboardRestore,
+        Self::NotchIndicator,
+        Self::QuitClosesWindow,
     ];
 
     /// The features this OS and build have.
@@ -128,9 +139,11 @@ impl Feature {
     /// Who the feature is for. Every feature picks one.
     pub const fn audience(self) -> Audience {
         match self {
-            Self::VoiceFilter
-            | Self::Playground
-            | Self::LiveText
+            // Developer tools: the story browser, and the virtual microphone
+            // (a stable build keeps only its Uninstall while the driver is
+            // installed).
+            Self::VoiceFilter | Self::Playground => Audience::Dev,
+            Self::LiveText
             | Self::TerminalPaste
             | Self::MouseShortcuts
             | Self::PauseBrowser
@@ -150,8 +163,39 @@ impl Feature {
             | Self::RecentDictations
             | Self::OutputFixes
             | Self::SectionKeyAlone
+            | Self::SettingsSearch
             | Self::HideMenuBarIcon
-            | Self::GnomeClipboardRestore => Audience::Everyone,
+            | Self::GnomeClipboardRestore
+            | Self::NotchIndicator
+            | Self::QuitClosesWindow => Audience::Everyone,
+        }
+    }
+
+    /// The day it joined Labs, as `yyyymmdd`. Labs marks the newest as New.
+    pub const fn added(self) -> u32 {
+        match self {
+            Self::VoiceFilter
+            | Self::Playground
+            | Self::LiveText
+            | Self::TerminalPaste
+            | Self::MouseShortcuts
+            | Self::PauseBrowser
+            | Self::ShareShortcut => 20261030,
+            Self::RestoreShortcutDefault
+            | Self::KeepOnClipboard
+            | Self::CopyOnly
+            | Self::SpokenFormatting
+            | Self::FillerWords
+            | Self::SecondDictationShortcut
+            | Self::SmartSpacing
+            | Self::SpokenSymbols
+            | Self::SidedChords
+            | Self::TapOrHold => 20261031,
+            Self::StandaloneSpecialKeys | Self::HistoryStats | Self::RecentDictations => 20261101,
+            Self::OutputFixes | Self::SectionKeyAlone | Self::HideMenuBarIcon => 20261102,
+            Self::GnomeClipboardRestore | Self::NotchIndicator => 20261103,
+            Self::SettingsSearch => 20261106,
+            Self::QuitClosesWindow => 20261107,
         }
     }
 
@@ -162,7 +206,8 @@ impl Feature {
             .find(|feature| feature.settings_key() == key)
     }
 
-    fn on_this_os(self) -> bool {
+    /// Whether this OS has the feature at all, in any build.
+    pub fn on_this_os(self) -> bool {
         match self {
             Self::VoiceFilter => cfg!(any(target_os = "macos", target_os = "linux")),
             Self::TerminalPaste | Self::ShareShortcut => cfg!(target_os = "windows"),
@@ -178,7 +223,9 @@ impl Feature {
             | Self::SmartSpacing
             | Self::SidedChords
             | Self::RecentDictations
-            | Self::HideMenuBarIcon => cfg!(target_os = "macos"),
+            | Self::HideMenuBarIcon
+            | Self::QuitClosesWindow
+            | Self::NotchIndicator => cfg!(target_os = "macos"),
             Self::TapOrHold => cfg!(any(target_os = "macos", target_os = "linux")),
             Self::Playground
             | Self::LiveText
@@ -187,6 +234,7 @@ impl Feature {
             | Self::SpokenSymbols
             | Self::HistoryStats
             | Self::OutputFixes
+            | Self::SettingsSearch
             | Self::FillerWords => true,
         }
     }
@@ -218,6 +266,9 @@ impl Feature {
             Self::SectionKeyAlone => "section-key",
             Self::HideMenuBarIcon => "hide-menu-bar-icon",
             Self::GnomeClipboardRestore => "gnome-clipboard-restore",
+            Self::SettingsSearch => "settings-search",
+            Self::NotchIndicator => "notch-indicator",
+            Self::QuitClosesWindow => "quit-closes-window",
         }
     }
 
@@ -248,6 +299,9 @@ impl Feature {
             Self::SectionKeyAlone => "labs.section_key_alone",
             Self::HideMenuBarIcon => "labs.hide_menu_bar_icon",
             Self::GnomeClipboardRestore => "labs.gnome_clipboard_restore",
+            Self::SettingsSearch => "labs.settings_search",
+            Self::NotchIndicator => "labs.notch_indicator",
+            Self::QuitClosesWindow => "labs.quit_closes_window",
         }
     }
 
@@ -297,7 +351,7 @@ impl Feature {
                 "Use Menu, Pause, or Scroll Lock alone as a shortcut, such as Caps Lock remapped to Menu"
             }
             Self::HistoryStats => {
-                "Show a summary of your retained dictations at the top of History, with mumble history stats"
+                "Add a Stats button to History that shows a summary of your retained dictations, with mumble history stats"
             }
             Self::RecentDictations => {
                 "Copy one of your last five dictations from the menu bar, under Paste Last Dictation"
@@ -313,6 +367,13 @@ impl Feature {
             }
             Self::GnomeClipboardRestore => {
                 "Put the previous clipboard back after a paste on GNOME Wayland, through the XWayland clipboard while XWayland is running"
+            }
+            Self::SettingsSearch => "Find any setting in General with a search field",
+            Self::NotchIndicator => {
+                "On a screen with a notch, the recording indicator grows out of the notch instead of sitting below the menu bar"
+            }
+            Self::QuitClosesWindow => {
+                "⌘Q closes the Settings window instead of quitting Mumble; dictation keeps running, and the menu bar icon still quits"
             }
         }
     }
@@ -348,6 +409,9 @@ impl Feature {
             Self::SectionKeyAlone => settings.labs.section_key_alone,
             Self::HideMenuBarIcon => settings.labs.hide_menu_bar_icon,
             Self::GnomeClipboardRestore => settings.labs.gnome_clipboard_restore,
+            Self::SettingsSearch => settings.labs.settings_search,
+            Self::NotchIndicator => settings.labs.notch_indicator,
+            Self::QuitClosesWindow => settings.labs.quit_closes_window,
         }
     }
 
@@ -378,8 +442,11 @@ impl Feature {
             &mut labs.recent_dictations,
             &mut labs.output_fixes,
             &mut labs.section_key_alone,
+            &mut labs.settings_search,
             &mut labs.hide_menu_bar_icon,
             &mut labs.gnome_clipboard_restore,
+            &mut labs.notch_indicator,
+            &mut labs.quit_closes_window,
         ]
     }
 
@@ -412,6 +479,9 @@ impl Feature {
             Self::OutputFixes => settings.labs.output_fixes = on,
             Self::HideMenuBarIcon => settings.labs.hide_menu_bar_icon = on,
             Self::GnomeClipboardRestore => settings.labs.gnome_clipboard_restore = on,
+            Self::SettingsSearch => settings.labs.settings_search = on,
+            Self::NotchIndicator => settings.labs.notch_indicator = on,
+            Self::QuitClosesWindow => settings.labs.quit_closes_window = on,
             // Off, no shortcut keeps a key only the feature allows.
             Self::StandaloneSpecialKeys => {
                 settings.labs.standalone_special_keys = on;
@@ -442,6 +512,8 @@ const HISTORY_STATS: u64 = 1 << 16;
 const RECENT_DICTATIONS: u64 = 1 << 17;
 const HIDE_MENU_BAR_ICON: u64 = 1 << 19;
 const GNOME_CLIPBOARD_RESTORE: u64 = 1 << 20;
+const NOTCH_INDICATOR: u64 = 1 << 21;
+const QUIT_CLOSES_WINDOW: u64 = 1 << 22;
 
 /// This process's `labs` switches: unknown until settings load or one is
 /// first read.
@@ -552,6 +624,20 @@ pub fn hide_menu_bar_icon() -> bool {
     on(HIDE_MENU_BAR_ICON) && Feature::HideMenuBarIcon.on_this_os()
 }
 
+/// ⌘Q closes the Settings window instead of quitting Mumble (macOS; read each
+/// time the app menu's Quit Mumble runs).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn quit_closes_window() -> bool {
+    on(QUIT_CLOSES_WINDOW) && Feature::QuitClosesWindow.on_this_os()
+}
+
+/// With the indicator at the top, the HUD grows out of the notch on a
+/// screen that has one (macOS; read each time the HUD is placed).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn notch_indicator() -> bool {
+    on(NOTCH_INDICATOR) && Feature::NotchIndicator.on_this_os()
+}
+
 /// A paste on a Wayland desktop without data-control (GNOME) snapshots and
 /// restores the clipboard through an already running XWayland (Linux; read
 /// as each paste starts).
@@ -622,6 +708,16 @@ fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u
             Feature::GnomeClipboardRestore,
             settings.gnome_clipboard_restore,
             GNOME_CLIPBOARD_RESTORE,
+        ),
+        (
+            Feature::NotchIndicator,
+            settings.notch_indicator,
+            NOTCH_INDICATOR,
+        ),
+        (
+            Feature::QuitClosesWindow,
+            settings.quit_closes_window,
+            QUIT_CLOSES_WINDOW,
         ),
     ]
     .into_iter()
@@ -913,6 +1009,42 @@ mod tests {
         let state = encode_where(&labs, |_| true);
         assert_ne!(state & RECENT_DICTATIONS, 0);
         assert_eq!(state & HISTORY_STATS, 0);
+    }
+
+    #[test]
+    fn the_developer_tools_are_dev_only() {
+        for feature in [Feature::Playground, Feature::VoiceFilter] {
+            assert_eq!(feature.audience(), Audience::Dev, "{}", feature.name());
+            assert!(resolve(feature.name(), |f| f.audience().reaches(false)).is_err());
+        }
+        let labs = LabsSettings {
+            playground: true,
+            ..LabsSettings::default()
+        };
+        assert_eq!(
+            encode_where(&labs, |f| f.audience().reaches(false)) & PLAYGROUND,
+            0
+        );
+    }
+
+    #[test]
+    fn quit_closes_window_is_its_own_bit_and_off_by_default() {
+        let mut labs = LabsSettings::default();
+        assert_eq!(encode_where(&labs, |_| true) & QUIT_CLOSES_WINDOW, 0);
+        labs.quit_closes_window = true;
+        let state = encode_where(&labs, |_| true);
+        assert_ne!(state & QUIT_CLOSES_WINDOW, 0);
+        assert_eq!(state & HIDE_MENU_BAR_ICON, 0);
+    }
+
+    #[test]
+    fn notch_indicator_is_its_own_bit_and_off_by_default() {
+        let mut labs = LabsSettings::default();
+        assert_eq!(encode_where(&labs, |_| true) & NOTCH_INDICATOR, 0);
+        labs.notch_indicator = true;
+        let state = encode_where(&labs, |_| true);
+        assert_ne!(state & NOTCH_INDICATOR, 0);
+        assert_eq!(state & QUIT_CLOSES_WINDOW, 0);
     }
 
     #[test]

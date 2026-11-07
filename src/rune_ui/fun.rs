@@ -3,7 +3,9 @@
 //! or Linux's PipeWire source), the filter mode and its key sliders, comfort
 //! noise, and "Try it": record five seconds or use the example clip, then
 //! compare your voice with what the call hears on two waveforms drawn with
-//! Rune shapes. The driver, the live filter, and the demo audio stay with the
+//! Rune shapes. Voice Filter is a dev-build Lab: a stable build shows the
+//! pane only while the macOS driver is installed, with Uninstall alone.
+//! The driver, the live filter, and the demo audio stay with the
 //! host (`PlatformState::{mumble_microphone, tuning, demo}`, `PlatformRequest::
 //! {SetTuning, MumbleMicrophoneDemo}`).
 
@@ -283,10 +285,19 @@ fn tunable(ui: &Ui, p: Paint, which: Tunable, label: &str) -> El {
     )
 }
 
-/// Whether the Voice Filter runs (`app_settings::voice_filter_enabled`): its
-/// switch is on, or the host found its driver installed.
+/// Whether the Voice Filter pane shows: in a dev build, while the filter
+/// runs (`app_settings::voice_filter_enabled`: its switch is on, or the host
+/// found its driver installed); in a stable build, only while the driver is
+/// installed, so it can be uninstalled.
 pub(super) fn running(ui: &Ui) -> bool {
-    ui.settings.experimental.mumble_microphone || driver_installed(ui)
+    (crate::labs::Feature::VoiceFilter.shipped() && ui.settings.experimental.mumble_microphone)
+        || driver_installed(ui)
+}
+
+/// A stable build has no Voice Filter: its pane offers only the installed
+/// driver's Uninstall.
+fn uninstall_only() -> bool {
+    !crate::labs::Feature::VoiceFilter.shipped()
 }
 
 /// The Mumble Microphone driver is installed: apps may use it, so the Voice
@@ -299,6 +310,9 @@ pub(super) fn driver_installed(ui: &Ui) -> bool {
 }
 
 pub(super) fn pane(ui: &Ui, p: Paint) -> El {
+    if uninstall_only() {
+        return section(ui, p, vec![uninstall_row(ui, p)]);
+    }
     let cfg = &ui.platform.tuning;
     let mode = cfg.mode;
     let labels: Vec<&str> = VoiceFilterMode::ALL
@@ -426,6 +440,11 @@ pub(super) fn pane(ui: &Ui, p: Paint) -> El {
         ));
     }
     rows.push(try_it(ui, p));
+    section(ui, p, rows)
+}
+
+/// The Mumble Microphone section around `rows`, in the pane's scroll body.
+fn section(ui: &Ui, p: Paint, rows: Vec<El>) -> El {
     let section = col()
         .key("fun-mumble-microphone")
         .gap(METRICS.label_gap)
@@ -441,7 +460,36 @@ pub(super) fn pane(ui: &Ui, p: Paint) -> El {
         )
         .child(card(p, "card", rows));
     let content = page("content").child(section);
-    super::scroll_body("fun-scroll", content)
+    super::scroll_body(p.k, "fun-scroll", content)
+}
+
+/// A stable build's only Voice Filter row: Uninstall the driver it left.
+fn uninstall_row(ui: &Ui, p: Paint) -> El {
+    let uninstalling = ui
+        .platform
+        .mumble_microphone
+        .as_ref()
+        .is_some_and(|status| matches!(status.action_state, DriverActionState::Uninstalling));
+    let control = if uninstalling {
+        tone_tag(p, "state", tr("Uninstalling…"), Tone::Neutral)
+    } else {
+        button(
+            p,
+            "uninstall",
+            tr("Uninstall"),
+            ButtonKind::Secondary,
+            |ui: &mut Ui, _| ui.ask(PlatformRequest::UninstallMumbleMicrophone),
+        )
+    };
+    setting_row(
+        p,
+        "mumble-mic-driver",
+        tr("Virtual microphone driver"),
+        Some(tr(
+            "Voice Filter isn't in this version of Mumble. Uninstall its driver to remove Mumble Microphone from your inputs.",
+        )),
+        row().key("controls").gap(8.0).center_y().child(control),
+    )
 }
 
 /// Record or pick a clip, see both tracks, and play either one.

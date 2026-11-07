@@ -55,6 +55,15 @@ let
     wl-clipboard
     wtype
   ];
+  # Every Git dependency Cargo.lock pins, with the revision its output hash was
+  # computed from. scripts/check-nix-git-pins.py fails a pull request that bumps
+  # one without the other, before Nix reports a hash mismatch.
+  cargoGitDependencies = {
+    "rune-0.0.1" = {
+      rev = "a138b97e654b8299b2a4cb518b8476b2b528c2c4";
+      hash = "sha256-AvW2VYBqacOLVShrC9n6ga7NkPWeN7We1GuyKndxBVY=";
+    };
+  };
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "mumble";
@@ -81,9 +90,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   cargoLock = {
     lockFile = ../Cargo.lock;
-    outputHashes = {
-      "rune-0.0.1" = "sha256-V4z8nWvZjj3p4dZZOaFTengYIYqwOQu8aktCJvtNxwA=";
-    };
+    outputHashes = builtins.mapAttrs (_: dependency: dependency.hash) cargoGitDependencies;
   };
 
   nativeBuildInputs = [

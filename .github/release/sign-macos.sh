@@ -86,7 +86,14 @@ mkdir "$work/staging"
 ln -s /Applications "$work/staging/Applications"
 cp "$background" "$work/staging/.background.tiff"
 cp "$finder" "$work/staging/.DS_Store"
-hdiutil create -quiet -fs APFS -format ULFO -volname Mumble -srcfolder "$work/staging" "$dmg"
+# hdiutil on the hosted runners intermittently fails (Resource busy).
+for attempt in 1 2 3 4 5; do
+  hdiutil create -fs APFS -format ULFO -volname Mumble -srcfolder "$work/staging" "$dmg" && break
+  [ "$attempt" -lt 5 ] || exit 1
+  echo "hdiutil create failed (attempt $attempt); retrying" >&2
+  rm -f "$dmg"
+  sleep 10
+done
 codesign --force --timestamp --keychain "$MUMBLE_KEYCHAIN" --sign "$MUMBLE_SIGNING_IDENTITY" "$dmg"
 notarize "$dmg"
 xcrun stapler staple "$dmg"

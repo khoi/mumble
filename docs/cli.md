@@ -17,6 +17,10 @@ answers `unsupported` at runtime (exit 1) instead of being missing from the
 CLI; `mumble status --json` lists the OS's `capabilities`. Today that is
 playground stories (`window story`) outside macOS.
 
+On Windows a terminal runs `mumble` as `mumble.com`, a console program that runs
+the app's `mumble.exe` and waits for it, so commands print, return their exit
+code, and can be captured like any other (`docs/windows.md`).
+
 The read-only `mumble history` command reads files rather than the running Mumble;
 see `docs/transcript-cli.md`.
 
@@ -50,7 +54,7 @@ mumble
 │   ├── add <term> [--sounds-like a,b]  add a term, or new spellings to an existing one
 │   └── remove <term>              any case
 ├── labs [on|off <feature>]       list Labs features or turn one on/off; edits settings.json (features/labs.md)
-│   └── link <feature>             macOS: print mumble://labs/<feature>, the link that opens Mumble's Labs page at that row
+│   └── link <feature>             macOS: print mumble://labs/<feature>, the link that opens Mumble's Labs page on that lab's group
 ├── check-for-updates              check for an update now
 ├── launch-at-login [on|off]       report or change Launch at Login (macOS: installed Mumble.app only; Windows Run key; Linux XDG autostart)
 └── logs [--process] [-n N] [-f]   tail live.ndjson (or process.log); no running Mumble needed
@@ -304,7 +308,7 @@ Transcription is cloud-only: `transcription.provider` takes `claude` or
   second-dictation-shortcut`) and shares no key with another shortcut.
 - `json` settings (modes) take the JSON value the file stores.
 - `ui_language` takes `en`, `pl`, `zh` (Simplified Chinese), `zh-Hant`
-  (Traditional Chinese), `ja`, `de`, `es`, `uk`, `pt`, `fr`, or `none`
+  (Traditional Chinese), `ja`, `de`, `es`, `uk`, `pt`, `fr`, `ru`, or `none`
   (follow the system language), the same languages Settings offers. Following
   the system, a Chinese locale with the Hant script or the TW, HK, or MO
   region shows Traditional Chinese; other Chinese locales show Simplified.

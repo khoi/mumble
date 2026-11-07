@@ -309,6 +309,13 @@ pub(super) fn recorded_binding(event: &KeyEvent) -> Result<HotkeyBinding, &'stat
         Key::Down => "down".into(),
         Key::Home => "home".into(),
         Key::End => "end".into(),
+        Key::PageUp => "pageup".into(),
+        Key::PageDown => "pagedown".into(),
+        Key::Insert => "insert".into(),
+        Key::PrintScreen => "print".into(),
+        Key::ContextMenu => "menu".into(),
+        Key::Pause => "pause".into(),
+        Key::ScrollLock => "scrolllock".into(),
         _ => return Err(tr("Unsupported key")),
     };
     let held = |down: bool| down.then_some(ModifierSide::Either);
@@ -319,10 +326,11 @@ pub(super) fn recorded_binding(event: &KeyEvent) -> Result<HotkeyBinding, &'stat
         command: held(event.mods.logo),
         function: false,
     };
-    // The § key alone is checked against Labs › Section key alone in
-    // `validate` (Linux).
-    let lone_section = cfg!(target_os = "linux") && HotkeyKey::section_name(&name);
-    if modifiers.is_empty() && !matches!(event.key, Key::Function(_)) && !lone_section {
+    // The § key alone, and Menu, Pause, or Scroll Lock, are checked against
+    // their Labs toggles in `validate` (Linux).
+    let lone_labs_key = cfg!(target_os = "linux")
+        && (HotkeyKey::section_name(&name) || HotkeyKey::special_name(&name));
+    if modifiers.is_empty() && !matches!(event.key, Key::Function(_)) && !lone_labs_key {
         return Err(tr("Add a modifier"));
     }
     Ok(HotkeyBinding {
@@ -578,7 +586,7 @@ pub(super) fn error_notes(p: Paint, error: &str) -> [El; 2] {
     ]
 }
 
-pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
+pub(super) fn listener_card(ui: &Ui, p: Paint) -> (String, El) {
     let running = ui.running();
     let status = match &ui.view {
         Some(view) => tr(&view.listener.status).to_string(),
@@ -607,6 +615,7 @@ pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
         (true, ShortcutMode::Hold) => tr_fill("Ready anywhere · Hold {} to dictate", &shortcut),
         (false, _) => tr_fill("Enable Mumble to dictate into any app with {}", &shortcut),
     };
+    let search = format!("{status} {hint} {} {}", tr("Enable"), tr("Disable"));
     let failure = ui
         .view
         .as_ref()
@@ -621,11 +630,12 @@ pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
                 .as_ref()
                 .and_then(|view| view.operation_error.clone())
         });
+    let action_label = if running { tr("Disable") } else { tr("Enable") };
     let action = if running {
         button(
             p,
             "toggle-listening",
-            tr("Disable"),
+            action_label,
             ButtonKind::Secondary,
             |ui: &mut Ui, _| ui.send(Request::Desktop(DesktopAction::StopListening)),
         )
@@ -633,7 +643,7 @@ pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
         button(
             p,
             "toggle-listening",
-            tr("Enable"),
+            action_label,
             ButtonKind::Primary,
             |ui: &mut Ui, _| ui.send(Request::Desktop(DesktopAction::StartListening)),
         )
@@ -678,7 +688,7 @@ pub(super) fn listener_card(ui: &Ui, p: Paint) -> El {
     if let Some(error) = error {
         rows.extend(error_notes(p, &error));
     }
-    section(p, "listening", tr("Status"), rows)
+    (search, section(p, "listening", tr("Status"), rows))
 }
 
 /// What a shortcuts portal granted for `target`, since the desktop decides
@@ -1145,6 +1155,29 @@ mod special_keys_tests {
             validate(&settings, ShortcutTarget::Dictation, &menu),
             Ok(())
         );
+    }
+
+    /// Issue 1187: the recorder takes Scroll Lock, Pause, and Menu alone.
+    #[test]
+    fn recorder_takes_special_keys_alone() {
+        let mut settings = AppSettings::default();
+        settings.labs.standalone_special_keys = true;
+        for (key, name) in [
+            (Key::ScrollLock, "scroll lock"),
+            (Key::Pause, "pause"),
+            (Key::ContextMenu, "menu"),
+        ] {
+            let binding = recorded_binding(&KeyEvent {
+                key,
+                mods: Default::default(),
+            })
+            .unwrap();
+            assert_eq!(binding.key.as_ref().unwrap().name(), name);
+            assert_eq!(
+                validate(&settings, ShortcutTarget::Dictation, &binding),
+                Ok(())
+            );
+        }
     }
 
     /// Issue 1050: § alone only with Labs › Section key alone on; § with a

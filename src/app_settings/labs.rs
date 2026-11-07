@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// The `labs` switches (`crate::labs`), each off by default; older Labs features keep their own keys, and `labs.enabled` is ignored.
+/// The `labs` switches (`crate::labs`), each off by default; older Labs features keep their own keys, and retired switches (`labs.enabled`, `labs.collapsible_meeting_sections`, `labs.meeting_platform_icons`) are ignored.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct LabsSettings {
@@ -39,7 +39,17 @@ pub struct LabsSettings {
     pub output_fixes: bool,
     /// The ISO § key may be a shortcut on its own (Linux, issue 1050).
     pub section_key_alone: bool,
+    /// General's pane starts with a search field that filters its rows.
+    pub settings_search: bool,
     pub hide_menu_bar_icon: bool,
+    /// ⌘Q closes the Settings window instead of quitting Mumble (macOS).
+    pub quit_closes_window: bool,
     /// A paste restores the clipboard through a running XWayland on Wayland desktops without data-control, such as GNOME (Linux, issue 1111).
     pub gnome_clipboard_restore: bool,
+    /// With the indicator at the top, the HUD grows out of the notch on a screen with one (macOS).
+    pub notch_indicator: bool,
+    /// Settings › Labs' groups opened or closed by hand, by `labs::Group`
+    /// id; a group not here is open while it holds a lab that's on.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub groups: std::collections::BTreeMap<String, bool>,
 }

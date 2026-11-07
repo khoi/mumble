@@ -43,9 +43,10 @@ updating itself from the Dev channel; afterwards, the stable release.
 
 [anoma.ly/mumble](https://anoma.ly/mumble/) picks the right one. The
 installer needs no administrator rights: it installs for the current user,
-adds Mumble to the Start menu and to **Settings › Apps** for uninstalling, and
-opens Mumble. Mumble transcribes with the chosen cloud service (Claude or Codex), so
-sign in to that app for dictation to work. Releases built once
+adds Mumble to the Start menu, to **Settings › Apps** for uninstalling, and
+`mumble` to PATH for terminals, and opens Mumble. Mumble transcribes with the
+chosen cloud service (Claude or Codex), so sign in to that app for dictation to
+work. Releases built once
 Anomaly's Azure Artifact Signing is configured are Authenticode-signed
 ([windows-signing.md](windows-signing.md)). Until then, and while a new
 publisher builds SmartScreen reputation, SmartScreen may say it protected your
@@ -56,8 +57,8 @@ that supplies `vulkan-1.dll` for the window and stops with an explanation when
 it is missing. **ARM64** has no such check. Both are
 self-contained: no Visual C++ Redistributable is required. Mumble then keeps
 itself current through the signed update feed. Uninstalling removes every
-installed version, the shortcut, and Launch at login, and keeps settings, logs,
-and history in `%APPDATA%\mumble`.
+installed version, the shortcut, and Launch at login, and keeps settings and
+history in `%APPDATA%\mumble` and logs in `%LOCALAPPDATA%\mumble`.
 
 The installer and the script below create the same managed layout, so either
 can replace the other. For a scripted install:
@@ -67,6 +68,16 @@ powershell -ExecutionPolicy Bypass -Command "iwr https://anoma.ly/mumble/files/i
 ```
 
 Uninstall a script install with `install-windows.ps1 -Uninstall`.
+
+The managed layout is `%APPDATA%\mumble\versions\<version>\` holding `mumble.exe`,
+the app, a GUI program so launching Mumble opens no console window, and
+`mumble.com`, its console entry point, which runs `mumble.exe` with the same
+arguments, waits for it, and returns its exit code (`mumble` and `mumble app` only
+start the app and return). Shortcuts, Launch at login,
+and the Start menu open `mumble.exe`. `%APPDATA%\mumble\bin\mumble.com`, a copy that
+runs the version `current-version` names, is on the user's PATH, and a
+terminal resolves `mumble` to it before any `mumble.exe` because PATHEXT lists
+`.COM` first. Terminals opened before the install need reopening to see PATH.
 
 ## Known Issues
 
@@ -160,11 +171,18 @@ cargo run -- listen
 Press Enter once to start, then again to stop. Captures shorter than 300 ms are
 discarded. `--device` accepts a case-insensitive fragment from `devices`.
 
-Runtime data is stored under `%APPDATA%\mumble`. Observations are in
+Runtime data is stored under `%APPDATA%\mumble`, except logs and speech models,
+which belong to this computer and live in `%LOCALAPPDATA%\mumble`: on managed
+networks Windows copies the Roaming folder to a server at every sign-in, which
+hundreds of megabytes of models would slow down. An older Mumble's `logs` and
+`models` move there once (`app_paths::machine_local`); while a running Mumble
+holds them, the Roaming copy stays in use. Observations are in
 `logs\live.ndjson`, and native/runtime diagnostics are in `logs\process.log`,
 including every panic with its thread and backtrace. A worker that stops
-unexpectedly leaves its cause there. The app detaches from its console at
-launch, so it has no stdout or stderr.
+unexpectedly leaves its cause there. `mumble.exe` is a GUI program, so a launch
+from Explorer, the Start menu, or login opens no console window. Run from a
+terminal, it prints startup errors there, then the app leaves the terminal and
+has no stdout or stderr.
 Successful pasted dictations are retained, subject to the selected retention
 window and hard size limits, in `history.json`. Captured audio is never retained
 by default.
@@ -293,7 +311,7 @@ current-user startup registry, UI Automation, and Windows capture APIs.
 | Web-domain mode rules and browser context via UI Automation | Implemented; the page URL comes from the browser's UIA document element, bounded so a hung provider degrades to application-only context |
 | Managed installer with Start Menu integration and clean uninstall | Implemented as `.github/release/install-windows.ps1`; it creates the self-updating versions layout, and updates retarget the managed shortcut and Launch-at-login entry |
 | First-run onboarding | Implemented; a fresh install starts listening only once setup is recorded — the shared first-run story, with a Microphone page only while the privacy switch is off and the practice game on the real shortcut |
-| Activity pane with the live session and recent transcripts | Implemented in developer builds; the shared read-only pane |
+| Activity pane with the live session and recent dictations | Implemented in developer builds; the shared read-only pane (phases and timing; the event log keeps no dictated text) |
 | Streaming finish with whole-clip fallback | Implemented; cloud streaming to Claude or Codex, with the whole clip sent on fallback |
 
 Settings live in `%APPDATA%\mumble\settings.json`, the same file macOS and

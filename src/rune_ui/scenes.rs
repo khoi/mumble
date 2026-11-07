@@ -76,6 +76,28 @@ pub(super) const SCENES: &[Scene] = &[
         ui.history = history::HistoryPane::fixture();
         ui.pane = Pane::History;
     }),
+    ("history-menu", |ui| {
+        *ui = portal_fixture();
+        ui.history = history::HistoryPane::fixture();
+        ui.pane = Pane::History;
+        ui.open = Some(Menu::HistoryRetention);
+    }),
+    ("history-clear", |ui| {
+        *ui = portal_fixture();
+        ui.history = history::HistoryPane::fixture();
+        ui.history.clear_armed = true;
+        ui.pane = Pane::History;
+    }),
+    // Labs › Dictation stats: the Stats button with its dialog open.
+    ("history-stats", |ui| {
+        *ui = portal_fixture();
+        ui.history = history::HistoryPane::fixture();
+        ui.history.stats = Some(history::HistoryPane::fixture_stats());
+        ui.history.stats_open = true;
+        ui.settings.labs.history_stats = true;
+        crate::labs::apply(&ui.settings.labs);
+        ui.pane = Pane::History;
+    }),
     ("history-empty", |ui| {
         *ui = portal_fixture();
         ui.history = history::HistoryPane::fixture_empty();
@@ -382,18 +404,39 @@ pub(super) const SCENES: &[Scene] = &[
         *ui = mac_fixture();
         ui.pane = Pane::HudLab;
     }),
-    ("mac-labs", |ui| {
-        *ui = mac_fixture();
-        ui.labs_open = true;
-    }),
+    ("mac-labs", labs_with_some_on),
+    // Where mumble://labs/live-text lands: its group's chip.
     ("mac-labs-link", |ui| {
         *ui = mac_fixture();
         ui.labs_open = true;
-        // Far ahead, so the pulse holds for the render.
-        ui.lab_flash = Some((
-            crate::labs::Feature::LiveText,
-            Instant::now() + Duration::from_secs(3600),
-        ));
+        ui.lab_store.group = Some(crate::labs::Feature::LiveText.group());
+    }),
+    ("mac-labs-on", |ui| {
+        labs_with_some_on(ui);
+        ui.lab_store.tab = labs::Tab::On;
+    }),
+    ("mac-labs-category", |ui| {
+        labs_with_some_on(ui);
+        ui.lab_store.group = Some(crate::labs::Group::Shortcuts);
+    }),
+    ("mac-labs-search", |ui| {
+        labs_with_some_on(ui);
+        ui.lab_store.search = rune::TextEdit::new("paste".to_string());
+    }),
+    // Labs on Windows and Linux: only their OS's labs, groups holding a
+    // lab that's on open.
+    ("windows-labs", |ui| {
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.paste_with_shift = true;
+        ui.labs_open = true;
+    }),
+    ("linux-labs", |ui| {
+        *ui = portal_fixture();
+        ui.platform.caps = platform::Capabilities::LINUX;
+        ui.settings.labs.section_key_alone = true;
+        ui.labs_open = true;
     }),
     ("mac-activity", |ui| {
         *ui = mac_fixture();
@@ -553,7 +596,22 @@ pub(super) fn fixture(shortcuts: DesktopShortcuts) -> Ui {
         operation_error: None,
         update_status: DesktopUpdateStatus::Current,
         update_notes: None,
+        update_blocked: None,
         editing: false,
     });
     ui
+}
+
+/// Labs with a few labs on: every store scene's fixture, so a lab reads
+/// the same in each.
+fn labs_with_some_on(ui: &mut Ui) {
+    *ui = mac_fixture();
+    for feature in [
+        crate::labs::Feature::LiveText,
+        crate::labs::Feature::SmartSpacing,
+        crate::labs::Feature::TapOrHold,
+    ] {
+        feature.set(&mut ui.settings, true);
+    }
+    ui.labs_open = true;
 }
